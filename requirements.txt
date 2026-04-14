@@ -1,0 +1,6 @@
+flask
+gunicorn
+requests
+gspread
+oauth2client
+google-genai>=0.3.0

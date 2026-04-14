@@ -1,0 +1,802 @@
+"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The Oxford Computers — WhatsApp AI System v2.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Features:
+  ✅ Google Sheets CRM — auto lead logging
+  ✅ Gemini AI Chatbot — Malayalam/English smart replies
+  ✅ Keyword-based fast replies (no AI cost for simple queries)
+  ✅ Broadcast campaign API
+  ✅ Multi-day follow-up scheduler
+  ✅ Lead status tracking
+  ✅ Admin stats endpoint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FIXED in v2.1:
+  🔧 Migrated from deprecated google-generativeai → google-genai
+  🔧 Updated Gemini API calls to new SDK style
+  🔧 GOOGLE_CREDENTIALS env var name aligned
+  🔧 Model upgraded to gemini-2.0-flash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+import os
+import json
+import time
+import threading
+import requests
+from flask import Flask, request, jsonify
+from datetime import datetime, timedelta
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# ✅ NEW SDK — google-genai (replaces deprecated google-generativeai)
+from google import genai
+
+app = Flask(__name__)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CONFIGURATION — All from Railway Environment Variables
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFY_TOKEN      = os.environ.get("VERIFY_TOKEN", "oxford2026")
+ACCESS_TOKEN      = os.environ.get("ACCESS_TOKEN", "")
+PHONE_NUMBER_ID   = os.environ.get("PHONE_NUMBER_ID", "")
+SHEETS_ID         = os.environ.get("SHEETS_ID", "")
+GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY", "")
+BROADCAST_API_KEY = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
+ADMIN_KEY         = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
+
+# ✅ FIXED: Variable name matches Railway dashboard (GOOGLE_CREDENTIALS)
+GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
+
+WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ✅ GEMINI AI SETUP — New google-genai SDK
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+if GEMINI_API_KEY:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    print("✅ Gemini AI initialized (google-genai SDK)")
+else:
+    gemini_client = None
+    print("⚠️ GEMINI_API_KEY not set — AI replies disabled")
+
+# In-memory conversation state (resets on redeploy — use DB for production)
+conversation_state = {}  # {phone: {"stage": "new/interested/enrolled", "name": "", "last_msg": timestamp}}
+follow_up_queue    = []  # [{phone, name, send_at, message, done}]
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# INSTITUTE PROFILE — Oxford Computers
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTITUTE_INFO = """
+You are the friendly AI assistant for The Oxford Computers, a Kerala Government-authorized 
+computer training institute in Malayinkeezhu, Thiruvananthapuram, Kerala.
+
+ABOUT THE INSTITUTE:
+- Name: The Oxford Computers
+- Location: Malayinkeezhu, Thiruvananthapuram, Kerala
+- Approval: Kerala State Rutronix Government Certified
+- Website: theoxfordedu.com
+- Specialty: AI-enabled, government-certified computer courses
+
+COURSES OFFERED:
+1. MS Office & Tally (3 months) — ₹3,500
+2. Web Design & Development (6 months) — ₹7,000
+3. Python Programming & AI Tools (4 months) — ₹6,000
+4. Digital Marketing (3 months) — ₹5,000
+5. Hardware & Networking (6 months) — ₹8,000
+6. DTP & Graphic Design (3 months) — ₹4,000
+7. Full Computer Course (12 months) — ₹12,000
+
+KEY BENEFITS:
+- Government certified certificate (Kerala State Rutronix)
+- AI-enabled modern curriculum
+- 100% placement assistance
+- Flexible batch timings (morning/evening)
+- EMI facility available
+- Free demo class available
+
+CONTACT:
+- WhatsApp: This chat
+- Website: theoxfordedu.com
+- Location: Near Malayinkeezhu Junction, Thiruvananthapuram
+
+YOUR BEHAVIOR:
+- Reply in the same language the student uses (Malayalam or English)
+- Be warm, friendly, and encouraging
+- Never give wrong information — if unsure, ask them to call
+- Always encourage demo class booking
+- Keep replies concise and helpful
+- Use simple language, avoid jargon
+- Add relevant emojis to make it friendly
+"""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# KEYWORD FAST REPLIES (No AI needed — instant response)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KEYWORD_REPLIES = {
+    # Demo class keywords
+    "demo": (
+        "🎓 *Free Demo Class* — The Oxford Computers\n\n"
+        "നിങ്കൾക്ക് ഏത് course-ൽ interest ആണ്?\n\n"
+        "1️⃣ MS Office & Tally\n"
+        "2️⃣ Web Design\n"
+        "3️⃣ Python & AI\n"
+        "4️⃣ Digital Marketing\n"
+        "5️⃣ Hardware & Networking\n\n"
+        "Number reply ചെയ്യൂ — demo book ചെയ്യാം! 📅"
+    ),
+    "free class": (
+        "🎓 *Free Demo Class* — The Oxford Computers\n\n"
+        "നിങ്കൾക്ക് ഏത് course-ൽ interest ആണ്?\n\n"
+        "1️⃣ MS Office & Tally\n"
+        "2️⃣ Web Design\n"
+        "3️⃣ Python & AI\n"
+        "4️⃣ Digital Marketing\n"
+        "5️⃣ Hardware & Networking\n\n"
+        "Number reply ചെയ്യൂ — demo book ചെയ്യാം! 📅"
+    ),
+
+    # Fee / course details
+    "fee": (
+        "💰 *Course Fees Information*\n\n"
+        "Oxford Computers-ൽ courses എല്ലാം *Kerala State Rutronix approved* ആണ്.\n\n"
+        "📢 *Government prescribed fees മാത്രമാണ് ഈടാക്കുന്നത്.*\n\n"
+        "🎁 Special offers & discounts ലഭിക്കാൻ:\n\n"
+        "📞 *9447329972*\n\n"
+        "Or visit:\n"
+        "📍 Oxford Computers, Malayinkeezhu\n"
+        "🌐 theoxfordedu.com"
+    ),
+    "fees": (
+        "💰 *Course Fees Information*\n\n"
+        "Oxford Computers-ൽ courses എല്ലാം *Kerala State Rutronix approved* ആണ്.\n\n"
+        "📢 *Government prescribed fees മാത്രമാണ് ഈടാക്കുന്നത്.*\n\n"
+        "🎁 Special offers & discounts ലഭിക്കാൻ:\n\n"
+        "📞 *9447329972*\n\n"
+        "Or visit:\n"
+        "📍 Oxford Computers, Malayinkeezhu\n"
+        "🌐 theoxfordedu.com"
+    ),
+    "price": (
+        "💰 *Course Fees Information*\n\n"
+        "Oxford Computers-ൽ courses എല്ലാം *Kerala State Rutronix approved* ആണ്.\n\n"
+        "📢 *Government prescribed fees മാത്രമാണ് ഈടാക്കുന്നത്.*\n\n"
+        "🎁 Special offers & discounts ലഭിക്കാൻ:\n\n"
+        "📞 *9447329972*\n\n"
+        "Or visit:\n"
+        "📍 Oxford Computers, Malayinkeezhu\n"
+        "🌐 theoxfordedu.com"
+    ),
+
+    # Location
+    "address": (
+        "📍 *The Oxford Computers*\n"
+        "Malayinkeezhu Junction\n"
+        "Thiruvananthapuram, Kerala\n\n"
+        "🌐 theoxfordedu.com\n\n"
+        "Bus route: Malayinkeezhu bus stop-ൽ നിന്ന് 2 minutes walk"
+    ),
+    "location": (
+        "📍 *The Oxford Computers*\n"
+        "Malayinkeezhu Junction\n"
+        "Thiruvananthapuram, Kerala\n\n"
+        "🌐 theoxfordedu.com\n\n"
+        "Bus route: Malayinkeezhu bus stop-ൽ നിന്ന് 2 minutes walk"
+    ),
+    "എവിടെ": (
+        "📍 *The Oxford Computers*\n"
+        "Malayinkeezhu Junction\n"
+        "Thiruvananthapuram, Kerala\n\n"
+        "🌐 theoxfordedu.com\n\n"
+        "Malayinkeezhu bus stop-ൽ നിന്ന് 2 minutes walk 🚶"
+    ),
+
+    # Certificate
+    "certificate": (
+        "🏆 *Government Certified Certificate*\n\n"
+        "The Oxford Computers-ൽ നിന്നുള്ള certificate:\n"
+        "✅ Kerala State Rutronix approved\n"
+        "✅ Government recognized\n"
+        "✅ Job interviews-ൽ valid\n"
+        "✅ Higher studies-നു് accepted\n\n"
+        "ഇത് ഒരു real government-backed certification ആണ്! 💪"
+    ),
+
+    # Placement
+    "job": (
+        "💼 *Placement Support*\n\n"
+        "The Oxford Computers:\n"
+        "✅ 100% placement assistance\n"
+        "✅ Resume preparation help\n"
+        "✅ Interview coaching\n"
+        "✅ Job referral network\n"
+        "✅ Alumni community\n\n"
+        "ഞങ്ങളുടെ students Kerala & Gulf-ൽ working ആണ്! 🌟"
+    ),
+    "placement": (
+        "💼 *Placement Support*\n\n"
+        "The Oxford Computers:\n"
+        "✅ 100% placement assistance\n"
+        "✅ Resume preparation help\n"
+        "✅ Interview coaching\n"
+        "✅ Job referral network\n"
+        "✅ Alumni community\n\n"
+        "ഞങ്ങളുടെ students Kerala & Gulf-ൽ working ആണ്! 🌟"
+    ),
+
+    # Timing
+    "timing": (
+        "⏰ *Batch Timings*\n\n"
+        "🌅 Morning Batch: 9:00 AM – 11:00 AM\n"
+        "☀️ Afternoon Batch: 12:00 PM – 2:00 PM\n"
+        "🌆 Evening Batch: 5:00 PM – 7:00 PM\n\n"
+        "Weekend batches also available! 📅\n\n"
+        "Preferred timing പറഞ്ഞാൽ book ചെയ്യാം!"
+    ),
+    "batch": (
+        "⏰ *Batch Timings*\n\n"
+        "🌅 Morning Batch: 9:00 AM – 11:00 AM\n"
+        "☀️ Afternoon Batch: 12:00 PM – 2:00 PM\n"
+        "🌆 Evening Batch: 5:00 PM – 7:00 PM\n\n"
+        "Weekend batches also available! 📅\n\n"
+        "Preferred timing പറഞ്ഞാൽ book ചെയ്യാം!"
+    ),
+
+    # Greetings — None means use welcome message
+    "hi": None,
+    "hello": None,
+    "hii": None,
+    "നമസ്കാരം": None,
+    "hai": None,
+}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WEBHOOK VERIFICATION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/webhook", methods=["GET"])
+def verify_webhook():
+    mode      = request.args.get("hub.mode")
+    token     = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        print("✅ Webhook verified!")
+        return challenge, 200
+    return "Forbidden", 403
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# RECEIVE & PROCESS MESSAGES
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/webhook", methods=["POST"])
+def receive_message():
+    data = request.get_json()
+
+    try:
+        entry   = data["entry"][0]
+        changes = entry["changes"][0]
+        value   = changes["value"]
+
+        # Ignore delivery/read status updates
+        if "statuses" in value:
+            return jsonify({"status": "ok"}), 200
+
+        messages = value.get("messages", [])
+        contacts = value.get("contacts", [])
+
+        if not messages:
+            return jsonify({"status": "ok"}), 200
+
+        message      = messages[0]
+        from_number  = message["from"]
+        msg_type     = message.get("type", "")
+        contact_name = contacts[0]["profile"]["name"] if contacts else "Student"
+
+        if msg_type == "text":
+            msg_text = message["text"]["body"].strip()
+        elif msg_type == "button":
+            msg_text = message["button"]["text"]
+        else:
+            msg_text = f"[{msg_type}]"
+
+        print(f"📱 {contact_name} ({from_number}): {msg_text}")
+
+        # Track whether this is a brand new lead
+        is_new_lead = from_number not in conversation_state
+        conversation_state[from_number] = {
+            "name": contact_name,
+            "stage": conversation_state.get(from_number, {}).get("stage", "new"),
+            "last_msg": datetime.now().isoformat(),
+            "last_text": msg_text
+        }
+
+        # 1. Save to Google Sheets CRM (non-blocking)
+        threading.Thread(
+            target=save_lead_to_sheets,
+            args=(from_number, contact_name, msg_text, is_new_lead)
+        ).start()
+
+        # 2. Generate and send smart reply
+        reply = get_smart_reply(msg_text, contact_name, from_number, is_new_lead)
+        send_whatsapp_message(from_number, reply)
+
+        # 3. Schedule follow-ups for new leads only
+        if is_new_lead:
+            schedule_followups(from_number, contact_name)
+
+    except Exception as e:
+        print(f"❌ Webhook error: {e}")
+
+    return jsonify({"status": "ok"}), 200
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SMART REPLY ENGINE
+# Priority: New Lead Welcome → Keyword → Course Number → Gemini AI → Fallback
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def get_smart_reply(msg_text, name, phone, is_new_lead):
+    msg_lower = msg_text.lower().strip()
+
+    # New lead — always send welcome first
+    if is_new_lead:
+        return get_welcome_message(name)
+
+    # Check keywords (fast, zero AI cost)
+    for keyword, reply in KEYWORD_REPLIES.items():
+        if keyword in msg_lower:
+            if reply is None:  # Greeting keyword
+                return get_welcome_message(name)
+            return reply
+
+    # Course number selection (after demo prompt)
+    if msg_lower in ["1", "2", "3", "4", "5"]:
+        courses = {
+            "1": "MS Office & Tally",
+            "2": "Web Design & Development",
+            "3": "Python & AI Tools",
+            "4": "Digital Marketing",
+            "5": "Hardware & Networking"
+        }
+        course = courses.get(msg_lower, "")
+        if course:
+            conversation_state[phone]["stage"] = "demo_requested"
+            conversation_state[phone]["course"] = course
+            threading.Thread(
+                target=update_lead_status,
+                args=(phone, f"Demo Requested: {course}")
+            ).start()
+            return (
+                f"✅ *{course}* — Great choice!\n\n"
+                f"📅 Demo class schedule:\n"
+                f"• Morning: 9 AM – 11 AM\n"
+                f"• Evening: 5 PM – 7 PM\n\n"
+                f"Preferred time ഏതാണ്? ഞങ്ങൾ confirm ചെയ്യാം! 🙌\n\n"
+                f"📍 The Oxford Computers, Malayinkeezhu"
+            )
+
+    # Use Gemini AI for everything else
+    if gemini_client:
+        return get_gemini_reply(msg_text, name)
+
+    # Fallback if no AI configured
+    return get_fallback_reply(name)
+
+
+def get_welcome_message(name):
+    return (
+        f"👋 നമസ്കാരം *{name}*!\n\n"
+        f"*The Oxford Computers*-ലേക്ക് സ്വാഗതം! 🎓\n\n"
+        f"Kerala Government certified, AI-enabled courses:\n\n"
+        f"📚 MS Office & Tally\n"
+        f"🌐 Web Design & Development\n"
+        f"🐍 Python & AI Tools\n"
+        f"📱 Digital Marketing\n"
+        f"🖥️ Hardware & Networking\n\n"
+        f"📍 Malayinkeezhu, Thiruvananthapuram\n"
+        f"🌐 theoxfordedu.com\n\n"
+        f"Free demo class-നായി *DEMO* reply ചെയ്യൂ! 🙌\n"
+        f"Fees അറിയാൻ *FEES* reply ചെയ്യൂ! 💰"
+    )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ✅ GEMINI AI REPLY — New google-genai SDK
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def get_gemini_reply(msg_text, name):
+    """Get AI-powered reply using google-genai SDK"""
+    try:
+        prompt = f"""
+{INSTITUTE_INFO}
+
+Student name: {name}
+Student message: "{msg_text}"
+
+Reply as the Oxford Computers AI assistant. Keep reply under 200 words.
+Use Malayalam if student wrote in Malayalam, English if in English.
+Always end with an actionable suggestion (demo class, call, visit).
+"""
+        # ✅ New SDK: client.models.generate_content()
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        return response.text.strip()
+
+    except Exception as e:
+        print(f"⚠️ Gemini error: {e}")
+        return get_fallback_reply(name)
+
+
+def get_fallback_reply(name):
+    return (
+        f"നന്ദി {name}! 😊\n\n"
+        f"കൂടുതൽ വിവരങ്ങൾക്ക്:\n"
+        f"🌐 theoxfordedu.com\n"
+        f"📍 Malayinkeezhu, Thiruvananthapuram\n\n"
+        f"Free demo class-നായി *DEMO* reply ചെയ്യൂ! 🎓"
+    )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# GOOGLE SHEETS CRM
+# Sheet columns: Timestamp | Name | Phone | Last Message | Status | Source | Notes
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def get_sheet():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # ✅ FIXED: reads GOOGLE_CREDENTIALS env var (matches Railway dashboard)
+    creds_json = json.loads(GOOGLE_CREDENTIALS_JSON)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
+    client = gspread.authorize(creds)
+    return client.open_by_key(SHEETS_ID)
+
+
+def save_lead_to_sheets(phone, name, message, is_new_lead):
+    """Save or update lead in Google Sheets"""
+    try:
+        if not SHEETS_ID or not GOOGLE_CREDENTIALS_JSON or GOOGLE_CREDENTIALS_JSON == "{}":
+            print("⚠️ Sheets skipped — SHEETS_ID or GOOGLE_CREDENTIALS not configured")
+            return
+
+        wb = get_sheet()
+
+        # Use 'Leads' sheet if it exists, otherwise use first sheet
+        sheet_titles = [s.title for s in wb.worksheets()]
+        leads_sheet = wb.worksheet("Leads") if "Leads" in sheet_titles else wb.sheet1
+
+        # Setup header row if sheet is empty
+        first_cell = leads_sheet.cell(1, 1).value
+        if not first_cell:
+            leads_sheet.update("A1:G1", [
+                ["Timestamp", "Name", "Phone", "Last Message", "Status", "Source", "Notes"]
+            ])
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if is_new_lead:
+            row = [timestamp, name, phone, message, "New Lead", "WhatsApp", ""]
+            leads_sheet.append_row(row)
+            print(f"✅ New lead saved: {name} ({phone})")
+        else:
+            all_phones = leads_sheet.col_values(3)
+            if phone in all_phones:
+                row_idx = all_phones.index(phone) + 1
+                leads_sheet.update_cell(row_idx, 1, timestamp)
+                leads_sheet.update_cell(row_idx, 4, message)
+                print(f"✅ Lead updated: {name} ({phone})")
+
+    except Exception as e:
+        print(f"⚠️ Sheets error: {e}")
+
+
+def update_lead_status(phone, status):
+    """Update lead status column in Google Sheets"""
+    try:
+        if not SHEETS_ID or not GOOGLE_CREDENTIALS_JSON or GOOGLE_CREDENTIALS_JSON == "{}":
+            return
+        wb = get_sheet()
+        sheet_titles = [s.title for s in wb.worksheets()]
+        leads_sheet = wb.worksheet("Leads") if "Leads" in sheet_titles else wb.sheet1
+        all_phones = leads_sheet.col_values(3)
+        if phone in all_phones:
+            row_idx = all_phones.index(phone) + 1
+            leads_sheet.update_cell(row_idx, 5, status)
+            print(f"✅ Status updated: {phone} → {status}")
+    except Exception as e:
+        print(f"⚠️ Status update error: {e}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# MULTI-DAY FOLLOW-UP SCHEDULER
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FOLLOWUP_MESSAGES = [
+    {
+        "day": 1,
+        "hours": 24,
+        "message": (
+            "{name}-നു് നമസ്കാരം! 👋\n\n"
+            "The Oxford Computers-ൽ നിന്ന്...\n\n"
+            "നിങ്കൾ course-നെ കുറിച്ച് ആലോചിച്ചോ? 🤔\n\n"
+            "ഒരു *free demo class* try ചെയ്ത് നോക്കൂ —\n"
+            "zero commitment, 100% free! 🎓\n\n"
+            "*DEMO* reply ചെയ്താൽ book ചെയ്യാം!"
+        )
+    },
+    {
+        "day": 3,
+        "hours": 72,
+        "message": (
+            "👋 {name}, Oxford Computers here!\n\n"
+            "🌟 *Student Success Story*\n\n"
+            "Riya (Attingal) — Web Design course complete ചെയ്ത്\n"
+            "ഇപ്പോൾ ₹25,000/month earn ചെയ്യുന്നു! 💪\n\n"
+            "താങ്കൾക്കും ഇത് possible ആണ്.\n"
+            "Government certified course + Placement support.\n\n"
+            "📅 Next batch starting soon!\n"
+            "Seat reserve ചെയ്യാൻ reply ചെയ്യൂ 🙌"
+        )
+    },
+    {
+        "day": 7,
+        "hours": 168,
+        "message": (
+            "{name}, last message! 😊\n\n"
+            "The Oxford Computers — *Special Offer*\n\n"
+            "🎁 ഈ batch-ൽ join ചെയ്യുന്നവർക്ക്:\n"
+            "✅ Free registration (₹500 waived)\n"
+            "✅ Free study materials\n"
+            "✅ Flexible EMI option\n\n"
+            "📍 Malayinkeezhu, Trivandrum\n"
+            "🌐 theoxfordedu.com\n\n"
+            "കൂടുതൽ info: *FEES* അല്ലെങ്കിൽ *DEMO* reply ചെയ്യൂ!"
+        )
+    }
+]
+
+
+def schedule_followups(phone, name):
+    """Schedule multi-day follow-up messages for a new lead"""
+    now = datetime.now()
+    for followup in FOLLOWUP_MESSAGES:
+        send_at = now + timedelta(hours=followup["hours"])
+        follow_up_queue.append({
+            "phone": phone,
+            "name": name,
+            "send_at": send_at,
+            "message": followup["message"].format(name=name),
+            "day": followup["day"],
+            "done": False
+        })
+    print(f"📅 Follow-ups scheduled for {name} ({phone})")
+
+
+def process_followup_queue():
+    """Background thread — checks every 5 min and sends due follow-ups"""
+    while True:
+        try:
+            now = datetime.now()
+            for item in follow_up_queue:
+                if not item["done"] and now >= item["send_at"]:
+                    # Skip if lead replied within last 6 hours (they're active)
+                    state = conversation_state.get(item["phone"], {})
+                    last_msg_time = state.get("last_msg", "")
+                    if last_msg_time:
+                        last_dt = datetime.fromisoformat(last_msg_time)
+                        if (now - last_dt).total_seconds() < 21600:  # 6 hours
+                            item["done"] = True
+                            print(f"⏭️ Follow-up skipped — {item['name']} recently active")
+                            continue
+
+                    send_whatsapp_message(item["phone"], item["message"])
+                    threading.Thread(
+                        target=update_lead_status,
+                        args=(item["phone"], f"Follow-up Day {item['day']} Sent")
+                    ).start()
+                    item["done"] = True
+                    print(f"📤 Follow-up Day {item['day']} sent to {item['name']}")
+
+        except Exception as e:
+            print(f"⚠️ Follow-up queue error: {e}")
+
+        time.sleep(300)  # Check every 5 minutes
+
+
+# Start background follow-up processor
+followup_thread = threading.Thread(target=process_followup_queue, daemon=True)
+followup_thread.start()
+print("✅ Follow-up scheduler started")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SEND WHATSAPP MESSAGE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def send_whatsapp_message(to_number, message_text):
+    """Send a plain text WhatsApp message"""
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "text",
+        "text": {"body": message_text}
+    }
+    resp = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
+    print(f"📤 Sent to {to_number}: HTTP {resp.status_code}")
+    return resp
+
+
+def send_template_message(to_number, template_name, lang="en"):
+    """Send a Meta-approved template message"""
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "template",
+        "template": {"name": template_name, "language": {"code": lang}}
+    }
+    return requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BROADCAST API
+# POST /broadcast  |  Header: X-API-Key
+# Body: { "numbers": [...], "message": "...", "delay_seconds": 2 }
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/broadcast", methods=["POST"])
+def broadcast():
+    if request.headers.get("X-API-Key") != BROADCAST_API_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data    = request.get_json()
+    numbers = data.get("numbers", [])
+    message = data.get("message", "")
+    delay   = data.get("delay_seconds", 2)
+
+    if not numbers or not message:
+        return jsonify({"error": "numbers and message are required"}), 400
+
+    results = []
+    for number in numbers:
+        # Normalize to Indian format
+        number = str(number).strip()
+        if not number.startswith("91"):
+            number = "91" + number.lstrip("0")
+
+        resp = send_whatsapp_message(number, message)
+        results.append({
+            "number": number,
+            "status": resp.status_code,
+            "success": resp.status_code == 200
+        })
+        time.sleep(delay)  # Rate limiting
+
+    success_count = sum(1 for r in results if r["success"])
+    return jsonify({
+        "total": len(numbers),
+        "success": success_count,
+        "failed": len(numbers) - success_count,
+        "results": results
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ADMIN STATS API
+# GET /stats  |  Header: X-Admin-Key
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/stats", methods=["GET"])
+def stats():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    total_leads       = len(conversation_state)
+    demo_requests     = sum(1 for s in conversation_state.values() if s.get("stage") == "demo_requested")
+    pending_followups = sum(1 for f in follow_up_queue if not f["done"])
+
+    return jsonify({
+        "total_leads": total_leads,
+        "demo_requests": demo_requests,
+        "pending_followups": pending_followups,
+        "active_conversations": [
+            {
+                "name": v["name"],
+                "last_message": v.get("last_text", ""),
+                "stage": v.get("stage", "new"),
+                "last_active": v.get("last_msg", "")
+            }
+            for v in conversation_state.values()
+        ]
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# MANUAL FOLLOW-UP TRIGGER (testing / admin use)
+# POST /trigger-followup  |  Header: X-Admin-Key
+# Body: { "phone": "919...", "name": "...", "message": "..." }
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/trigger-followup", methods=["POST"])
+def trigger_followup():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data    = request.get_json()
+    phone   = data.get("phone", "")
+    name    = data.get("name", "Student")
+    message = data.get("message", "")
+
+    if not phone or not message:
+        return jsonify({"error": "phone and message are required"}), 400
+
+    if not phone.startswith("91"):
+        phone = "91" + phone.lstrip("0")
+
+    resp = send_whatsapp_message(phone, message)
+    return jsonify({
+        "success": resp.status_code == 200,
+        "status": resp.status_code,
+        "phone": phone
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BROADCAST ADMIN PANEL
+# GET /panel?key=<ADMIN_KEY>
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/panel", methods=["GET"])
+def admin_panel():
+    admin_key = request.args.get("key", "")
+    if admin_key != ADMIN_KEY:
+        return """
+        <html>
+        <body style='font-family:sans-serif;text-align:center;padding:50px;
+                     background:#0a0f0d;color:#25D366'>
+          <h2>🔒 Access Denied</h2>
+          <p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>
+        </body>
+        </html>
+        """, 403
+
+    try:
+        with open("panel.html", "r", encoding="utf-8") as f:
+            return f.read(), 200, {"Content-Type": "text/html"}
+    except FileNotFoundError:
+        return "panel.html not found in project root", 404
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# HEALTH CHECK
+# GET /
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "running ✅",
+        "app": "Oxford Computers WhatsApp AI System v2.1",
+        "sdk": "google-genai (new)",
+        "features": [
+            "Google Sheets CRM",
+            "Gemini AI Chatbot (gemini-2.0-flash)",
+            "Keyword Fast Replies",
+            "Broadcast API",
+            "Multi-day Follow-up Scheduler"
+        ],
+        "leads_in_memory": len(conversation_state),
+        "pending_followups": sum(1 for f in follow_up_queue if not f["done"]),
+        "gemini_active": gemini_client is not None,
+        "sheets_configured": bool(SHEETS_ID and GOOGLE_CREDENTIALS_JSON != "{}")
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ENTRY POINT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
