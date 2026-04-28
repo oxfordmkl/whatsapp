@@ -287,7 +287,8 @@ KEYWORD_REPLIES = {
         "📞 *9447329972*\n\n"
         "Or visit:\n"
         "📍 Oxford Computers, Malayinkeezhu\n"
-        "🌐 theoxfordedu.com"
+        "🌐 theoxfordedu.com\n\n"
+        "🔥 Today's Special Offer കാണാൻ *OFFER* type cheyyoo!"
     ),
     "fees": (
         "💰 *Course Fees Information*\n\n"
@@ -297,7 +298,8 @@ KEYWORD_REPLIES = {
         "📞 *9447329972*\n\n"
         "Or visit:\n"
         "📍 Oxford Computers, Malayinkeezhu\n"
-        "🌐 theoxfordedu.com"
+        "🌐 theoxfordedu.com\n\n"
+        "🔥 Today's Special Offer കാണാൻ *OFFER* type cheyyoo!"
     ),
     "price": (
         "💰 *Course Fees Information*\n\n"
@@ -307,7 +309,8 @@ KEYWORD_REPLIES = {
         "📞 *9447329972*\n\n"
         "Or visit:\n"
         "📍 Oxford Computers, Malayinkeezhu\n"
-        "🌐 theoxfordedu.com"
+        "🌐 theoxfordedu.com\n\n"
+        "🔥 Today's Special Offer കാണാൻ *OFFER* type cheyyoo!"
     ),
 
     # Location
@@ -536,7 +539,117 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
             f"🌐 theoxfordedu.com"
         )
 
-    # 3. Handle explicit 'demo' keyword at any stage
+    # 3. State: offer_selection (Waiting for offer course 1/2/3/4)
+    if current_stage == "offer_selection":
+        if msg_lower == "1":
+            state["stage"] = "payment_sent"
+            state["offer_course"] = "CWPDE"
+            return (
+                "✅ *CWPDE — Great Choice!*\n\n"
+                "📚 Certificate in Word Processing & Data Entry\n"
+                "⏱ Duration: 3 Months\n"
+                "🎓 Certificate: Rutronix Approved\n"
+                "💰 Special Price: *₹4,800*\n"
+                "📌 Exam Fee: separately as per Rutronix norms\n\n"
+                "👇 *Secure Payment Link:*\n"
+                "https://rzp.io/rzp/xkWdKtd\n\n"
+                "Payment ചെയ്ത ശേഷം:\n"
+                "📩 Transaction ID ഇവിടെ reply cheyyoo\n"
+                "(Example: T2504281234)\n\n"
+                "Seat ഉടൻ confirm ആകും! 🎉\n"
+                "📍 The Oxford Computers, Malayinkeezhu\n"
+                "📞 9447329972"
+            )
+        elif msg_lower == "2":
+            state["stage"] = "payment_sent"
+            state["offer_course"] = "DCA"
+            return (
+                "✅ *DCA — Great Choice!*\n\n"
+                "📚 Diploma in Computer Applications (Fast Track)\n"
+                "⏱ Duration: 6 Months\n"
+                "🎓 Certificate: Rutronix + State Approved\n"
+                "💰 Special Price: *₹6,400*\n"
+                "📌 Exam Fee: separately as per Rutronix norms\n\n"
+                "👇 *Secure Payment Link:*\n"
+                "https://rzp.io/rzp/mJPPtM9x\n\n"
+                "Payment ചെയ്ത ശേഷം:\n"
+                "📩 Transaction ID ഇവിടെ reply cheyyoo\n"
+                "(Example: T2504281234)\n\n"
+                "Seat ഉടൻ confirm ആകും! 🎉\n"
+                "📍 The Oxford Computers, Malayinkeezhu\n"
+                "📞 9447329972"
+            )
+        elif msg_lower == "3":
+            state["stage"] = "payment_sent"
+            state["offer_course"] = "AIDM"
+            return (
+                "✅ *AIDM — Great Choice!*\n\n"
+                "📚 AI-Driven Digital Marketing\n"
+                "⏱ Duration: 6 Months\n"
+                "🎓 Certificate: Industry Recognized\n"
+                "💰 Special Price: *₹19,999*\n"
+                "📌 Exam Fee: separately as per Rutronix norms\n\n"
+                "👇 *Secure Payment Link:*\n"
+                "https://rzp.io/rzp/vF76sj7Y\n\n"
+                "Payment ചെയ്ത ശേഷം:\n"
+                "📩 Transaction ID ഇവിടെ reply cheyyoo\n"
+                "(Example: T2504281234)\n\n"
+                "Seat ഉടൻ confirm ആകും! 🎉\n"
+                "📍 The Oxford Computers, Malayinkeezhu\n"
+                "📞 9447329972"
+            )
+        elif msg_lower == "4":
+            state["stage"] = "payment_sent"
+            state["offer_course"] = "PGDCA"
+            return (
+                "✅ *PGDCA — Great Choice!*\n\n"
+                "📚 Post Graduate Diploma in Computer Applications\n"
+                "⏱ Duration: 12 Months\n"
+                "🎓 Certificate: Rutronix + State Approved\n"
+                "💰 Special Price: *₹15,999*\n"
+                "📌 Exam Fee: separately as per Rutronix norms\n\n"
+                "👇 *Secure Payment Link:*\n"
+                "https://rzp.io/rzp/KAQ2C7t\n\n"
+                "Payment ചെയ്ത ശേഷം:\n"
+                "📩 Transaction ID ഇവിടെ reply cheyyoo\n"
+                "(Example: T2504281234)\n\n"
+                "Seat ഉടൻ confirm ആകും! 🎉\n"
+                "📍 The Oxford Computers, Malayinkeezhu\n"
+                "📞 9447329972"
+            )
+        else:
+            return "Please reply with 1, 2, 3, or 4 to select an offer."
+
+    # 4. State: payment_sent (Waiting for transaction ID)
+    if current_stage == "payment_sent":
+        user_txn = msg_text.strip()
+        state["stage"] = "enrolled"
+        offer_course = state.get("offer_course", "Unknown")
+        
+        note_timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M]")
+        note_msg = f"{note_timestamp} OFFER Payment: {user_txn} Course: {offer_course}"
+        status_msg = f"Payment Received: {user_txn}"
+        
+        threading.Thread(
+            target=update_lead_status,
+            args=(phone, status_msg, note_msg)
+        ).start()
+        
+        return (
+            f"🎉 *Payment Received!*\n\n"
+            f"✅ Transaction ID: {user_txn}\n"
+            f"📚 Course: {offer_course}\n"
+            f"👤 Name: {name}\n\n"
+            f"Seat confirmed! Welcome to \n"
+            f"*The Oxford Computers* 🎓\n\n"
+            f"📞 Next step: 9447329972 ലേക്ക് \n"
+            f"വിളിക്കൂ — batch details കിട്ടും!\n\n"
+            f"📍 Malayinkeezhu, Thiruvananthapuram\n"
+            f"🌐 theoxfordedu.com\n\n"
+            f"കാണാൻ കാത്തിരിക്കുന്നു! 😊"
+        )
+
+    # 5. Handle explicit 'demo' keyword at any stage
     if msg_lower == "demo" or msg_lower == "free class":
         state["stage"] = "demo_time_selection"
         return (
@@ -548,7 +661,33 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
             "Number reply cheyyoo! 📅"
         )
 
-    # 4. Course number selection (1-10)
+    # 6. Handle explicit 'offer' keyword at any stage
+    if "offer" in msg_lower:
+        state["stage"] = "offer_selection"
+        return (
+            "🔥 *Today's Special Offer!*\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "🎓 Kerala State Rutronix Approved\n\n"
+            "1️⃣ CWPDE — Word Processing & Data Entry\n"
+            "   💰 Special Price: *₹4,800*\n"
+            "   ⏱ Duration: 6 Months\n\n"
+            "2️⃣ DCA — Diploma in Computer Applications\n"
+            "   💰 Special Price: *₹6,400*\n"
+            "   ⏱ Duration: 6 Months\n\n"
+            "3️⃣ AIDM — AI-Driven Digital Marketing\n"
+            "   💰 Special Price: *₹19,999*\n"
+            "   ⏱ Duration: 6 Months\n\n"
+            "4️⃣ PGDCA — Post Graduate Diploma\n"
+            "   💰 Special Price: *₹15,999*\n"
+            "   ⏱ Duration: 12 Months\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "⚡ Limited Time Offer!\n"
+            "📅 Seats limited — Book now!\n\n"
+            "Number reply cheyyoo — \n"
+            "Payment link ഉടൻ അയക്കാം! 💳"
+        )
+
+    # 7. Course number selection (1-10)
     if msg_lower in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
         courses = {
             "1": ("PGDCA", _PGDCA_MSG),
@@ -577,7 +716,7 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
                 f"📍 The Oxford Computers, Malayinkeezhu"
             )
 
-    # 5. Check keywords (fast, zero AI cost)
+    # 8. Check keywords (fast, zero AI cost)
     for keyword, reply in KEYWORD_REPLIES.items():
         if keyword in msg_lower:
             if reply is None:  # Greeting keyword
@@ -708,7 +847,7 @@ def save_lead_to_sheets(phone, name, message, is_new_lead):
         print(f"⚠️ Sheets error: {e}")
 
 
-def update_lead_status(phone, status):
+def update_lead_status(phone, status, append_note=None):
     """Update lead status column in Google Sheets"""
     try:
         if not SHEETS_ID or not GOOGLE_CREDENTIALS_JSON or GOOGLE_CREDENTIALS_JSON == "{}":
@@ -720,6 +859,10 @@ def update_lead_status(phone, status):
         if phone in all_phones:
             row_idx = all_phones.index(phone) + 1
             leads_sheet.update_cell(row_idx, 5, status)
+            if append_note:
+                existing_note = leads_sheet.cell(row_idx, 7).value or ""
+                new_note = f"{existing_note}\n{append_note}" if existing_note else append_note
+                leads_sheet.update_cell(row_idx, 7, new_note)
             print(f"✅ Status updated: {phone} → {status}")
     except Exception as e:
         print(f"⚠️ Status update error: {e}")
