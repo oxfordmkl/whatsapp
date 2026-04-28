@@ -505,31 +505,29 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
     # Course number selection (after demo prompt)
     if msg_lower in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
         courses = {
-            "1": "PGDCA",
-            "2": "AIDM Digital Marketing",
-            "3": "SAP Financial Accounting",
-            "4": "Python Programming",
-            "5": "GST & Payroll",
-            "6": "DCA Fast Track",
-            "7": "Computer Teacher Training",
-            "8": "Corporate Business Accounting",
-            "9": "Word Processing & Data Entry",
-            "10": "Professional Diploma in Web Designing"
+            "1": ("PGDCA", _PGDCA_MSG),
+            "2": ("AIDM Digital Marketing", _AIDM_MSG),
+            "3": ("SAP Financial Accounting", _SAP_MSG),
+            "4": ("Python Programming", _PYTHON_MSG),
+            "5": ("GST & Payroll", _GST_MSG),
+            "6": ("DCA Fast Track", _DCA_MSG),
+            "7": ("Computer Teacher Training", _TEACHER_MSG),
+            "8": ("Corporate Business Accounting", _ACCOUNTING_MSG),
+            "9": ("Word Processing & Data Entry", _WORD_MSG),
+            "10": ("Professional Diploma in Web Designing", _WEB_MSG)
         }
-        course = courses.get(msg_lower, "")
-        if course:
+        course_info = courses.get(msg_lower)
+        if course_info:
+            course_name, course_details = course_info
             conversation_state[phone]["stage"] = "demo_requested"
-            conversation_state[phone]["course"] = course
+            conversation_state[phone]["course"] = course_name
             threading.Thread(
                 target=update_lead_status,
-                args=(phone, f"Demo Requested: {course}")
+                args=(phone, f"Demo Requested: {course_name}")
             ).start()
             return (
-                f"✅ *{course}* — Great choice!\n\n"
-                f"📅 Demo class schedule:\n"
-                f"• Morning: 9 AM – 11 AM\n"
-                f"• Evening: 5 PM – 7 PM\n\n"
-                f"Preferred time ഏതാണ്? ഞങ്ങൾ confirm ചെയ്യാം! 🙌\n\n"
+                f"✅ *{course_name}* — Great choice!\n\n"
+                f"{course_details}\n"
                 f"📍 The Oxford Computers, Malayinkeezhu"
             )
 
