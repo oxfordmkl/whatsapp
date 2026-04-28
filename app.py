@@ -117,169 +117,164 @@ YOUR BEHAVIOR:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # KEYWORD FAST REPLIES (No AI needed — instant response)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_COURSES_MSG = (
+    "1️⃣ PGDCA (12 Months)\n"
+    "2️⃣ AI-Driven Digital Marketing (6 Months)\n"
+    "3️⃣ SAP Financial Accounting (4-6 Months)\n"
+    "4️⃣ Python Programming (3 Months)\n"
+    "5️⃣ GST & Payroll Diploma (6 Months)\n"
+    "6️⃣ DCA Fast Track (6 Months)\n"
+    "7️⃣ Computer Teacher Training (1 Year)\n"
+    "8️⃣ Corporate Business Accounting (1 Year)\n"
+    "9️⃣ Word Processing & Data Entry (3 Months)\n"
+    "🔟 Professional Web Designing (6 Months)\n\n"
+    "Oru course-nte details ariyaan number reply cheyyoo! 🎓"
+)
+
+_PGDCA_MSG = (
+    "📚 *Post Graduate Diploma in Computer Applications (PGDCA)*\n"
+    "⏱ Duration: 12 Months\n"
+    "🎓 Certificate: Rutronix + State Approved\n"
+    "📋 Key Modules: Programming Fundamentals (C,C++,Java), DBMS, Web Development, Software Engineering, Computer Networks, Mobile App Development, Final Project & Internship\n"
+    "💡 Best for: Graduates seeking an IT career\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_AIDM_MSG = (
+    "📚 *AIDM - AI-Driven Digital Marketing*\n"
+    "⏱ Duration: 6 Months\n"
+    "🎓 Certificate: Industry Recognized\n"
+    "📋 Key Modules: Digital Marketing Fundamentals, SEO & Content Strategy, Social Media Marketing, Google Ads & Meta Ads, AI Tools (ChatGPT/Canva AI), Email Marketing & CRM, Live Campaign Projects\n"
+    "💡 Best for: Marketers, entrepreneurs, and beginners\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_SAP_MSG = (
+    "📚 *SAP Financial Accounting & Controlling*\n"
+    "⏱ Duration: 4-6 Months\n"
+    "🎓 Certificate: SAP Alliance Certificate\n"
+    "📋 Key Modules: Introduction to ERP & SAP, General Ledger Accounting, Accounts Payable & Receivable, Asset & Bank Accounting, SAP Controlling (CO), Real-Time SAP Project\n"
+    "💡 Best for: Commerce graduates and accounting professionals\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_PYTHON_MSG = (
+    "📚 *Python - Beginner to Advanced*\n"
+    "⏱ Duration: 3 Months\n"
+    "🎓 Certificate: Rutronix\n"
+    "📋 Key Modules: Python Fundamentals, OOP in Python, File Handling & Modules, Web Scraping, Flask Basics, Data Handling with Pandas, Automation Projects\n"
+    "💡 Best for: Beginners and IT aspirants\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_GST_MSG = (
+    "📚 *Diploma in GST Practitioner, Taxation & Payroll*\n"
+    "⏱ Duration: 6 Months\n"
+    "🎓 Certificate: Rutronix\n"
+    "📋 Key Modules: GST Concepts & Filing, Income Tax Basics, Tally Prime, Payroll Processing, E-filing & Returns\n"
+    "💡 Best for: Accounting professionals and commerce students\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_DCA_MSG = (
+    "📚 *Diploma in Computer Applications - Fast Track (DCA)*\n"
+    "⏱ Duration: 6 Months\n"
+    "🎓 Certificate: Rutronix + State\n"
+    "📋 Key Modules: Computer Fundamentals, MS Office Suite, Programming Basics, Internet & Email, Database Fundamentals, Data Entry & DTP\n"
+    "💡 Best for: Students and office job seekers\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_TEACHER_MSG = (
+    "📚 *Computer Teacher Training Course*\n"
+    "⏱ Duration: 1 Year\n"
+    "🎓 Certificate: Rutronix\n"
+    "📋 Key Modules: Computer Fundamentals Teaching, MS Office Pedagogy, Programming Basics, DTP Tools, Practice Teaching\n"
+    "💡 Best for: Aspiring computer teachers\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_ACCOUNTING_MSG = (
+    "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
+    "⏱ Duration: 1 Year\n"
+    "🎓 Certificate: Rutronix\n"
+    "📋 Key Modules: Corporate Accounting, GST Implementation, Income Tax Corporate, Financial Modelling, Real-World Case Studies\n"
+    "💡 Best for: Advanced accounting and finance careers\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_WORD_MSG = (
+    "📚 *Certificate in Word Processing & Data Entry*\n"
+    "⏱ Duration: 3 Months\n"
+    "🎓 Certificate: Rutronix\n"
+    "📋 Key Modules: Touch Typing, MS Word Processing, Data Entry Techniques, Basic DTP, Office Document Management\n"
+    "💡 Best for: Data entry professionals and beginners\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
+_WEB_MSG = (
+    "📚 *Professional Diploma in Web Designing*\n"
+    "⏱ Duration: 6 Months\n"
+    "🎓 Certificate: Rutronix\n"
+    "📋 Key Modules: HTML5 & CSS3 Advanced, JavaScript & jQuery, PHP & MySQL Basics, WordPress Development, Live Project Portfolio\n"
+    "💡 Best for: Aspiring web developers and designers\n\n"
+    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+)
+
 KEYWORD_REPLIES = {
     # Courses List
-    "courses": (
-        "📚 *Our Courses*\n\n"
-        "1️⃣ PGDCA (12 Months)\n"
-        "2️⃣ AI-Driven Digital Marketing (6 Months)\n"
-        "3️⃣ SAP Financial Accounting (4-6 Months)\n"
-        "4️⃣ Python Programming (3 Months)\n"
-        "5️⃣ GST & Payroll (6 Months)\n"
-        "6️⃣ DCA Fast Track (6 Months)\n"
-        "7️⃣ Computer Teacher Training (1 Year)\n"
-        "8️⃣ Corporate Business Accounting (1 Year)\n"
-        "9️⃣ Word Processing & Data Entry (3 Months)\n"
-        "🔟 Web Designing (6 Months)\n\n"
-        "Oru course-nte details ariyaan number reply cheyyoo! 🔢"
-    ),
+    "courses": _COURSES_MSG,
+    "course": _COURSES_MSG,
 
     # Individual Course Details
-    "pgdca": (
-        "📚 *Post Graduate Diploma in Computer Applications (PGDCA)*\n"
-        "⏱ Duration: 12 Months\n"
-        "🎓 Certificate: Rutronix + State Approved\n"
-        "📋 Key Modules: Programming Fundamentals (C,C++,Java), DBMS, Web Development, Software Engineering, Computer Networks, Mobile App Development, Final Project & Internship\n"
-        "💡 Best for: Graduates seeking an IT career\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "pgd": (
-        "📚 *Post Graduate Diploma in Computer Applications (PGDCA)*\n"
-        "⏱ Duration: 12 Months\n"
-        "🎓 Certificate: Rutronix + State Approved\n"
-        "📋 Key Modules: Programming Fundamentals (C,C++,Java), DBMS, Web Development, Software Engineering, Computer Networks, Mobile App Development, Final Project & Internship\n"
-        "💡 Best for: Graduates seeking an IT career\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "pgdca": _PGDCA_MSG,
+    "pgd": _PGDCA_MSG,
+    "post graduate": _PGDCA_MSG,
+    "pg diploma": _PGDCA_MSG,
 
-    "aidm": (
-        "📚 *AIDM - AI-Driven Digital Marketing*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Industry Recognized\n"
-        "📋 Key Modules: Digital Marketing Fundamentals, SEO & Content Strategy, Social Media Marketing, Google Ads & Meta Ads, AI Tools (ChatGPT/Canva AI), Email Marketing & CRM, Live Campaign Projects\n"
-        "💡 Best for: Marketers, entrepreneurs, and beginners\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "digital marketing": (
-        "📚 *AIDM - AI-Driven Digital Marketing*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Industry Recognized\n"
-        "📋 Key Modules: Digital Marketing Fundamentals, SEO & Content Strategy, Social Media Marketing, Google Ads & Meta Ads, AI Tools (ChatGPT/Canva AI), Email Marketing & CRM, Live Campaign Projects\n"
-        "💡 Best for: Marketers, entrepreneurs, and beginners\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "aidm": _AIDM_MSG,
+    "digital marketing": _AIDM_MSG,
+    "digital": _AIDM_MSG,
+    "marketing": _AIDM_MSG,
+    "seo": _AIDM_MSG,
+    "social media": _AIDM_MSG,
 
-    "sap": (
-        "📚 *SAP Financial Accounting & Controlling*\n"
-        "⏱ Duration: 4-6 Months\n"
-        "🎓 Certificate: SAP Alliance Certificate\n"
-        "📋 Key Modules: Introduction to ERP & SAP, General Ledger Accounting, Accounts Payable & Receivable, Asset & Bank Accounting, SAP Controlling (CO), Real-Time SAP Project\n"
-        "💡 Best for: Commerce graduates and accounting professionals\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "sap": _SAP_MSG,
+    "erp": _SAP_MSG,
+    "finance": _SAP_MSG,
 
-    "python": (
-        "📚 *Python - Beginner to Advanced*\n"
-        "⏱ Duration: 3 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: Python Fundamentals, OOP in Python, File Handling & Modules, Web Scraping, Flask Basics, Data Handling with Pandas, Automation Projects\n"
-        "💡 Best for: Beginners and IT aspirants\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "python": _PYTHON_MSG,
+    "programming": _PYTHON_MSG,
+    "coding": _PYTHON_MSG,
 
-    "gst": (
-        "📚 *Diploma in GST Practitioner, Taxation & Payroll*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: GST Concepts & Filing, Income Tax Basics, Tally Prime, Payroll Processing, E-filing & Returns\n"
-        "💡 Best for: Accounting professionals and commerce students\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "tally": (
-        "📚 *Diploma in GST Practitioner, Taxation & Payroll*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: GST Concepts & Filing, Income Tax Basics, Tally Prime, Payroll Processing, E-filing & Returns\n"
-        "💡 Best for: Accounting professionals and commerce students\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "taxation": (
-        "📚 *Diploma in GST Practitioner, Taxation & Payroll*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: GST Concepts & Filing, Income Tax Basics, Tally Prime, Payroll Processing, E-filing & Returns\n"
-        "💡 Best for: Accounting professionals and commerce students\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "gst": _GST_MSG,
+    "tally": _GST_MSG,
+    "tax": _GST_MSG,
+    "taxation": _GST_MSG,
+    "payroll": _GST_MSG,
+    "income tax": _GST_MSG,
 
-    "dca": (
-        "📚 *Diploma in Computer Applications - Fast Track (DCA)*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix + State\n"
-        "📋 Key Modules: Computer Fundamentals, MS Office Suite, Programming Basics, Internet & Email, Database Fundamentals, Data Entry & DTP\n"
-        "💡 Best for: Students and office job seekers\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "diploma": (
-        "📚 *Diploma in Computer Applications - Fast Track (DCA)*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix + State\n"
-        "📋 Key Modules: Computer Fundamentals, MS Office Suite, Programming Basics, Internet & Email, Database Fundamentals, Data Entry & DTP\n"
-        "💡 Best for: Students and office job seekers\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "dca": _DCA_MSG,
+    "diploma": _DCA_MSG,
+    "fast track": _DCA_MSG,
 
-    "teacher": (
-        "📚 *Computer Teacher Training Course*\n"
-        "⏱ Duration: 1 Year\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: Computer Fundamentals Teaching, MS Office Pedagogy, Programming Basics, DTP Tools, Practice Teaching\n"
-        "💡 Best for: Aspiring computer teachers\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "teacher": _TEACHER_MSG,
+    "teaching": _TEACHER_MSG,
+    "computer teacher": _TEACHER_MSG,
 
-    "accounting": (
-        "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
-        "⏱ Duration: 1 Year\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: Corporate Accounting, GST Implementation, Income Tax Corporate, Financial Modelling, Real-World Case Studies\n"
-        "💡 Best for: Advanced accounting and finance careers\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "accounting": _ACCOUNTING_MSG,
+    "corporate": _ACCOUNTING_MSG,
+    "business accounting": _ACCOUNTING_MSG,
 
-    "data entry": (
-        "📚 *Certificate in Word Processing & Data Entry*\n"
-        "⏱ Duration: 3 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: Touch Typing, MS Word Processing, Data Entry Techniques, Basic DTP, Office Document Management\n"
-        "💡 Best for: Data entry professionals and beginners\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "typing": (
-        "📚 *Certificate in Word Processing & Data Entry*\n"
-        "⏱ Duration: 3 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: Touch Typing, MS Word Processing, Data Entry Techniques, Basic DTP, Office Document Management\n"
-        "💡 Best for: Data entry professionals and beginners\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "data entry": _WORD_MSG,
+    "typing": _WORD_MSG,
+    "word processing": _WORD_MSG,
+    "ms word": _WORD_MSG,
 
-    "web design": (
-        "📚 *Professional Diploma in Web Designing*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: HTML5 & CSS3 Advanced, JavaScript & jQuery, PHP & MySQL Basics, WordPress Development, Live Project Portfolio\n"
-        "💡 Best for: Aspiring web developers and designers\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
-    "web": (
-        "📚 *Professional Diploma in Web Designing*\n"
-        "⏱ Duration: 6 Months\n"
-        "🎓 Certificate: Rutronix\n"
-        "📋 Key Modules: HTML5 & CSS3 Advanced, JavaScript & jQuery, PHP & MySQL Basics, WordPress Development, Live Project Portfolio\n"
-        "💡 Best for: Aspiring web developers and designers\n\n"
-        "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-    ),
+    "web design": _WEB_MSG,
+    "web": _WEB_MSG,
+    "wordpress": _WEB_MSG,
+    "html": _WEB_MSG,
 
     # Demo class keywords
     "demo": (
@@ -511,7 +506,7 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
     if msg_lower in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
         courses = {
             "1": "PGDCA",
-            "2": "AIDM - Digital Marketing",
+            "2": "AIDM Digital Marketing",
             "3": "SAP Financial Accounting",
             "4": "Python Programming",
             "5": "GST & Payroll",
@@ -519,7 +514,7 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
             "7": "Computer Teacher Training",
             "8": "Corporate Business Accounting",
             "9": "Word Processing & Data Entry",
-            "10": "Web Designing"
+            "10": "Professional Diploma in Web Designing"
         }
         course = courses.get(msg_lower, "")
         if course:
