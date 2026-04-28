@@ -276,19 +276,7 @@ KEYWORD_REPLIES = {
     "wordpress": _WEB_MSG,
     "html": _WEB_MSG,
 
-    # Demo class keywords
-    "demo": (
-        "🎓 *Free Demo Class* — The Oxford Computers\n\n"
-        "നിങ്കൾക്ക് ഏത് course-ൽ interest ആണ്?\n\n"
-        "Course details ariyaan *COURSES* reply cheyyoo! 📚\n\n"
-        "Number reply ചെയ്യൂ — demo book ചെയ്യാം! 📅"
-    ),
-    "free class": (
-        "🎓 *Free Demo Class* — The Oxford Computers\n\n"
-        "നിങ്കൾക്ക് ഏത് course-ൽ interest ആണ്?\n\n"
-        "Course details ariyaan *COURSES* reply cheyyoo! 📚\n\n"
-        "Number reply ചെയ്യൂ — demo book ചെയ്യാം! 📅"
-    ),
+    # Demo class keywords handled in get_smart_reply state machine
 
     # Fee / course details
     "fee": (
@@ -457,12 +445,16 @@ def receive_message():
 
         # Track whether this is a brand new lead
         is_new_lead = from_number not in conversation_state
-        conversation_state[from_number] = {
-            "name": contact_name,
-            "stage": conversation_state.get(from_number, {}).get("stage", "new"),
-            "last_msg": datetime.now().isoformat(),
-            "last_text": msg_text
-        }
+        if is_new_lead:
+            conversation_state[from_number] = {
+                "name": contact_name,
+                "stage": "new"
+            }
+        else:
+            conversation_state[from_number]["name"] = contact_name
+            
+        conversation_state[from_number]["last_msg"] = datetime.now().isoformat()
+        conversation_state[from_number]["last_text"] = msg_text
 
         # 1. Save to Google Sheets CRM (non-blocking)
         threading.Thread(
@@ -490,19 +482,73 @@ def receive_message():
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def get_smart_reply(msg_text, name, phone, is_new_lead):
     msg_lower = msg_text.lower().strip()
+    
+    # Ensure conversation_state has default keys
+    if phone not in conversation_state:
+        conversation_state[phone] = {
+            "name": name, 
+            "stage": "new", 
+            "course": "Not Selected",
+            "last_msg": datetime.now().isoformat(),
+            "last_text": msg_text
+        }
+        
+    state = conversation_state[phone]
+    current_stage = state.get("stage", "new")
+    course = state.get("course", "Not Selected")
 
-    # New lead — always send welcome first
-    if is_new_lead:
-        return get_welcome_message(name)
+    # 1. State: demo_time_selection (Waiting for batch time 1/2/3)
+    if current_stage == "demo_time_selection":
+        if msg_lower in ["1", "2", "3"]:
+            times = {"1": "Morning", "2": "Afternoon", "3": "Evening"}
+            selected_time = times[msg_lower]
+            state["batch_time"] = selected_time
+            state["stage"] = "demo_date_selection"
+            return (
+                f"✅ {selected_time} confirmed!\n\n"
+                f"Preferred date ഏതാണ്?\n"
+                f"(Example: Tomorrow, Monday, April 30)\n\n"
+                f"Date reply cheyyoo! 📅"
+            )
+        else:
+            return "Please reply with 1, 2, or 3 to select a batch time."
 
-    # Check keywords (fast, zero AI cost)
-    for keyword, reply in KEYWORD_REPLIES.items():
-        if keyword in msg_lower:
-            if reply is None:  # Greeting keyword
-                return get_welcome_message(name)
-            return reply
+    # 2. State: demo_date_selection (Waiting for date)
+    if current_stage == "demo_date_selection":
+        user_date = msg_text.strip()
+        state["stage"] = "demo_booked"
+        batch_time = state.get("batch_time", "")
+        
+        status_msg = f"Demo Booked: {course} {batch_time} {user_date}"
+        threading.Thread(
+            target=update_lead_status,
+            args=(phone, status_msg)
+        ).start()
+        
+        return (
+            f"🎉 *Demo Class Booked!*\n\n"
+            f"📚 Course: {course}\n"
+            f"⏰ Time: {batch_time}\n"
+            f"📅 Date: {user_date}\n"
+            f"📍 The Oxford Computers, Malayinkeezhu\n\n"
+            f"നാളെ ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും!\n"
+            f"കൂടുതൽ info: 📞 9447329972\n"
+            f"🌐 theoxfordedu.com"
+        )
 
-    # Course number selection (after demo prompt)
+    # 3. Handle explicit 'demo' keyword at any stage
+    if msg_lower == "demo" or msg_lower == "free class":
+        state["stage"] = "demo_time_selection"
+        return (
+            "🎓 *Free Demo Class Booking*\n\n"
+            "Preferred batch time ഏത്?\n\n"
+            "1️⃣ Morning — 9 AM to 11 AM\n"
+            "2️⃣ Afternoon — 12 PM to 2 PM  \n"
+            "3️⃣ Evening — 5 PM to 7 PM\n\n"
+            "Number reply cheyyoo! 📅"
+        )
+
+    # 4. Course number selection (1-10)
     if msg_lower in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
         courses = {
             "1": ("PGDCA", _PGDCA_MSG),
@@ -519,11 +565,11 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
         course_info = courses.get(msg_lower)
         if course_info:
             course_name, course_details = course_info
-            conversation_state[phone]["stage"] = "demo_requested"
-            conversation_state[phone]["course"] = course_name
+            state["stage"] = "demo_cta"
+            state["course"] = course_name
             threading.Thread(
                 target=update_lead_status,
-                args=(phone, f"Demo Requested: {course_name}")
+                args=(phone, f"Viewed: {course_name}")
             ).start()
             return (
                 f"✅ *{course_name}* — Great choice!\n\n"
@@ -531,11 +577,22 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
                 f"📍 The Oxford Computers, Malayinkeezhu"
             )
 
-    # Use Gemini AI for everything else
+    # 5. Check keywords (fast, zero AI cost)
+    for keyword, reply in KEYWORD_REPLIES.items():
+        if keyword in msg_lower:
+            if reply is None:  # Greeting keyword
+                return get_welcome_message(name)
+            return reply
+
+    # 6. New lead fallback — always send welcome first
+    if is_new_lead:
+        return get_welcome_message(name)
+
+    # 7. Use Gemini AI for everything else
     if gemini_client:
         return get_gemini_reply(msg_text, name)
 
-    # Fallback if no AI configured
+    # 8. Fallback if no AI configured
     return get_fallback_reply(name)
 
 
