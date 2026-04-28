@@ -205,7 +205,7 @@ _ACCOUNTING_MSG = (
 
 _WORD_MSG = (
     "📚 *Certificate in Word Processing & Data Entry*\n"
-    "⏱ Duration: 3 Months\n"
+    "⏱ Duration: 6 Months\n"
     "🎓 Certificate: Rutronix\n"
     "📋 Key Modules: Touch Typing, MS Word Processing, Data Entry Techniques, Basic DTP, Office Document Management\n"
     "💡 Best for: Data entry professionals and beginners\n\n"
@@ -387,6 +387,14 @@ KEYWORD_REPLIES = {
         "Preferred timing പറഞ്ഞാൽ book ചെയ്യാം!"
     ),
 
+    "exit": (
+        "👋 നന്ദി! The Oxford Computers-ൽ \n"
+        "നിന്ന് വിളിക്കാം — 📞 9447329972\n\n"
+        "കൂടുതൽ info: 🌐 theoxfordedu.com\n\n"
+        "വീണ്ടും സംസാരിക്കാൻ \n"
+        "ഇവിടെ message cheyyoo! 😊"
+    ),
+
     # Greetings — None means use welcome message
     "hi": None,
     "hello": None,
@@ -483,7 +491,29 @@ def receive_message():
 # SMART REPLY ENGINE
 # Priority: New Lead Welcome → Keyword → Course Number → Gemini AI → Fallback
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def add_menu_footer(message):
+    menu = (
+        "\n\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "📌 *Quick Menu:*\n"
+        "📚 *COURSES* — All courses list\n"
+        "🎓 *DEMO* — Free demo class\n"
+        "💰 *FEES* — Fee details\n"
+        "🔥 *OFFER* — Today's special offer\n"
+        "🚪 *EXIT* — End conversation"
+    )
+    return message + menu
+
+
 def get_smart_reply(msg_text, name, phone, is_new_lead):
+    reply = _get_smart_reply_internal(msg_text, name, phone, is_new_lead)
+    is_exit_reply = (msg_text.lower().strip() == "exit")
+    if reply and not is_exit_reply:
+        return add_menu_footer(reply)
+    return reply
+
+
+def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
     msg_lower = msg_text.lower().strip()
     
     # Ensure conversation_state has default keys
@@ -547,7 +577,7 @@ def get_smart_reply(msg_text, name, phone, is_new_lead):
             return (
                 "✅ *CWPDE — Great Choice!*\n\n"
                 "📚 Certificate in Word Processing & Data Entry\n"
-                "⏱ Duration: 3 Months\n"
+                "⏱ Duration: 6 Months\n"
                 "🎓 Certificate: Rutronix Approved\n"
                 "💰 Special Price: *₹4,800*\n"
                 "📌 Exam Fee: separately as per Rutronix norms\n\n"
