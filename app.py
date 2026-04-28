@@ -475,9 +475,11 @@ def save_lead_to_sheets(phone, name, message, is_new_lead):
             ])
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        note_timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M]")
+        note_entry = f"{note_timestamp} {message}"
 
         if is_new_lead:
-            row = [timestamp, name, phone, message, "New Lead", "WhatsApp", ""]
+            row = [timestamp, name, phone, message, "New Lead", "WhatsApp", note_entry]
             leads_sheet.append_row(row)
             print(f"✅ New lead saved: {name} ({phone})")
         else:
@@ -486,6 +488,11 @@ def save_lead_to_sheets(phone, name, message, is_new_lead):
                 row_idx = all_phones.index(phone) + 1
                 leads_sheet.update_cell(row_idx, 1, timestamp)
                 leads_sheet.update_cell(row_idx, 4, message)
+                
+                existing_note = leads_sheet.cell(row_idx, 7).value or ""
+                new_note = f"{existing_note}\n{note_entry}" if existing_note else note_entry
+                leads_sheet.update_cell(row_idx, 7, new_note)
+                
                 print(f"✅ Lead updated: {name} ({phone})")
 
     except Exception as e:
