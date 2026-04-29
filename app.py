@@ -621,60 +621,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         state["stage"] = "active"
         return get_welcome_message(name), "COURSES"
 
-    # 2. Check keywords FIRST
-    # Explicit 'demo'
-    if msg_lower == "demo" or msg_lower == "free class":
-        state["stage"] = "demo_time_selection"
-        return (
-            "🎓 *Free Demo Class Booking*\n\n"
-            "Preferred batch time ഏത്?\n\n"
-            "1️⃣ Morning — 9 AM to 11 AM\n"
-            "2️⃣ Afternoon — 12 PM to 2 PM  \n"
-            "3️⃣ Evening — 5 PM to 7 PM\n\n"
-            "Number reply cheyyoo! 📅"
-        ), "DEMO"
-
-    # Explicit 'offer'
-    if "offer" in msg_lower:
-        state["stage"] = "offer_selection"
-        return (
-            "🔥 *Today's Special Offer!*\n"
-            "━━━━━━━━━━━━━━━━\n"
-            "🎓 Kerala State Rutronix Approved\n\n"
-            "1️⃣ CWPDE — Word Processing & Data Entry\n"
-            "   💰 Special Price: *₹4,800*\n"
-            "   ⏱ Duration: 6 Months\n\n"
-            "2️⃣ DCA — Diploma in Computer Applications\n"
-            "   💰 Special Price: *₹6,400*\n"
-            "   ⏱ Duration: 6 Months\n\n"
-            "3️⃣ AIDM — AI-Driven Digital Marketing\n"
-            "   💰 Special Price: *₹19,999*\n"
-            "   ⏱ Duration: 6 Months\n\n"
-            "4️⃣ PGDCA — Post Graduate Diploma\n"
-            "   💰 Special Price: *₹15,999*\n"
-            "   ⏱ Duration: 12 Months\n"
-            "━━━━━━━━━━━━━━━━\n"
-            "⚡ Limited Time Offer!\n"
-            "📅 Seats limited — Book now!\n\n"
-            "Number reply cheyyoo — \n"
-            "Payment link ഉടൻ അയക്കാം! 💳"
-        ), "OFFER"
-
-    # KEYWORD_REPLIES
-    for keyword, reply in KEYWORD_REPLIES.items():
-        if keyword in msg_lower:
-            state["stage"] = "active"  # Reset stage
-            if reply is None:  # Greeting keyword
-                return get_welcome_message(name), "COURSES"
-            if keyword in ["courses", "course"]:
-                exc = "COURSES"
-            elif keyword in ["fee", "fees", "price"]:
-                exc = "FEES"
-            else:
-                exc = None
-            return reply, exc
-
-    # 3. Check stage
+    # 2. Check stage
     if current_stage == "demo_time_selection":
         if msg_lower in ["1", "2", "3"]:
             times = {"1": "Morning", "2": "Afternoon", "3": "Evening"}
@@ -687,8 +634,6 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 f"(Example: Tomorrow, Monday, April 30)\n\n"
                 f"Date reply cheyyoo! 📅"
             ), "NO_BUTTONS"
-        else:
-            return "Please reply with 1, 2, or 3 to select a batch time.", "NO_BUTTONS"
 
     if current_stage == "demo_date_selection":
         user_date = msg_text.strip()
@@ -789,8 +734,6 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 "📍 The Oxford Computers, Malayinkeezhu\n"
                 "📞 9447329972"
             ), "NO_BUTTONS"
-        else:
-            return "Please reply with 1, 2, 3, or 4 to select an offer.", "NO_BUTTONS"
 
     if current_stage == "payment_sent":
         user_txn = msg_text.strip()
@@ -820,7 +763,67 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             f"കാണാൻ കാത്തിരിക്കുന്നു! 😊"
         ), "NO_BUTTONS"
 
-    # 4. Course number selection (1-10)
+    # 3. Check for long messages to route to Gemini
+    if len(msg_lower) > 20:
+        # Long message — use Gemini for smart reply
+        if gemini_client:
+            return get_gemini_reply(msg_text, name), None
+        return get_fallback_reply(name), None
+
+    # 4. Short message — check keywords
+    # Explicit 'demo'
+    if msg_lower == "demo" or (len(msg_lower) <= 20 and "free class" in msg_lower):
+        state["stage"] = "demo_time_selection"
+        return (
+            "🎓 *Free Demo Class Booking*\n\n"
+            "Preferred batch time ഏത്?\n\n"
+            "1️⃣ Morning — 9 AM to 11 AM\n"
+            "2️⃣ Afternoon — 12 PM to 2 PM  \n"
+            "3️⃣ Evening — 5 PM to 7 PM\n\n"
+            "Number reply cheyyoo! 📅"
+        ), "DEMO"
+
+    # Explicit 'offer'
+    if msg_lower == "offer" or (len(msg_lower) <= 20 and "offer" in msg_lower):
+        state["stage"] = "offer_selection"
+        return (
+            "🔥 *Today's Special Offer!*\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "🎓 Kerala State Rutronix Approved\n\n"
+            "1️⃣ CWPDE — Word Processing & Data Entry\n"
+            "   💰 Special Price: *₹4,800*\n"
+            "   ⏱ Duration: 6 Months\n\n"
+            "2️⃣ DCA — Diploma in Computer Applications\n"
+            "   💰 Special Price: *₹6,400*\n"
+            "   ⏱ Duration: 6 Months\n\n"
+            "3️⃣ AIDM — AI-Driven Digital Marketing\n"
+            "   💰 Special Price: *₹19,999*\n"
+            "   ⏱ Duration: 6 Months\n\n"
+            "4️⃣ PGDCA — Post Graduate Diploma\n"
+            "   💰 Special Price: *₹15,999*\n"
+            "   ⏱ Duration: 12 Months\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "⚡ Limited Time Offer!\n"
+            "📅 Seats limited — Book now!\n\n"
+            "Number reply cheyyoo — \n"
+            "Payment link ഉടൻ അയക്കാം! 💳"
+        ), "OFFER"
+
+    # KEYWORD_REPLIES loop
+    for keyword, reply in KEYWORD_REPLIES.items():
+        if msg_lower == keyword or (len(msg_lower) <= 20 and keyword in msg_lower):
+            state["stage"] = "active"  # Reset stage
+            if reply is None:  # Greeting keyword
+                return get_welcome_message(name), "COURSES"
+            if keyword in ["courses", "course"]:
+                exc = "COURSES"
+            elif keyword in ["fee", "fees", "price"]:
+                exc = "FEES"
+            else:
+                exc = None
+            return reply, exc
+
+    # 5. Course number selection (1-10)
     if msg_lower in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
         courses = {
             "1": ("PGDCA", _PGDCA_MSG),
@@ -849,7 +852,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 f"📍 The Oxford Computers, Malayinkeezhu"
             ), "COURSES"
 
-    # 5. Gemini AI fallback
+    # 6. Gemini AI fallback
     if gemini_client:
         return get_gemini_reply(msg_text, name), None
 
