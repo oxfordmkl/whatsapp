@@ -447,6 +447,14 @@ def receive_message():
 
         if msg_type == "text":
             msg_text = message["text"]["body"].strip()
+        elif msg_type == "interactive":
+            interactive_type = message["interactive"]["type"]
+            if interactive_type == "button_reply":
+                msg_text = message["interactive"]["button_reply"]["id"]
+            elif interactive_type == "list_reply":
+                msg_text = message["interactive"]["list_reply"]["id"]
+            else:
+                msg_text = f"[interactive_{interactive_type}]"
         elif msg_type == "button":
             msg_text = message["button"]["text"]
         else:
@@ -474,8 +482,11 @@ def receive_message():
         ).start()
 
         # 2. Generate and send smart reply
-        reply = get_smart_reply(msg_text, contact_name, from_number, is_new_lead)
-        send_whatsapp_message(from_number, reply)
+        reply, exclude_btn = get_smart_reply(msg_text, contact_name, from_number, is_new_lead)
+        if exclude_btn == "NO_BUTTONS":
+            send_whatsapp_message(from_number, reply)
+        else:
+            send_interactive_message(from_number, reply, exclude_btn)
 
         # 3. Schedule follow-ups for new leads only
         if is_new_lead:
@@ -506,11 +517,11 @@ def add_menu_footer(message):
 
 
 def get_smart_reply(msg_text, name, phone, is_new_lead):
-    reply = _get_smart_reply_internal(msg_text, name, phone, is_new_lead)
+    reply, exclude_btn = _get_smart_reply_internal(msg_text, name, phone, is_new_lead)
     is_exit_reply = (msg_text.lower().strip() == "exit")
-    if reply and not is_exit_reply:
-        return add_menu_footer(reply)
-    return reply
+    if is_exit_reply:
+        exclude_btn = "NO_BUTTONS"
+    return reply, exclude_btn
 
 
 def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
@@ -542,9 +553,9 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 f"Preferred date ഏതാണ്?\n"
                 f"(Example: Tomorrow, Monday, April 30)\n\n"
                 f"Date reply cheyyoo! 📅"
-            )
+            ), "NO_BUTTONS"
         else:
-            return "Please reply with 1, 2, or 3 to select a batch time."
+            return "Please reply with 1, 2, or 3 to select a batch time.", "NO_BUTTONS"
 
     # 2. State: demo_date_selection (Waiting for date)
     if current_stage == "demo_date_selection":
@@ -567,7 +578,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             f"നാളെ ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും!\n"
             f"കൂടുതൽ info: 📞 9447329972\n"
             f"🌐 theoxfordedu.com"
-        )
+        ), "NO_BUTTONS"
 
     # 3. State: offer_selection (Waiting for offer course 1/2/3/4)
     if current_stage == "offer_selection":
@@ -589,7 +600,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 "Seat ഉടൻ confirm ആകും! 🎉\n"
                 "📍 The Oxford Computers, Malayinkeezhu\n"
                 "📞 9447329972"
-            )
+            ), "NO_BUTTONS"
         elif msg_lower == "2":
             state["stage"] = "payment_sent"
             state["offer_course"] = "DCA"
@@ -608,7 +619,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 "Seat ഉടൻ confirm ആകും! 🎉\n"
                 "📍 The Oxford Computers, Malayinkeezhu\n"
                 "📞 9447329972"
-            )
+            ), "NO_BUTTONS"
         elif msg_lower == "3":
             state["stage"] = "payment_sent"
             state["offer_course"] = "AIDM"
@@ -627,7 +638,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 "Seat ഉടൻ confirm ആകും! 🎉\n"
                 "📍 The Oxford Computers, Malayinkeezhu\n"
                 "📞 9447329972"
-            )
+            ), "NO_BUTTONS"
         elif msg_lower == "4":
             state["stage"] = "payment_sent"
             state["offer_course"] = "PGDCA"
@@ -646,9 +657,9 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 "Seat ഉടൻ confirm ആകും! 🎉\n"
                 "📍 The Oxford Computers, Malayinkeezhu\n"
                 "📞 9447329972"
-            )
+            ), "NO_BUTTONS"
         else:
-            return "Please reply with 1, 2, 3, or 4 to select an offer."
+            return "Please reply with 1, 2, 3, or 4 to select an offer.", "NO_BUTTONS"
 
     # 4. State: payment_sent (Waiting for transaction ID)
     if current_stage == "payment_sent":
@@ -677,7 +688,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             f"📍 Malayinkeezhu, Thiruvananthapuram\n"
             f"🌐 theoxfordedu.com\n\n"
             f"കാണാൻ കാത്തിരിക്കുന്നു! 😊"
-        )
+        ), "NO_BUTTONS"
 
     # 5. Handle explicit 'demo' keyword at any stage
     if msg_lower == "demo" or msg_lower == "free class":
@@ -689,7 +700,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "2️⃣ Afternoon — 12 PM to 2 PM  \n"
             "3️⃣ Evening — 5 PM to 7 PM\n\n"
             "Number reply cheyyoo! 📅"
-        )
+        ), "DEMO"
 
     # 6. Handle explicit 'offer' keyword at any stage
     if "offer" in msg_lower:
@@ -715,7 +726,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "📅 Seats limited — Book now!\n\n"
             "Number reply cheyyoo — \n"
             "Payment link ഉടൻ അയക്കാം! 💳"
-        )
+        ), "OFFER"
 
     # 7. Course number selection (1-10)
     if msg_lower in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
@@ -744,25 +755,31 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 f"✅ *{course_name}* — Great choice!\n\n"
                 f"{course_details}\n"
                 f"📍 The Oxford Computers, Malayinkeezhu"
-            )
+            ), "COURSES"
 
     # 8. Check keywords (fast, zero AI cost)
     for keyword, reply in KEYWORD_REPLIES.items():
         if keyword in msg_lower:
             if reply is None:  # Greeting keyword
-                return get_welcome_message(name)
-            return reply
+                return get_welcome_message(name), "COURSES"
+            if keyword in ["courses", "course"]:
+                exc = "COURSES"
+            elif keyword in ["fee", "fees", "price"]:
+                exc = "FEES"
+            else:
+                exc = None
+            return reply, exc
 
     # 6. New lead fallback — always send welcome first
     if is_new_lead:
-        return get_welcome_message(name)
+        return get_welcome_message(name), "COURSES"
 
     # 7. Use Gemini AI for everything else
     if gemini_client:
-        return get_gemini_reply(msg_text, name)
+        return get_gemini_reply(msg_text, name), None
 
     # 8. Fallback if no AI configured
-    return get_fallback_reply(name)
+    return get_fallback_reply(name), None
 
 
 def get_welcome_message(name):
@@ -1002,6 +1019,52 @@ print("✅ Follow-up scheduler started")
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # SEND WHATSAPP MESSAGE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ALL_BUTTONS = [
+    {"id": "COURSES", "title": "📚 Courses"},
+    {"id": "DEMO", "title": "🎓 Free Demo"},
+    {"id": "FEES", "title": "💰 Fees"},
+    {"id": "OFFER", "title": "🔥 Offer"}
+]
+
+def get_buttons(exclude=None):
+    buttons = []
+    for btn in ALL_BUTTONS:
+        if btn["id"] != exclude:
+            buttons.append(btn)
+    return buttons[:3]
+
+def send_interactive_message(to_number, body_text, exclude_button=None):
+    """Sends WhatsApp interactive message with reply buttons"""
+    buttons_data = get_buttons(exclude_button)
+    buttons = [{"type": "reply", "reply": btn} for btn in buttons_data]
+    
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body_text},
+            "action": {
+                "buttons": buttons
+            }
+        }
+    }
+    resp = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
+    print(f"📤 Sent interactive to {to_number}: HTTP {resp.status_code}")
+    
+    if resp.status_code != 200:
+        print("⚠️ Interactive message failed. Falling back to plain text.")
+        fallback_text = add_menu_footer(body_text)
+        return send_whatsapp_message(to_number, fallback_text)
+        
+    return resp
+
 def send_whatsapp_message(to_number, message_text):
     """Send a plain text WhatsApp message"""
     headers = {
