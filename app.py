@@ -1019,7 +1019,7 @@ def send_whatsapp_message(to_number, message_text):
     return resp
 
 
-def send_template_message(to_number, template_name, lang="en"):
+def send_template_message(to_number, template_name, lang="en", components=None):
     """Send a Meta-approved template message"""
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -1031,6 +1031,8 @@ def send_template_message(to_number, template_name, lang="en"):
         "type": "template",
         "template": {"name": template_name, "language": {"code": lang}}
     }
+    if components:
+        payload["template"]["components"] = components
     return requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
 
 
@@ -1066,6 +1068,71 @@ def broadcast():
             "success": resp.status_code == 200
         })
         time.sleep(delay)  # Rate limiting
+
+    success_count = sum(1 for r in results if r["success"])
+    return jsonify({
+        "total": len(numbers),
+        "success": success_count,
+        "failed": len(numbers) - success_count,
+        "results": results
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TEMPLATE BROADCAST API
+# POST /broadcast-template  |  Header: X-API-Key
+# Body: { "numbers": [...], "template_name": "...", "language": "en", "variables": ["{name}"] }
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/broadcast-template", methods=["POST"])
+def broadcast_template():
+    if request.headers.get("X-API-Key") != BROADCAST_API_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    numbers = data.get("numbers", [])
+    template_name = data.get("template_name", "")
+    language = data.get("language", "en")
+    variables = data.get("variables", [])
+    delay = data.get("delay_seconds", 2)
+
+    if not numbers or not template_name:
+        return jsonify({"error": "numbers and template_name are required"}), 400
+
+    results = []
+    for item in numbers:
+        if isinstance(item, dict):
+            number = str(item.get("phone", "")).strip()
+            name = str(item.get("name", ""))
+        else:
+            number = str(item).strip()
+            name = ""
+
+        if not number.startswith("91"):
+            number = "91" + number.lstrip("0")
+
+        # Resolve variables
+        resolved_vars = []
+        for var in variables:
+            if var == "{name}":
+                resolved_vars.append(name)
+            else:
+                resolved_vars.append(str(var))
+
+        components = []
+        if resolved_vars:
+            parameters = [{"type": "text", "text": v} for v in resolved_vars]
+            components.append({
+                "type": "body",
+                "parameters": parameters
+            })
+
+        resp = send_template_message(number, template_name, lang=language, components=components)
+        results.append({
+            "number": number,
+            "status": resp.status_code,
+            "success": resp.status_code == 200
+        })
+        time.sleep(delay)
 
     success_count = sum(1 for r in results if r["success"])
     return jsonify({

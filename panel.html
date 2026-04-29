@@ -911,6 +911,36 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
     </div>
   </div>
 
+  <!-- TEMPLATE BROADCAST -->
+  <div class="full-card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🏷️</span> Template Broadcast</div>
+      <span class="card-badge">Meta Graph API</span>
+    </div>
+    
+    <div class="main-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 0;">
+      <div class="config-field">
+        <label>Template Name</label>
+        <input type="text" id="tplName" placeholder="oxford_special_offer">
+      </div>
+      <div class="config-field">
+        <label>Variable {{1}}</label>
+        <input type="text" value="{name}" disabled style="background:var(--surface3); color:var(--text-dim); cursor:not-allowed;">
+      </div>
+      <div class="config-field">
+        <label>Language</label>
+        <input type="text" id="tplLang" value="en" placeholder="en">
+      </div>
+    </div>
+    
+    <div class="send-area" style="margin-top: 16px;">
+      <button class="btn-send-main" id="sendTplBtn" onclick="startTemplateBroadcast()">
+        <div class="spinner" id="sendTplSpinner"></div>
+        <span id="sendTplBtnText">🏷️ Start Template Broadcast</span>
+      </button>
+    </div>
+  </div>
+
   <!-- RATE CONTROLS + SEND -->
   <div class="full-card">
     <div class="card-header">
@@ -1360,6 +1390,7 @@ async function startBroadcast() {
   failCount  = 0;
 
   document.getElementById('sendBtn').disabled = true;
+  if(document.getElementById('sendTplBtn')) document.getElementById('sendTplBtn').disabled = true;
   document.getElementById('sendSpinner').style.display = 'block';
   document.getElementById('sendBtnText').textContent = 'Broadcasting...';
   document.getElementById('stopBtn').style.display = 'inline-flex';
@@ -1444,6 +1475,7 @@ async function startBroadcast() {
   // Done
   isSending = false;
   document.getElementById('sendBtn').disabled   = false;
+  if(document.getElementById('sendTplBtn')) document.getElementById('sendTplBtn').disabled = false;
   document.getElementById('sendSpinner').style.display = 'none';
   document.getElementById('sendBtnText').textContent = '📣 Start Broadcast';
   document.getElementById('stopBtn').style.display   = 'none';
@@ -1453,6 +1485,130 @@ async function startBroadcast() {
   document.getElementById('progressTitle').textContent = stopFlag ? 'Stopped' : 'Complete!';
 
   log('info', `━━━ Broadcast ${stopFlag?'stopped':'complete'} ━━━ Sent: ${sentCount} | Failed: ${failCount}`);
+}
+
+async function startTemplateBroadcast() {
+  if (isSending) return;
+
+  const templateName = document.getElementById('tplName').value.trim();
+  if (!templateName) { showAlert('Template Name enter cheyyuka!', 'warn'); return; }
+
+  const lang = document.getElementById('tplLang').value.trim() || 'en';
+
+  const pending = contacts.filter(c => c.status === 'pending');
+  if (!pending.length) { showAlert('No pending contacts! Import contacts first.', 'warn'); return; }
+
+  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  const apiKey    = document.getElementById('apiKey').value.trim();
+
+  if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
+
+  const delay     = parseInt(document.getElementById('delayRange').value) * 1000;
+  const batchSize = parseInt(document.getElementById('batchRange').value);
+  const batchPause= parseInt(document.getElementById('pauseRange').value) * 1000;
+
+  const confirmMsg = `🏷️ Template Broadcast Confirm:\n\n• Template: ${templateName}\n• ${pending.length} contacts\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Estimated time: ~${Math.ceil(pending.length * delay / 60000)} minutes\n\nStart?`;
+  if (!confirm(confirmMsg)) return;
+
+  isSending  = true;
+  stopFlag   = false;
+  startTime  = Date.now();
+  sentCount  = 0;
+  failCount  = 0;
+
+  document.getElementById('sendTplBtn').disabled = true;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('sendTplSpinner').style.display = 'block';
+  document.getElementById('sendTplBtnText').textContent = 'Broadcasting...';
+  document.getElementById('stopBtn').style.display = 'inline-flex';
+  document.getElementById('progressSection').classList.add('visible');
+
+  log('info', `🚀 Template Broadcast started — ${pending.length} contacts`);
+
+  for (let i = 0; i < pending.length; i++) {
+    if (stopFlag) {
+      log('warn', `⏹ Broadcast stopped at contact ${i+1}`);
+      break;
+    }
+
+    const contact = pending[i];
+    const idx     = contacts.indexOf(contact);
+
+    updateRowStatus(idx, 'sending');
+
+    try {
+      const resp = await fetch(`${serverUrl}/broadcast-template`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey
+        },
+        body: JSON.stringify({
+          numbers: [{ phone: contact.phone, name: contact.name }],
+          template_name: templateName,
+          language: lang,
+          variables: ["{name}"],
+          delay_seconds: 0
+        })
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok && data.success > 0) {
+        contact.status = 'sent';
+        sentCount++;
+        updateRowStatus(idx, 'sent');
+        log('ok', `✓ ${contact.name} (${contact.phone})`);
+      } else {
+        contact.status = 'failed';
+        failCount++;
+        updateRowStatus(idx, 'failed');
+        log('err', `✗ ${contact.name} — ${JSON.stringify(data)}`);
+      }
+    } catch(err) {
+      contact.status = 'failed';
+      failCount++;
+      updateRowStatus(idx, 'failed');
+      log('err', `✗ ${contact.name} — Network error: ${err.message}`);
+    }
+
+    const done    = i + 1;
+    const pct     = Math.round((done / pending.length) * 100);
+    const elapsed = (Date.now() - startTime) / 1000;
+    const rate    = (done / elapsed * 60).toFixed(1);
+    const remaining = pending.length - done;
+    const etaSecs = remaining * (delay / 1000);
+    const eta     = etaSecs > 60 ? `${Math.ceil(etaSecs/60)}m` : `${Math.ceil(etaSecs)}s`;
+
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('pSent').textContent = sentCount;
+    document.getElementById('pFail').textContent = failCount;
+    document.getElementById('pRem').textContent  = remaining;
+    document.getElementById('pEta').textContent  = eta;
+    document.getElementById('pRate').textContent = `${rate}/min`;
+    updateStats();
+
+    if ((i + 1) % batchSize === 0 && i < pending.length - 1 && !stopFlag) {
+      log('warn', `⏸ Batch pause (${batchPause/1000}s) — avoiding rate limit`);
+      await sleep(batchPause);
+    } else if (i < pending.length - 1) {
+      await sleep(delay);
+    }
+  }
+
+  isSending = false;
+  document.getElementById('sendTplBtn').disabled   = false;
+  document.getElementById('sendBtn').disabled   = false;
+  document.getElementById('sendTplSpinner').style.display = 'none';
+  document.getElementById('sendTplBtnText').textContent = '🏷️ Start Template Broadcast';
+  document.getElementById('stopBtn').style.display   = 'none';
+  document.getElementById('exportBtn').style.display = 'inline-flex';
+
+  document.getElementById('progressEmoji').textContent = stopFlag ? '⏹' : '✅';
+  document.getElementById('progressTitle').textContent = stopFlag ? 'Stopped' : 'Complete!';
+
+  log('info', `━━━ Template Broadcast ${stopFlag?'stopped':'complete'} ━━━ Sent: ${sentCount} | Failed: ${failCount}`);
 }
 
 function stopBroadcast() {
