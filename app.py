@@ -617,20 +617,14 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
     course = state.get("course", "Not Selected")
 
     # 1. New lead check
-      # 1. New lead check — but smart messages go to Gemini even for new leads
     if is_new_lead:
         state["stage"] = "active"
-        # If new lead sent a detailed question, answer it + welcome
-        exact_keywords = [
-            "fees", "fee", "price", "demo", "courses", "course",
-            "offer", "hi", "hello", "hai", "hii", "location",
-            "address", "timing", "batch", "certificate", "job",
-            "placement", "നമസ്കാരം", "എവിടെ", "exit",
-            "pgdca", "pgd", "aidm", "sap", "python", "gst",
-            "tally", "dca", "teacher", "accounting", "web",
-            "1","2","3","4","5","6","7","8","9","10"
-        ]
-        if msg_lower.strip() not in exact_keywords and len(msg_lower) > 5 and gemini_client:
+        # Greetings → welcome message
+        greetings = ["hi", "hello", "hai", "hii", "നമസ്കാരം", "hey"]
+        if msg_lower.strip() in greetings or len(msg_lower) <= 3:
+            return get_welcome_message(name), "COURSES"
+        # Any other first message → Gemini handles it
+        if gemini_client:
             return get_gemini_reply(msg_text, name), None
         return get_welcome_message(name), "COURSES"
 
