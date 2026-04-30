@@ -1044,7 +1044,7 @@ def get_welcome_message(name):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ✅ GEMINI AI REPLY - With 429 error handling
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def get_gemini_reply(msg_text, name):
+def get_gemini_reply(msg_text, name, return_fallback=True):
     try:
         prompt = f"""{INSTITUTE_INFO}
 
@@ -1063,7 +1063,10 @@ Student message: "{msg_text}"
             print(f"⚠️ Gemini quota exceeded - using smart fallback")
         else:
             print(f"⚠️ Gemini error: {e}")
-        return get_smart_fallback(name, msg_text)
+        
+        if return_fallback:
+            return get_smart_fallback(name, msg_text)
+        return None
 
 def get_smart_fallback(name, msg_text=""):
     msg_lower = msg_text.lower() if msg_text else ""
