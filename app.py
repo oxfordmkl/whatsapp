@@ -901,22 +901,22 @@ def get_welcome_message(name):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ✅ GEMINI AI REPLY — New google-genai SDK
+# ✅ GEMINI AI REPLY — With 429 error handling
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def get_gemini_reply(msg_text, name):
-    """Get AI-powered reply using google-genai SDK"""
+    """Get AI-powered reply with quota error handling"""
     try:
-        prompt = f"""
-{INSTITUTE_INFO}
+        prompt = f"""{INSTITUTE_INFO}
 
 Student name: {name}
 Student message: "{msg_text}"
 
-Reply as the Oxford Computers AI assistant. Keep reply under 200 words.
-Use Malayalam if student wrote in Malayalam, English if in English.
-Always end with an actionable suggestion (demo class, call, visit).
+Reply as Aaliza (Senior Admission Counselor).
+Keep reply under 5-6 lines. Use Malayalam/Manglish if student uses it.
+Always guide toward: demo class booking, office visit, or payment.
+Never sound robotic. Be warm and natural.
+End with a soft CTA.
 """
-        # ✅ New SDK: client.models.generate_content()
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt
@@ -924,18 +924,54 @@ Always end with an actionable suggestion (demo class, call, visit).
         return response.text.strip()
 
     except Exception as e:
-        print(f"⚠️ Gemini error: {e}")
-        return get_fallback_reply(name)
+        error_str = str(e).lower()
+        if "429" in str(e) or "quota" in error_str or "resource" in error_str:
+            print(f"⚠️ Gemini quota exceeded — using smart fallback")
+        else:
+            print(f"⚠️ Gemini error: {e}")
+        return get_smart_fallback(name, msg_text)
+
+
+def get_smart_fallback(name, msg_text=""):
+    """Contextual fallback when Gemini is unavailable"""
+    msg_lower = msg_text.lower() if msg_text else ""
+
+    if any(w in msg_lower for w in ["fee", "price", "cost", "vila"]):
+        return (
+            f"😊 {name}, fees ariyaan aagrahikkunnathin nanadi!\n\n"
+            "Government approved courses ₹4,499 muthal.\n"
+            "EMI facility undh!\n\n"
+            "Exact fee ariyaan *FEES* reply cheyyoo 💰\n"
+            "📞 9447329972"
+        )
+    if any(w in msg_lower for w in ["job", "placement", "work", "career"]):
+        return (
+            f"{name}, nalla chodyam! 💪\n\n"
+            "Oxford-il 100% placement assistance undh.\n"
+            "Kerala & Gulf-il students working aanu.\n\n"
+            "Best course ariyaan *COURSES* reply cheyyoo 📚\n"
+            "Or free demo try cheyyoo: *DEMO* 🎓"
+        )
+    if any(w in msg_lower for w in ["course", "padikkaan", "learn", "study"]):
+        return (
+            f"{name}, 10 government certified courses undh! 📚\n\n"
+            "Ningalude goal enthanu?\n"
+            "Job? Business? Basic computer?\n\n"
+            "*COURSES* reply cheythal help cheyyam! 🎓"
+        )
+
+    return (
+        f"😊 Nanadi {name}!\n\n"
+        "Njan Aaliza — Oxford Computers-nte\n"
+        "Senior Admission Counselor.\n\n"
+        "Ningalkku help cheyyatte?\n"
+        "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
+        "📞 9447329972"
+    )
 
 
 def get_fallback_reply(name):
-    return (
-        f"നന്ദി {name}! 😊\n\n"
-        f"കൂടുതൽ വിവരങ്ങൾക്ക്:\n"
-        f"🌐 theoxfordedu.com\n"
-        f"📍 Malayinkeezhu, Thiruvananthapuram\n\n"
-        f"Free demo class-നായി *DEMO* reply ചെയ്യൂ! 🎓"
-    )
+    return get_smart_fallback(name)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1122,28 +1158,45 @@ print("✅ Follow-up scheduler started")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SEND WHATSAPP MESSAGE
+# SEND WHATSAPP MESSAGE — Named Button Presets
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ALL_BUTTONS = [
-    {"id": "COURSES", "title": "📚 Courses"},
-    {"id": "DEMO", "title": "🎓 Free Demo"},
-    {"id": "FEES", "title": "💰 Fees"},
-    {"id": "OFFER", "title": "🔥 Offer"}
-]
+BUTTON_PRESETS = {
+    "BUTTONS_GOAL": [
+        {"id": "1", "title": "💼 Job Oriented"},
+        {"id": "2", "title": "🚀 Business"},
+        {"id": "3", "title": "🖥️ Basic Computer"},
+    ],
+    "BUTTONS_COURSE": [
+        {"id": "DEMO", "title": "🎓 Free Demo"},
+        {"id": "FEES", "title": "💰 Fees"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+    ],
+    "BUTTONS_FEES": [
+        {"id": "DEMO", "title": "🎓 Free Demo"},
+        {"id": "OFFER", "title": "🔥 Pay Now"},
+        {"id": "CALL", "title": "📞 Call Us"},
+    ],
+    "BUTTONS_OFFER": [
+        {"id": "OFFER", "title": "💳 Pay Now"},
+        {"id": "DEMO", "title": "🎓 Free Demo"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+    ],
+    "BUTTONS_AFTER_DEMO": [
+        {"id": "COURSES", "title": "📚 Courses"},
+        {"id": "OFFER", "title": "🔥 Offer"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+    ],
+}
 
-def get_buttons(exclude=None):
-    buttons = []
-    for btn in ALL_BUTTONS:
-        if btn["id"] != exclude:
-            buttons.append(btn)
-    return buttons[:3]
+def send_interactive_message(to_number, body_text, btn_preset=None):
+    """Sends WhatsApp interactive message with named button presets"""
+    if not btn_preset or btn_preset == "NO_BUTTONS":
+        return send_whatsapp_message(to_number, body_text)
 
-def send_interactive_message(to_number, body_text, exclude_button=None):
-    """Sends WhatsApp interactive message with reply buttons"""
-    buttons_data = get_buttons(exclude_button)
+    buttons_data = BUTTON_PRESETS.get(btn_preset, BUTTON_PRESETS["BUTTONS_COURSE"])
     buttons = [{"type": "reply", "reply": btn} for btn in buttons_data]
-    
+
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
         "Content-Type": "application/json"
@@ -1155,19 +1208,16 @@ def send_interactive_message(to_number, body_text, exclude_button=None):
         "interactive": {
             "type": "button",
             "body": {"text": body_text},
-            "action": {
-                "buttons": buttons
-            }
+            "action": {"buttons": buttons}
         }
     }
     resp = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
-    print(f"📤 Sent interactive to {to_number}: HTTP {resp.status_code}")
-    
+    print(f"📤 Sent interactive [{btn_preset}] to {to_number}: HTTP {resp.status_code}")
+
     if resp.status_code != 200:
-        print("⚠️ Interactive message failed. Falling back to plain text.")
-        fallback_text = add_menu_footer(body_text)
-        return send_whatsapp_message(to_number, fallback_text)
-        
+        print("⚠️ Interactive failed, falling back to plain text")
+        return send_whatsapp_message(to_number, body_text)
+
     return resp
 
 def send_whatsapp_message(to_number, message_text):
