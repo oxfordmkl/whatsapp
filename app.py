@@ -809,6 +809,10 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "Payment link ഉടൻ അയക്കാം! 💳"
         ), "OFFER"
 
+    # Long messages → Gemini AI (smart counselor)
+    if len(msg_lower) > 20 and gemini_client:
+        return get_gemini_reply(msg_text, name), None
+
     # KEYWORD_REPLIES loop
     for keyword, reply in KEYWORD_REPLIES.items():
         if msg_lower == keyword or (len(msg_lower) <= 20 and keyword in msg_lower):
