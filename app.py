@@ -1,22 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The Oxford Computers - WhatsApp AI System v2.0
+  The Oxford Computers — WhatsApp AI System v3.0
+  Clean rewrite — zero patch conflicts
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Features:
-  ✅ Google Sheets CRM - auto lead logging
-  ✅ Gemini AI Chatbot - Malayalam/English smart replies
-  ✅ Keyword-based fast replies (no AI cost for simple queries)
-  ✅ Broadcast campaign API
+  ✅ Google Sheets CRM
+  ✅ Gemini 2.0 Flash (google-genai SDK)
+  ✅ Stage-based conversation state machine
+  ✅ Interactive WhatsApp buttons (named presets)
+  ✅ Broadcast + Template broadcast API
   ✅ Multi-day follow-up scheduler
-  ✅ Lead status tracking
-  ✅ Admin stats endpoint
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FIXED in v2.1:
-  🔧 Migrated from deprecated google-generativeai → google-genai
-  🔧 Updated Gemini API calls to new SDK style
-  🔧 GOOGLE_CREDENTIALS env var name aligned
-  🔧 Model upgraded to gemini-2.0-flash
+  ✅ Admin stats + manual trigger endpoints
+  ✅ Admin panel (panel.html)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -29,446 +24,893 @@ from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-
-# ✅ NEW SDK - google-genai (replaces deprecated google-generativeai)
 from google import genai
 
 app = Flask(__name__)
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# CONFIGURATION - All from Railway Environment Variables
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VERIFY_TOKEN      = os.environ.get("VERIFY_TOKEN", "oxford2026")
-ACCESS_TOKEN      = os.environ.get("ACCESS_TOKEN", "")
-PHONE_NUMBER_ID   = os.environ.get("PHONE_NUMBER_ID", "")
-SHEETS_ID         = os.environ.get("SHEETS_ID", "")
-GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY", "")
-BROADCAST_API_KEY = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
-ADMIN_KEY         = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
-
-# ✅ FIXED: Variable name matches Railway dashboard (GOOGLE_CREDENTIALS)
+# ═══════════════════════════════════════════════════════
+#  CONFIGURATION  (Railway environment variables)
+# ═══════════════════════════════════════════════════════
+VERIFY_TOKEN         = os.environ.get("VERIFY_TOKEN", "oxford2026")
+ACCESS_TOKEN         = os.environ.get("ACCESS_TOKEN", "")
+PHONE_NUMBER_ID      = os.environ.get("PHONE_NUMBER_ID", "")
+SHEETS_ID            = os.environ.get("SHEETS_ID", "")
+GEMINI_API_KEY       = os.environ.get("GEMINI_API_KEY", "")
+BROADCAST_API_KEY    = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
+ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ✅ GEMINI AI SETUP - New google-genai SDK
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  GEMINI AI SETUP
+# ═══════════════════════════════════════════════════════
 if GEMINI_API_KEY:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    print("✅ Gemini AI initialized (google-genai SDK)")
+    print("✅ Gemini AI initialised (google-genai SDK, gemini-2.0-flash)")
 else:
     gemini_client = None
-    print("⚠️ GEMINI_API_KEY not set - AI replies disabled")
+    print("⚠️  GEMINI_API_KEY not set — AI replies disabled")
 
-# In-memory conversation state (resets on redeploy - use DB for production)
-conversation_state = {}  # {phone: {"stage": "new/interested/enrolled", "name": "", "last_msg": timestamp}}
-follow_up_queue    = []  # [{phone, name, send_at, message, done}]
+# ═══════════════════════════════════════════════════════
+#  IN-MEMORY STORES
+# ═══════════════════════════════════════════════════════
+# { phone: { name, stage, course, goal, batch_time,
+#            offer_course, last_msg, last_text } }
+conversation_state: dict = {}
+
+# [ { phone, name, send_at, message, day, done } ]
+follow_up_queue: list = []
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# INSTITUTE PROFILE - Oxford Computers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTITUTE_INFO = """
-You are Aaliza, a Senior Admission Counselor at The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.
+# ═══════════════════════════════════════════════════════
+#  AALIZA — SYSTEM PROMPT FOR GEMINI
+# ═══════════════════════════════════════════════════════
+AALIZA_PROMPT = """
+You are Aaliza, Senior Admission Counselor at The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.
 
-YOUR GOAL:
-- CONVERT the student into:
-  1. Booking a free demo class
-  2. Visiting the office
-  3. Making a payment
+YOUR SOLE GOAL:
+Convert the student into ONE of these three actions:
+  1. Book a free demo class
+  2. Visit the office
+  3. Make a payment
 
-YOUR STYLE:
-- Speak like a friendly Malayali counselor (Manglish/Malayalam mix).
-- Keep replies short (max 5 lines).
-- Be natural, warm, friendly, confident, not robotic.
-- Ask questions to guide the student.
+YOUR COMMUNICATION STYLE:
+- Speak exactly like a warm, confident Malayali counselor — natural Manglish / Malayalam mix.
+- Maximum 4-5 lines per reply. Never longer.
+- Be human. Never robotic. Never use corporate jargon.
+- Ask one focused question per reply to move the conversation forward.
+- Always end with a clear next step suggestion.
 
-RULES:
-- NEVER dump the all course list unless asked.
-- ALWAYS recommend 1-2 best courses based on student need.
-- ALWAYS end with a next step:
-  → "Demo book cheyyatte?"
-  → "Office visit cheyyano?"
-  → "Seat reserve cheyyano?"
-- If student is confused: Ask about qualification + goal.
-- If student asks fees: Show fee + explain ROI (job kittiyal 1-2 months-il recover cheyyam).
-- If student delays: Create urgency (limited seats, batch starting soon).
-- NEVER sound like AI.
-- NEVER be too long.
-- NEVER ignore conversion goal.
-- NEVER overpromise job guarantee. Say "placement assistance", not "job guarantee".
+STRICT RULES:
+- NEVER list all courses unless the student explicitly asks.
+- NEVER say "job guarantee" — always say "placement assistance".
 - NEVER badmouth competitors.
-- Do not repeat the same question twice. If already asked goal, move forward.
+- NEVER repeat a question you already asked in this conversation.
+- If you already know their goal, recommend the course — don't ask the goal again.
+- Create gentle urgency: "limited seats", "batch starting soon".
+- If they ask fees, explain ROI: "job kittiyal 1-2 months-il recover cheyyam".
 
 INSTITUTE DETAILS:
 Name: The Oxford Computers
-Location: Malayinkeezhu Junction, Thiruvananthapuram
+Location: Malayinkeezhu Junction, Thiruvananthapuram, Kerala
 Approval: Kerala State Rutronix Government Certified
-Website: theoxfordedu.com
-Phone: 9447329972
-Speciality: AI-enabled, government-certified courses
+Website: theoxfordedu.com | Phone: 9447329972
 
-COURSES:
-1. PGDCA - 12 Months - ₹15,999
-2. AIDM (AI-Driven Digital Marketing) - 6 Months - ₹19,999
-3. SAP Financial Accounting - 4-6 Months - ₹11,999
-4. Python Programming - 3 Months - ₹4,499
-5. GST & Payroll Diploma - 6 Months - ₹5,499
-6. DCA Fast Track - 6 Months - ₹6,400
-7. Computer Teacher Training - 1 Year - ₹7,999
-8. Corporate Business Accounting - 1 Year - ₹7,999
-9. Word Processing & Data Entry - 6 Months - ₹4,800
-10. Web Designing - 6 Months - ₹5,999
+COURSES & FEES:
+1. PGDCA                    — 12 Months — ₹15,999
+2. AIDM (AI Digital Mktg)  — 6 Months  — ₹19,999
+3. SAP Financial Accounting — 4-6 Months— ₹11,999
+4. Python Programming       — 3 Months  — ₹4,499
+5. GST & Payroll Diploma    — 6 Months  — ₹5,499
+6. DCA Fast Track           — 6 Months  — ₹6,400
+7. Computer Teacher Training— 1 Year    — ₹7,999
+8. Corporate Biz Accounting — 1 Year    — ₹7,999
+9. Word Processing & Entry  — 6 Months  — ₹4,800
+10. Web Designing           — 6 Months  — ₹5,999
 
-EXAMPLES OF YOUR REPLIES (FEW-SHOT TRAINING):
+EXAMPLE REPLIES (match this style exactly):
 
-User: enik digital marketing padikkanam
-Reply:
-Super choice! 👍
-Digital Marketing ippol Kerala + Gulf-il demand undu.
-Ningalk best option: 👉 AIDM (AI-Driven Digital Marketing)
-6 months course aanu, live campaigns padippikkum.
-Demo class kaanan varamo? 🎓
+Student: "enik digital marketing padikkanam"
+Aaliza: "Super choice! 👍 Digital Marketing-inu ippol Kerala + Gulf-il demand kooduthaanu.
+Ningalkku best option: AIDM — AI-Driven Digital Marketing (6 months, ₹19,999).
+Live campaigns, SEO, Meta Ads ellaam padikkaam. 🎯
+Demo class free aanu — oru thavashe nokkaamo? 🎓"
 
-User: python course evide aanu location
-Reply:
-Nammude office Malayinkeezhu Junction-il aanu (Thiruvananthapuram). 📍
-Python 3 months course aanu, ₹4,499 aanu fee.
-Nalla career scope ulla course aanu! 💻
-Neritt office-ilekk varamo, atho demo book cheyyano?
+Student: "degree kazhinjittu entha cheyyenda?"
+Aaliza: "Degree kazhinja aalkku IT career super aanu! 🌟
+PGDCA (12M) allengil Web Designing (6M) — randum nalla options.
+Enthu field-il interest aanu? Programming aano, design aano? 🤔"
 
-User: njan degree kazhinju, etha nalla course?
-Reply:
-Degree kazhinja aalkk best IT career aanu! 🌟
-Job oriented aayi PGDCA (12 months) allengil Web Designing (6 months) nokkam.
-Randilum 100% placement assistance undu. 💪
-Enthanu kooduthal thalparyam? Programming aano?
+Student: "fees ethraya?"
+Aaliza: "Ningalude interest-ulla course enna?"
+(Ask first — then show specific fee with ROI explanation.)
 """
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# KEYWORD FAST REPLIES (No AI needed - instant response)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-_COURSES_MSG = (
-    "1️⃣ PGDCA (12 Months)\n"
-    "2️⃣ AI-Driven Digital Marketing (6 Months)\n"
-    "3️⃣ SAP Financial Accounting (4-6 Months)\n"
-    "4️⃣ Python Programming (3 Months)\n"
-    "5️⃣ GST & Payroll Diploma (6 Months)\n"
-    "6️⃣ DCA Fast Track (6 Months)\n"
-    "7️⃣ Computer Teacher Training (1 Year)\n"
-    "8️⃣ Corporate Business Accounting (1 Year)\n"
-    "9️⃣ Word Processing & Data Entry (3 Months)\n"
-    "🔟 Professional Web Designing (6 Months)\n\n"
-    "Oru course-nte details ariyaan number reply cheyyoo! 🎓"
+# ═══════════════════════════════════════════════════════
+#  COURSE DETAIL CARDS
+# ═══════════════════════════════════════════════════════
+_PGDCA = (
+    "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
+    "⏱ 12 Months | 🎓 Rutronix + State Approved\n"
+    "📋 C, C++, Java, DBMS, Web Dev, Networks, Mobile App, Final Project\n"
+    "💡 Best for graduates seeking an IT career\n"
+    "💰 Fee: ₹15,999"
 )
-
-_PGDCA_MSG = (
-    "📚 *Post Graduate Diploma in Computer Applications (PGDCA)*\n"
-    "⏱ Duration: 12 Months\n"
-    "🎓 Certificate: Rutronix + State Approved\n"
-    "📋 Key Modules: Programming Fundamentals (C,C++,Java), DBMS, Web Development, Software Engineering, Computer Networks, Mobile App Development, Final Project & Internship\n"
-    "💡 Best for: Graduates seeking an IT career\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+_AIDM = (
+    "📚 *AIDM — AI-Driven Digital Marketing*\n"
+    "⏱ 6 Months | 🎓 Industry Recognised\n"
+    "📋 SEO, Social Media, Google Ads, Meta Ads, ChatGPT/AI Tools, Live Campaigns\n"
+    "💡 Best for marketers, entrepreneurs, beginners\n"
+    "💰 Fee: ₹19,999"
 )
-
-_AIDM_MSG = (
-    "📚 *AIDM - AI-Driven Digital Marketing*\n"
-    "⏱ Duration: 6 Months\n"
-    "🎓 Certificate: Industry Recognized\n"
-    "📋 Key Modules: Digital Marketing Fundamentals, SEO & Content Strategy, Social Media Marketing, Google Ads & Meta Ads, AI Tools (ChatGPT/Canva AI), Email Marketing & CRM, Live Campaign Projects\n"
-    "💡 Best for: Marketers, entrepreneurs, and beginners\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
-)
-
-_SAP_MSG = (
+_SAP = (
     "📚 *SAP Financial Accounting & Controlling*\n"
-    "⏱ Duration: 4-6 Months\n"
-    "🎓 Certificate: SAP Alliance Certificate\n"
-    "📋 Key Modules: Introduction to ERP & SAP, General Ledger Accounting, Accounts Payable & Receivable, Asset & Bank Accounting, SAP Controlling (CO), Real-Time SAP Project\n"
-    "💡 Best for: Commerce graduates and accounting professionals\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+    "⏱ 4-6 Months | 🎓 SAP Alliance Certificate\n"
+    "📋 GL Accounting, AP/AR, Asset Accounting, SAP CO, Real-Time Project\n"
+    "💡 Best for commerce graduates & accounting professionals\n"
+    "💰 Fee: ₹11,999"
 )
-
-_PYTHON_MSG = (
-    "📚 *Python - Beginner to Advanced*\n"
-    "⏱ Duration: 3 Months\n"
-    "🎓 Certificate: Rutronix\n"
-    "📋 Key Modules: Python Fundamentals, OOP in Python, File Handling & Modules, Web Scraping, Flask Basics, Data Handling with Pandas, Automation Projects\n"
-    "💡 Best for: Beginners and IT aspirants\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+_PYTHON = (
+    "📚 *Python — Beginner to Advanced*\n"
+    "⏱ 3 Months | 🎓 Rutronix Certified\n"
+    "📋 OOP, File Handling, Flask Basics, Pandas, Web Scraping, Automation\n"
+    "💡 Best for beginners and IT aspirants\n"
+    "💰 Fee: ₹4,499"
 )
-
-_GST_MSG = (
-    "📚 *Diploma in GST Practitioner, Taxation & Payroll*\n"
-    "⏱ Duration: 6 Months\n"
-    "🎓 Certificate: Rutronix\n"
-    "📋 Key Modules: GST Concepts & Filing, Income Tax Basics, Tally Prime, Payroll Processing, E-filing & Returns\n"
-    "💡 Best for: Accounting professionals and commerce students\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+_GST = (
+    "📚 *Diploma in GST, Taxation & Payroll*\n"
+    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    "📋 GST Concepts, Income Tax, Tally Prime, Payroll Processing, E-filing\n"
+    "💡 Best for accounting professionals & commerce students\n"
+    "💰 Fee: ₹5,499"
 )
-
-_DCA_MSG = (
-    "📚 *Diploma in Computer Applications - Fast Track (DCA)*\n"
-    "⏱ Duration: 6 Months\n"
-    "🎓 Certificate: Rutronix + State\n"
-    "📋 Key Modules: Computer Fundamentals, MS Office Suite, Programming Basics, Internet & Email, Database Fundamentals, Data Entry & DTP\n"
-    "💡 Best for: Students and office job seekers\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+_DCA = (
+    "📚 *DCA — Diploma in Computer Applications (Fast Track)*\n"
+    "⏱ 6 Months | 🎓 Rutronix + State Approved\n"
+    "📋 Computer Fundamentals, MS Office, Programming Basics, Internet, Database, DTP\n"
+    "💡 Best for students and office job seekers\n"
+    "💰 Fee: ₹6,400"
 )
-
-_TEACHER_MSG = (
+_TEACHER = (
     "📚 *Computer Teacher Training Course*\n"
-    "⏱ Duration: 1 Year\n"
-    "🎓 Certificate: Rutronix\n"
-    "📋 Key Modules: Computer Fundamentals Teaching, MS Office Pedagogy, Programming Basics, DTP Tools, Practice Teaching\n"
-    "💡 Best for: Aspiring computer teachers\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+    "⏱ 1 Year | 🎓 Rutronix Certified\n"
+    "📋 Teaching Methodology, MS Office Pedagogy, Programming Basics, Practice Teaching\n"
+    "💡 Best for aspiring computer teachers\n"
+    "💰 Fee: ₹7,999"
 )
-
-_ACCOUNTING_MSG = (
+_ACCOUNTING = (
     "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
-    "⏱ Duration: 1 Year\n"
-    "🎓 Certificate: Rutronix\n"
-    "📋 Key Modules: Corporate Accounting, GST Implementation, Income Tax Corporate, Financial Modelling, Real-World Case Studies\n"
-    "💡 Best for: Advanced accounting and finance careers\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+    "⏱ 1 Year | 🎓 Rutronix Certified\n"
+    "📋 Corporate Accounting, GST, Income Tax Corporate, Financial Modelling, Case Studies\n"
+    "💡 Best for advanced accounting and finance careers\n"
+    "💰 Fee: ₹7,999"
 )
-
-_WORD_MSG = (
+_WORD = (
     "📚 *Certificate in Word Processing & Data Entry*\n"
-    "⏱ Duration: 6 Months\n"
-    "🎓 Certificate: Rutronix\n"
-    "📋 Key Modules: Touch Typing, MS Word Processing, Data Entry Techniques, Basic DTP, Office Document Management\n"
-    "💡 Best for: Data entry professionals and beginners\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    "📋 Touch Typing, MS Word, Data Entry Techniques, DTP Basics, Document Management\n"
+    "💡 Best for data entry professionals and beginners\n"
+    "💰 Fee: ₹4,800"
 )
-
-_WEB_MSG = (
+_WEB = (
     "📚 *Professional Diploma in Web Designing*\n"
-    "⏱ Duration: 6 Months\n"
-    "🎓 Certificate: Rutronix\n"
-    "📋 Key Modules: HTML5 & CSS3 Advanced, JavaScript & jQuery, PHP & MySQL Basics, WordPress Development, Live Project Portfolio\n"
-    "💡 Best for: Aspiring web developers and designers\n\n"
-    "Demo class-naayi *DEMO* reply cheyyoo! 🙌"
+    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    "📋 HTML5, CSS3, JavaScript, jQuery, PHP & MySQL, WordPress, Portfolio Project\n"
+    "💡 Best for aspiring web developers and designers\n"
+    "💰 Fee: ₹5,999"
 )
 
-KEYWORD_REPLIES = {
-    # Courses List
-    "courses": _COURSES_MSG,
-    "course": _COURSES_MSG,
+# Index → (name, card)
+ALL_COURSES = {
+    "1":  ("PGDCA",                              _PGDCA),
+    "2":  ("AIDM Digital Marketing",             _AIDM),
+    "3":  ("SAP Financial Accounting",           _SAP),
+    "4":  ("Python Programming",                 _PYTHON),
+    "5":  ("GST & Payroll",                      _GST),
+    "6":  ("DCA Fast Track",                     _DCA),
+    "7":  ("Computer Teacher Training",          _TEACHER),
+    "8":  ("Corporate Business Accounting",      _ACCOUNTING),
+    "9":  ("Word Processing & Data Entry",       _WORD),
+    "10": ("Professional Web Designing",         _WEB),
+}
 
-    # Individual Course Details
-    "pgdca": _PGDCA_MSG,
-    "pgd": _PGDCA_MSG,
-    "post graduate": _PGDCA_MSG,
-    "pg diploma": _PGDCA_MSG,
+COURSE_FEES = {
+    "PGDCA":                         ("₹15,999", "12 Months"),
+    "AIDM Digital Marketing":        ("₹19,999", "6 Months"),
+    "SAP Financial Accounting":      ("₹11,999", "4-6 Months"),
+    "Python Programming":            ("₹4,499",  "3 Months"),
+    "GST & Payroll":                 ("₹5,499",  "6 Months"),
+    "DCA Fast Track":                ("₹6,400",  "6 Months"),
+    "Computer Teacher Training":     ("₹7,999",  "1 Year"),
+    "Corporate Business Accounting": ("₹7,999",  "1 Year"),
+    "Word Processing & Data Entry":  ("₹4,800",  "6 Months"),
+    "Professional Web Designing":    ("₹5,999",  "6 Months"),
+}
 
-    "aidm": _AIDM_MSG,
-    "digital marketing": _AIDM_MSG,
-    "digital": _AIDM_MSG,
-    "marketing": _AIDM_MSG,
-    "seo": _AIDM_MSG,
-    "social media": _AIDM_MSG,
+# Keyword → course name (for short-word triggers)
+KEYWORD_TO_COURSE = {
+    "pgdca": "1", "pgd": "1",
+    "aidm": "2", "digital marketing": "2", "digital": "2",
+    "sap": "3", "erp": "3",
+    "python": "4", "programming": "4", "coding": "4",
+    "gst": "5", "tally": "5", "taxation": "5", "payroll": "5",
+    "dca": "6", "fast track": "6",
+    "teacher": "7", "teaching": "7",
+    "accounting": "8", "corporate": "8",
+    "data entry": "9", "typing": "9", "word processing": "9",
+    "web": "10", "web design": "10", "wordpress": "10", "html": "10",
+}
 
-    "sap": _SAP_MSG,
-    "erp": _SAP_MSG,
-    "finance": _SAP_MSG,
+# Goal → recommended course indices
+GOAL_COURSES = {
+    "job": [
+        ("1",  "PGDCA — Post Graduate Diploma",    "12 Months", "₹15,999"),
+        ("4",  "Python Programming",               "3 Months",  "₹4,499"),
+        ("10", "Web Designing",                    "6 Months",  "₹5,999"),
+        ("6",  "DCA Fast Track",                   "6 Months",  "₹6,400"),
+    ],
+    "business": [
+        ("2",  "AI-Driven Digital Marketing",      "6 Months",  "₹19,999"),
+        ("10", "Web Designing",                    "6 Months",  "₹5,999"),
+        ("4",  "Python Programming",               "3 Months",  "₹4,499"),
+    ],
+    "basic": [
+        ("6",  "DCA Fast Track",                   "6 Months",  "₹6,400"),
+        ("9",  "Word Processing & Data Entry",     "6 Months",  "₹4,800"),
+        ("7",  "Computer Teacher Training",        "1 Year",    "₹7,999"),
+    ],
+    "accounting": [
+        ("3",  "SAP Financial Accounting",         "4-6 Months","₹11,999"),
+        ("5",  "GST & Payroll Diploma",            "6 Months",  "₹5,499"),
+        ("8",  "Corporate Business Accounting",    "1 Year",    "₹7,999"),
+    ],
+}
 
-    "python": _PYTHON_MSG,
-    "programming": _PYTHON_MSG,
-    "coding": _PYTHON_MSG,
+# Offer / payment menu
+OFFER_MENU = {
+    "1": ("CWPDE", "Certificate in Word Processing & Data Entry",      "₹4,800",  "6 Months",  "https://rzp.io/rzp/xkWdKtd"),
+    "2": ("DCA",   "Diploma in Computer Applications",                 "₹6,400",  "6 Months",  "https://rzp.io/rzp/mJPPtM9x"),
+    "3": ("AIDM",  "AI-Driven Digital Marketing",                      "₹19,999", "6 Months",  "https://rzp.io/rzp/vF76sj7Y"),
+    "4": ("PGDCA", "Post Graduate Diploma in Computer Applications",   "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
+}
 
-    "gst": _GST_MSG,
-    "tally": _GST_MSG,
-    "tax": _GST_MSG,
-    "taxation": _GST_MSG,
-    "payroll": _GST_MSG,
-    "income tax": _GST_MSG,
+FULL_FEE_TABLE = (
+    "💰 *Course Fees — The Oxford Computers*\n"
+    "━━━━━━━━━━━━━━━━\n"
+    "1️⃣  PGDCA                  ₹15,999  (12M)\n"
+    "2️⃣  AIDM Digital Marketing ₹19,999  (6M)\n"
+    "3️⃣  SAP Accounting         ₹11,999  (4-6M)\n"
+    "4️⃣  Python Programming     ₹4,499   (3M)\n"
+    "5️⃣  GST & Payroll          ₹5,499   (6M)\n"
+    "6️⃣  DCA Fast Track         ₹6,400   (6M)\n"
+    "7️⃣  Computer Teaching      ₹7,999   (1Y)\n"
+    "8️⃣  Business Accounting    ₹7,999   (1Y)\n"
+    "9️⃣  Word Processing        ₹4,800   (6M)\n"
+    "🔟 Web Designing           ₹5,999   (6M)\n"
+    "━━━━━━━━━━━━━━━━\n"
+    "🎓 Kerala State Rutronix Approved\n"
+    "📊 EMI / installment option available!\n\n"
+    "Ithu one-time investment aanu — job kittiyal\n"
+    "1-2 months-il fee recover cheyyam! 💪\n\n"
+    "Free demo book cheyyano? → *DEMO* reply cheyyoo"
+)
 
-    "dca": _DCA_MSG,
-    "diploma": _DCA_MSG,
-    "fast track": _DCA_MSG,
 
-    "teacher": _TEACHER_MSG,
-    "teaching": _TEACHER_MSG,
-    "computer teacher": _TEACHER_MSG,
-
-    "accounting": _ACCOUNTING_MSG,
-    "corporate": _ACCOUNTING_MSG,
-    "business accounting": _ACCOUNTING_MSG,
-
-    "data entry": _WORD_MSG,
-    "typing": _WORD_MSG,
-    "word processing": _WORD_MSG,
-    "ms word": _WORD_MSG,
-
-    "web design": _WEB_MSG,
-    "web": _WEB_MSG,
-    "wordpress": _WEB_MSG,
-    "html": _WEB_MSG,
-
-    # Demo class keywords handled in get_smart_reply state machine
-
-    # Fee / course details
-    "fee": (
-        "💰 *Course Fees Information*\n\n"
-        "Oxford Computers-ൽ courses എല്ലാം *Kerala State Rutronix approved* ആണ്.\n\n"
-        "📢 *Government prescribed fees മാത്രമാണ് ഈടാക്കുന്നത്.*\n\n"
-        "🎁 Special offers & discounts ലഭിക്കാൻ:\n\n"
-        "📞 *9447329972*\n\n"
-        "Or visit:\n"
-        "📍 Oxford Computers, Malayinkeezhu\n"
-        "🌐 theoxfordedu.com\n\n"
-        "🔥 Today's Special Offer കാണാൻ *OFFER* type cheyyoo!"
-    ),
-    "fees": (
-        "💰 *Course Fees Information*\n\n"
-        "Oxford Computers-ൽ courses എല്ലാം *Kerala State Rutronix approved* ആണ്.\n\n"
-        "📢 *Government prescribed fees മാത്രമാണ് ഈടാക്കുന്നത്.*\n\n"
-        "🎁 Special offers & discounts ലഭിക്കാൻ:\n\n"
-        "📞 *9447329972*\n\n"
-        "Or visit:\n"
-        "📍 Oxford Computers, Malayinkeezhu\n"
-        "🌐 theoxfordedu.com\n\n"
-        "🔥 Today's Special Offer കാണാൻ *OFFER* type cheyyoo!"
-    ),
-    "price": (
-        "💰 *Course Fees Information*\n\n"
-        "Oxford Computers-ൽ courses എല്ലാം *Kerala State Rutronix approved* ആണ്.\n\n"
-        "📢 *Government prescribed fees മാത്രമാണ് ഈടാക്കുന്നത്.*\n\n"
-        "🎁 Special offers & discounts ലഭിക്കാൻ:\n\n"
-        "📞 *9447329972*\n\n"
-        "Or visit:\n"
-        "📍 Oxford Computers, Malayinkeezhu\n"
-        "🌐 theoxfordedu.com\n\n"
-        "🔥 Today's Special Offer കാണാൻ *OFFER* type cheyyoo!"
-    ),
-
-    # Location
-    "address": (
-        "📍 *The Oxford Computers*\n"
-        "Malayinkeezhu Junction\n"
-        "Thiruvananthapuram, Kerala\n\n"
-        "🌐 theoxfordedu.com\n\n"
-        "Bus route: Malayinkeezhu bus stop-ൽ നിന്ന് 2 minutes walk"
-    ),
-    "location": (
-        "📍 *The Oxford Computers*\n"
-        "Malayinkeezhu Junction\n"
-        "Thiruvananthapuram, Kerala\n\n"
-        "🌐 theoxfordedu.com\n\n"
-        "Bus route: Malayinkeezhu bus stop-ൽ നിന്ന് 2 minutes walk"
-    ),
-    "എവിടെ": (
-        "📍 *The Oxford Computers*\n"
-        "Malayinkeezhu Junction\n"
-        "Thiruvananthapuram, Kerala\n\n"
-        "🌐 theoxfordedu.com\n\n"
-        "Malayinkeezhu bus stop-ൽ നിന്ന് 2 minutes walk 🚶"
-    ),
-
-    # Certificate
-    "certificate": (
-        "🏆 *Government Certified Certificate*\n\n"
-        "The Oxford Computers-ൽ നിന്നുള്ള certificate:\n"
-        "✅ Kerala State Rutronix approved\n"
-        "✅ Government recognized\n"
-        "✅ Job interviews-ൽ valid\n"
-        "✅ Higher studies-നു് accepted\n\n"
-        "ഇത് ഒരു real government-backed certification ആണ്! 💪"
-    ),
-
-    # Placement
-    "job": (
-        "💼 *Placement Support*\n\n"
-        "The Oxford Computers:\n"
-        "✅ 100% placement assistance\n"
-        "✅ Resume preparation help\n"
-        "✅ Interview coaching\n"
-        "✅ Job referral network\n"
-        "✅ Alumni community\n\n"
-        "ഞങ്ങളുടെ students Kerala & Gulf-ൽ working ആണ്! 🌟"
-    ),
-    "placement": (
-        "💼 *Placement Support*\n\n"
-        "The Oxford Computers:\n"
-        "✅ 100% placement assistance\n"
-        "✅ Resume preparation help\n"
-        "✅ Interview coaching\n"
-        "✅ Job referral network\n"
-        "✅ Alumni community\n\n"
-        "ഞങ്ങളുടെ students Kerala & Gulf-ൽ working ആണ്! 🌟"
-    ),
-
-    # Timing
-    "timing": (
-        "⏰ *Batch Timings*\n\n"
-        "🌅 Morning Batch: 9:00 AM – 11:00 AM\n"
-        "☀️ Afternoon Batch: 12:00 PM – 2:00 PM\n"
-        "🌆 Evening Batch: 5:00 PM – 7:00 PM\n\n"
-        "Weekend batches also available! 📅\n\n"
-        "Preferred timing പറഞ്ഞാൽ book ചെയ്യാം!"
-    ),
-    "batch": (
-        "⏰ *Batch Timings*\n\n"
-        "🌅 Morning Batch: 9:00 AM – 11:00 AM\n"
-        "☀️ Afternoon Batch: 12:00 PM – 2:00 PM\n"
-        "🌆 Evening Batch: 5:00 PM – 7:00 PM\n\n"
-        "Weekend batches also available! 📅\n\n"
-        "Preferred timing പറഞ്ഞാൽ book ചെയ്യാം!"
-    ),
-
-    "exit": (
-        "👋 നന്ദി! The Oxford Computers-ൽ \n"
-        "നിന്ന് വിളിക്കാം - 📞 9447329972\n\n"
-        "കൂടുതൽ info: 🌐 theoxfordedu.com\n\n"
-        "വീണ്ടും സംസാരിക്കാൻ \n"
-        "ഇവിടെ message cheyyoo! 😊"
-    ),
-
-    # Greetings - None means use welcome message
-    "hi": None,
-    "hello": None,
-    "hii": None,
-    "നമസ്കാരം": None,
-    "hai": None,
+# ═══════════════════════════════════════════════════════
+#  INTERACTIVE BUTTON PRESETS
+#  WhatsApp allows max 3 buttons per interactive message
+# ═══════════════════════════════════════════════════════
+BUTTON_PRESETS = {
+    "GOAL": [
+        {"id": "1", "title": "💼 Job / IT Career"},
+        {"id": "2", "title": "🚀 Business/Freelance"},
+        {"id": "3", "title": "🖥️ Basic Computer"},
+    ],
+    "GOAL_MORE": [
+        {"id": "4", "title": "📊 Accounting / Tax"},
+        {"id": "5", "title": "🤔 Help me choose"},
+        {"id": "DEMO", "title": "🎓 Free Demo"},
+    ],
+    "COURSE": [
+        {"id": "DEMO",  "title": "🎓 Free Demo"},
+        {"id": "FEES",  "title": "💰 See Fees"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+    ],
+    "FEES": [
+        {"id": "DEMO",  "title": "🎓 Free Demo"},
+        {"id": "OFFER", "title": "🔥 Enrol Now"},
+        {"id": "CALL",  "title": "📞 Call Us"},
+    ],
+    "OFFER": [
+        {"id": "DEMO",  "title": "🎓 Free Demo"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+        {"id": "CALL",  "title": "📞 Call Us"},
+    ],
+    "AFTER_BOOKING": [
+        {"id": "COURSES", "title": "📚 More Courses"},
+        {"id": "OFFER",   "title": "🔥 Enrol Now"},
+        {"id": "VISIT",   "title": "🏢 Visit Office"},
+    ],
 }
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# WEBHOOK VERIFICATION
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  HELPERS — build state default
+# ═══════════════════════════════════════════════════════
+def _default_state(name: str) -> dict:
+    return {
+        "name":         name,
+        "stage":        "new",
+        "course":       "",
+        "goal":         "",
+        "batch_time":   "",
+        "offer_course": "",
+        "last_msg":     datetime.now().isoformat(),
+        "last_text":    "",
+    }
+
+
+def _state(phone: str, name: str) -> dict:
+    if phone not in conversation_state:
+        conversation_state[phone] = _default_state(name)
+    return conversation_state[phone]
+
+
+# ═══════════════════════════════════════════════════════
+#  WHATSAPP SEND FUNCTIONS
+# ═══════════════════════════════════════════════════════
+def _wa_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+
+def send_text(to: str, text: str) -> requests.Response:
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text},
+    }
+    r = requests.post(WHATSAPP_API_URL, headers=_wa_headers(), json=payload)
+    print(f"📤 text → {to}  HTTP {r.status_code}")
+    return r
+
+
+def send_interactive(to: str, body: str, preset: str) -> requests.Response:
+    """Send message with up to 3 reply buttons from a named preset."""
+    buttons_data = BUTTON_PRESETS.get(preset, BUTTON_PRESETS["COURSE"])
+    buttons = [{"type": "reply", "reply": b} for b in buttons_data]
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body},
+            "action": {"buttons": buttons},
+        },
+    }
+    r = requests.post(WHATSAPP_API_URL, headers=_wa_headers(), json=payload)
+    print(f"📤 interactive[{preset}] → {to}  HTTP {r.status_code}")
+    if r.status_code != 200:
+        print("⚠️  Interactive failed — falling back to plain text")
+        return send_text(to, body)
+    return r
+
+
+def send_reply(to: str, body: str, preset: str | None) -> requests.Response:
+    """Send text only or interactive depending on preset."""
+    if not preset:
+        return send_text(to, body)
+    return send_interactive(to, body, preset)
+
+
+def send_template(to: str, template: str, lang: str = "en",
+                  components: list | None = None) -> requests.Response:
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {"name": template, "language": {"code": lang}},
+    }
+    if components:
+        payload["template"]["components"] = components
+    return requests.post(WHATSAPP_API_URL, headers=_wa_headers(), json=payload)
+
+
+# ═══════════════════════════════════════════════════════
+#  GEMINI AI
+# ═══════════════════════════════════════════════════════
+def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
+    if not gemini_client:
+        return None
+    try:
+        prompt = (
+            f"{AALIZA_PROMPT}\n\n"
+            f"{'Conversation so far:\n' + context + chr(10) if context else ''}"
+            f"Student name: {name}\n"
+            f"Student says: \"{user_msg}\"\n\n"
+            f"Reply as Aaliza:"
+        )
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
+        return response.text.strip()
+    except Exception as e:
+        err = str(e).lower()
+        if "429" in str(e) or "quota" in err or "resource" in err:
+            print("⚠️  Gemini quota exceeded")
+        else:
+            print(f"⚠️  Gemini error: {e}")
+        return None
+
+
+def smart_fallback(name: str, msg: str = "") -> str:
+    m = msg.lower()
+    if any(w in m for w in ["fee", "price", "cost", "vila", "ethra"]):
+        return (
+            f"😊 {name}, fees ariyaan government approved rates und!\n\n"
+            "Courses ₹4,499 muthal thodangunnu.\n"
+            "EMI / installment option um undh! 📊\n\n"
+            "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
+            "📞 9447329972"
+        )
+    if any(w in m for w in ["job", "placement", "work", "career"]):
+        return (
+            f"{name}, nalla chodyam! 💪\n\n"
+            "Oxford-il 100% placement assistance undh.\n"
+            "Students Kerala & Gulf-il work cheyyunnu. 🌍\n\n"
+            "Best course ariyaan: *COURSES* reply cheyyoo 📚\n"
+            "Or demo: *DEMO* 🎓"
+        )
+    return (
+        f"😊 Nandi {name}!\n\n"
+        "Njan Aaliza — Oxford Computers-nte counselor.\n"
+        "Ningalkku enthu help cheyyam?\n\n"
+        "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
+        "📞 9447329972"
+    )
+
+
+# ═══════════════════════════════════════════════════════
+#  CONVERSATION FLOWS  (pure functions → return (text, preset))
+# ═══════════════════════════════════════════════════════
+def msg_welcome(name: str) -> tuple[str, str]:
+    text = (
+        f"👋 നമസ്കാരം *{name}*!\n\n"
+        "*The Oxford Computers*-ലേക്ക് സ്വാഗതം! 🎓\n"
+        "Kerala Govt Certified • AI-Enabled Courses\n\n"
+        "Ningalude lakshyam enthanu? 🤔\n\n"
+        "1️⃣ Job Oriented — IT / Software career\n"
+        "2️⃣ Business / Freelance\n"
+        "3️⃣ Basic Computer / Office Job\n"
+        "4️⃣ Accounting / Tax\n"
+        "5️⃣ Not sure — help me choose\n\n"
+        "Number reply cheyyoo! 📝"
+    )
+    return text, "GOAL"
+
+
+def msg_goal_courses(goal: str, name: str) -> tuple[str, str]:
+    courses = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
+    lines = [f"📚 *{name}-kku best ആയ courses:*\n"]
+    for i, (_, display, dur, fee) in enumerate(courses, 1):
+        lines.append(f"{i}️⃣ {display}\n   ⏱ {dur} | 💰 {fee}")
+    lines.append("\nNumber reply cheyyoo! 🎓")
+    return "\n".join(lines), None
+
+
+def msg_course_detail(course_idx: str) -> tuple[str, str]:
+    name, card = ALL_COURSES[course_idx]
+    text = (
+        f"✅ *{name}* — nalla choice! 🎯\n\n"
+        f"{card}\n\n"
+        "🎓 Kerala State Rutronix Approved\n\n"
+        "Free demo class book cheyyatte?"
+    )
+    return text, "COURSE"
+
+
+def msg_demo_time_ask() -> tuple[str, str]:
+    text = (
+        "🎓 *Free Demo Class Booking*\n\n"
+        "Preferred batch time ഏതാണ്?\n\n"
+        "1️⃣ Morning   — 9 AM to 11 AM\n"
+        "2️⃣ Afternoon — 12 PM to 2 PM\n"
+        "3️⃣ Evening   — 5 PM to 7 PM\n\n"
+        "Number reply cheyyoo! 📅"
+    )
+    return text, None
+
+
+def msg_demo_date_ask(time_str: str) -> tuple[str, str]:
+    text = (
+        f"✅ *{time_str}* batch confirmed!\n\n"
+        "Preferred date ഏതാണ്?\n"
+        "(Example: Tomorrow, Monday, May 5)\n\n"
+        "Date reply cheyyoo! 📅"
+    )
+    return text, None
+
+
+def msg_demo_booked(course: str, batch_time: str, date: str) -> tuple[str, str]:
+    text = (
+        "🎉 *Demo Class Booked Successfully!*\n\n"
+        f"📚 Course: {course or 'Course of your choice'}\n"
+        f"⏰ Time: {batch_time}\n"
+        f"📅 Date: {date}\n"
+        "📍 The Oxford Computers, Malayinkeezhu\n\n"
+        "Naaḷe ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും! ✅\n"
+        "📞 9447329972 | 🌐 theoxfordedu.com"
+    )
+    return text, "AFTER_BOOKING"
+
+
+def msg_offer_menu() -> tuple[str, str]:
+    text = (
+        "🔥 *Special Offer — Enrol Now!*\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "🎓 Kerala State Rutronix Approved\n\n"
+        "1️⃣ Word Processing & Data Entry\n"
+        "   💰 ₹4,800 | ⏱ 6 Months\n\n"
+        "2️⃣ DCA — Computer Applications\n"
+        "   💰 ₹6,400 | ⏱ 6 Months\n\n"
+        "3️⃣ AIDM — AI Digital Marketing\n"
+        "   💰 ₹19,999 | ⏱ 6 Months\n\n"
+        "4️⃣ PGDCA — Post Graduate Diploma\n"
+        "   💰 ₹15,999 | ⏱ 12 Months\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "⚡ Limited seats — book fast!\n\n"
+        "Course number reply cheyyoo 💳"
+    )
+    return text, "OFFER"
+
+
+def msg_payment_link(code, full_name, price, dur, link) -> tuple[str, str]:
+    text = (
+        f"✅ *{code} — Great Choice!*\n\n"
+        f"📚 {full_name}\n"
+        f"⏱ Duration: {dur}\n"
+        f"🎓 Kerala State Rutronix Approved\n"
+        f"💰 Fee: *{price}*\n\n"
+        "✅ Government certified\n"
+        "✅ Receipt issued after payment\n"
+        f"📍 Oxford Computers, Malayinkeezhu\n\n"
+        f"👇 *Secure Payment Link:*\n{link}\n\n"
+        "Payment ശേഷം Transaction ID\n"
+        "ഇവിടെ reply cheyyoo 📩\n"
+        "(Example: T2504281234)"
+    )
+    return text, None
+
+
+def msg_payment_confirmed(txn: str, course: str, name: str) -> tuple[str, str]:
+    text = (
+        "🎉 *Payment Received — Seat Confirmed!*\n\n"
+        f"✅ Transaction ID: {txn}\n"
+        f"📚 Course: {course}\n"
+        f"👤 Name: {name}\n\n"
+        "Welcome to *The Oxford Computers*! 🎓\n\n"
+        "📞 9447329972 — batch details ariyaan\n"
+        "📍 Malayinkeezhu, Thiruvananthapuram\n\n"
+        "Kaanaan kaathirikkunnu! 😊"
+    )
+    return text, "AFTER_BOOKING"
+
+
+def msg_visit() -> tuple[str, str]:
+    text = (
+        "🏢 *Office Visit — Always Welcome!*\n\n"
+        "📍 *The Oxford Computers*\n"
+        "   Malayinkeezhu Junction\n"
+        "   Thiruvananthapuram, Kerala\n\n"
+        "⏰ Office Hours: 9 AM – 7 PM (Mon–Sat)\n"
+        "📞 9447329972\n\n"
+        "Eppol varananu convenient?\n"
+        "Morning / Afternoon / Evening? 😊"
+    )
+    return text, "COURSE"
+
+
+def msg_call_us(name: str) -> tuple[str, str]:
+    text = (
+        f"😊 Sure {name}!\n\n"
+        "Oru counselor nallathu connect cheyyam.\n"
+        "📞 *9447329972* — direct vilikkaamo!\n\n"
+        "⏰ Available: 9 AM – 7 PM (Mon–Sat)\n"
+        "📍 Oxford Computers, Malayinkeezhu\n\n"
+        "Ivideyum message cheyyoo — ready aanu! 🙌"
+    )
+    return text, None
+
+
+def msg_exit(name: str) -> tuple[str, str]:
+    text = (
+        f"👋 Nandi {name}! Oru nalla divasam aakatte! 😊\n\n"
+        "The Oxford Computers — always here for you.\n"
+        "📞 9447329972 | 🌐 theoxfordedu.com\n\n"
+        "Thiriche message cheyyoo — happy to help!"
+    )
+    return text, None
+
+
+# ═══════════════════════════════════════════════════════
+#  MAIN SMART REPLY ENGINE
+#  Returns (reply_text, button_preset_or_None)
+# ═══════════════════════════════════════════════════════
+VISIT_WORDS   = {"visit", "office", "varam", "neritt", "address", "location",
+                 "map", "route", "varanam", "edukkam"}
+CALL_WORDS    = {"call me", "call", "counselor", "confused", "doubt",
+                 "office number", "vilikku", "vilichal", "phone"}
+GREETING_WORDS = {"hi", "hello", "hai", "hii", "hey", "namaskaram",
+                  "നമസ്കാരം", "hy", "helo", "helloo"}
+
+
+def smart_reply(msg_text: str, name: str, phone: str,
+                is_new_lead: bool) -> tuple[str, str | None]:
+    """
+    Central router — stage-first, then keyword intercepts, then Gemini.
+    NEVER resets stage unless the student explicitly triggers it.
+    """
+    raw = msg_text.strip()
+    low = raw.lower()
+
+    st = _state(phone, name)
+    st["last_msg"]  = datetime.now().isoformat()
+    st["last_text"] = raw
+    stage   = st["stage"]
+    course  = st["course"]
+
+    # ── 1. BRAND NEW LEAD ─────────────────────────────
+    if is_new_lead:
+        st["stage"] = "goal_selection"
+        return msg_welcome(name)
+
+    # ── 2. GLOBAL KEYWORD OVERRIDES (always work) ─────
+
+    # Exit
+    if low == "exit":
+        st["stage"] = "done"
+        return msg_exit(name)
+
+    # Restart / greeting — only if not mid-flow
+    if low in GREETING_WORDS and stage in ("new", "done", "enrolled", "goal_selection"):
+        st["stage"] = "goal_selection"
+        return msg_welcome(name)
+
+    # Demo booking trigger
+    if low in {"demo", "free demo", "free class", "book demo"}:
+        st["stage"] = "demo_time_ask"
+        return msg_demo_time_ask()
+
+    # Offer / payment menu
+    if low in {"offer", "pay", "enrol", "enroll", "payment", "fees pay", "seat"}:
+        st["stage"] = "offer_menu"
+        return msg_offer_menu()
+
+    # Fees
+    if low in {"fees", "fee", "price", "cost", "ethra", "how much"}:
+        if course and course in COURSE_FEES:
+            f, d = COURSE_FEES[course]
+            text = (
+                f"💰 *{course} — Fee Details*\n\n"
+                f"📋 Fee: {f}\n"
+                f"⏱ Duration: {d}\n"
+                f"🎓 Kerala State Rutronix Approved\n\n"
+                "📊 EMI / installment option undh!\n"
+                "Ithu one-time investment — job kittiyal\n"
+                "1-2 months-il recover cheyyam! 💪\n\n"
+                "Demo book cheyyano? → *DEMO*"
+            )
+            return text, "FEES"
+        return FULL_FEE_TABLE, "FEES"
+
+    # Courses list
+    if low in {"courses", "course", "list", "all courses", "padikkaan", "study"}:
+        # Anti-loop: if already in goal_selection, nudge instead of repeating
+        if stage == "goal_selection":
+            return (
+                f"😊 {name}, oru number reply cheyyoo!\n\n"
+                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic\n"
+                "4️⃣ Accounting | 5️⃣ Not sure\n\n"
+                "Ningalude goal-ku best course recommend cheyyam! 🎓"
+            ), "GOAL"
+        st["stage"] = "goal_selection"
+        return msg_welcome(name)
+
+    # Visit
+    if any(w in low for w in VISIT_WORDS):
+        threading.Thread(
+            target=update_lead_status, args=(phone, "Office Visit Interested")
+        ).start()
+        return msg_visit()
+
+    # Call / handoff
+    if any(w in low for w in CALL_WORDS):
+        threading.Thread(
+            target=update_lead_status, args=(phone, "Call Requested")
+        ).start()
+        return msg_call_us(name)
+
+    # Certificate
+    if "certificate" in low or "certific" in low:
+        text = (
+            "🏆 *Government Certified Certificate*\n\n"
+            "✅ Kerala State Rutronix Approved\n"
+            "✅ Valid for job applications\n"
+            "✅ Accepted for higher studies\n\n"
+            "Real government-backed certification! 💪"
+        )
+        return text, "COURSE"
+
+    # Placement / job
+    if low in {"placement", "job assistance", "placement support", "job guarantee"}:
+        text = (
+            "💼 *Placement Support*\n\n"
+            "✅ 100% placement assistance\n"
+            "✅ Resume preparation & interview coaching\n"
+            "✅ Job referral network\n\n"
+            "Students Kerala & Gulf-il working aanu! 🌍\n\n"
+            "(Note: We provide placement *assistance*,\n"
+            "not a job guarantee — but our track record is strong! 💪)"
+        )
+        return text, "COURSE"
+
+    # Batch timings
+    if low in {"timing", "batch", "time", "schedule", "class time"}:
+        text = (
+            "⏰ *Batch Timings*\n\n"
+            "🌅 Morning:   9 AM – 11 AM\n"
+            "☀️  Afternoon: 12 PM – 2 PM\n"
+            "🌆 Evening:   5 PM – 7 PM\n\n"
+            "Weekend batches also available! 📅\n"
+            "Preferred time parañju — book cheyyam!"
+        )
+        return text, "COURSE"
+
+    # ── 3. STAGE-BASED FLOWS ──────────────────────────
+
+    # Goal selection (1-5 buttons)
+    if stage == "goal_selection":
+        goal_map = {"1": "job", "2": "business", "3": "basic", "4": "accounting"}
+        if low in goal_map:
+            goal = goal_map[low]
+            st["goal"]  = goal
+            st["stage"] = "course_recommendation"
+            return msg_goal_courses(goal, name)
+
+        if low == "5":
+            st["stage"] = "not_sure"
+            ai = gemini_reply(
+                f"Student {name} is not sure which course to choose. "
+                "Ask one friendly question about their qualification and career goal to recommend the right course.",
+                name,
+            )
+            return (ai or smart_fallback(name, low)), "GOAL"
+
+        # Unrecognised input while in goal_selection — gentle nudge
+        if low.isdigit():
+            return (
+                f"Please reply with a number between 1 and 5, {name}! 😊\n\n"
+                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic\n"
+                "4️⃣ Accounting | 5️⃣ Not sure"
+            ), "GOAL"
+
+    # Course recommendation (numbered choice from goal list)
+    if stage == "course_recommendation":
+        goal   = st.get("goal", "job")
+        crecs  = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
+        if low.isdigit():
+            idx = int(low) - 1
+            if 0 <= idx < len(crecs):
+                c_idx, c_display, c_dur, c_fee = crecs[idx]
+                c_name = ALL_COURSES[c_idx][0]
+                st["course"] = c_name
+                st["stage"]  = "course_viewed"
+                threading.Thread(
+                    target=update_lead_status, args=(phone, f"Viewed: {c_name}")
+                ).start()
+                return msg_course_detail(c_idx)
+
+    # Demo time selection
+    if stage == "demo_time_ask":
+        times = {"1": "Morning (9–11 AM)", "2": "Afternoon (12–2 PM)", "3": "Evening (5–7 PM)"}
+        if low in times:
+            st["batch_time"] = times[low]
+            st["stage"] = "demo_date_ask"
+            return msg_demo_date_ask(times[low])
+
+    # Demo date input
+    if stage == "demo_date_ask":
+        date_text = raw
+        st["stage"] = "demo_booked"
+        bt = st.get("batch_time", "")
+        status = f"Demo Booked: {course} | {bt} | {date_text}"
+        threading.Thread(target=update_lead_status, args=(phone, status)).start()
+        return msg_demo_booked(course, bt, date_text)
+
+    # Offer selection (1-4)
+    if stage == "offer_menu":
+        if low in OFFER_MENU:
+            code, full_name, price, dur, link = OFFER_MENU[low]
+            st["offer_course"] = code
+            st["stage"] = "payment_pending"
+            return msg_payment_link(code, full_name, price, dur, link)
+
+    # Payment confirmation (transaction ID)
+    if stage == "payment_pending":
+        txn = raw
+        offer = st.get("offer_course", "Unknown")
+        st["stage"] = "enrolled"
+        ts = datetime.now().strftime("[%Y-%m-%d %H:%M]")
+        note = f"{ts} Payment: {txn} Course: {offer}"
+        threading.Thread(
+            target=update_lead_status,
+            args=(phone, f"Payment Received: {txn}", note)
+        ).start()
+        return msg_payment_confirmed(txn, offer, name)
+
+    # ── 4. KEYWORD COURSE SHORTCUTS ───────────────────
+    for kw, idx in KEYWORD_TO_COURSE.items():
+        if kw in low:
+            c_name = ALL_COURSES[idx][0]
+            st["course"] = c_name
+            st["stage"]  = "course_viewed"
+            return msg_course_detail(idx)
+
+    # Direct course number (1-10) from anywhere
+    if low in ALL_COURSES:
+        c_name = ALL_COURSES[low][0]
+        st["course"] = c_name
+        st["stage"]  = "course_viewed"
+        threading.Thread(
+            target=update_lead_status, args=(phone, f"Viewed: {c_name}")
+        ).start()
+        return msg_course_detail(low)
+
+    # ── 5. GEMINI FALLBACK ────────────────────────────
+    ai = gemini_reply(raw, name)
+    if ai:
+        return ai, "COURSE"
+
+    return smart_fallback(name, raw), "COURSE"
+
+
+# ═══════════════════════════════════════════════════════
+#  WEBHOOK VERIFICATION
+# ═══════════════════════════════════════════════════════
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
     mode      = request.args.get("hub.mode")
     token     = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        print("✅ Webhook verified!")
+        print("✅ Webhook verified")
         return challenge, 200
     return "Forbidden", 403
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# RECEIVE & PROCESS MESSAGES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  WEBHOOK — RECEIVE MESSAGES
+# ═══════════════════════════════════════════════════════
 @app.route("/webhook", methods=["POST"])
 def receive_message():
-    data = request.get_json()
-
+    data = request.get_json(silent=True) or {}
     try:
         entry   = data["entry"][0]
         changes = entry["changes"][0]
         value   = changes["value"]
 
-        # Ignore delivery/read status updates
+        # Ignore delivery / read receipts
         if "statuses" in value:
             return jsonify({"status": "ok"}), 200
 
         messages = value.get("messages", [])
         contacts = value.get("contacts", [])
-
         if not messages:
             return jsonify({"status": "ok"}), 200
 
@@ -477,50 +919,38 @@ def receive_message():
         msg_type     = message.get("type", "")
         contact_name = contacts[0]["profile"]["name"] if contacts else "Student"
 
+        # Parse message text based on type
         if msg_type == "text":
             msg_text = message["text"]["body"].strip()
         elif msg_type == "interactive":
-            interactive_type = message["interactive"]["type"]
-            if interactive_type == "button_reply":
+            itype = message["interactive"]["type"]
+            if itype == "button_reply":
                 msg_text = message["interactive"]["button_reply"]["id"]
-            elif interactive_type == "list_reply":
+            elif itype == "list_reply":
                 msg_text = message["interactive"]["list_reply"]["id"]
             else:
-                msg_text = f"[interactive_{interactive_type}]"
+                msg_text = f"[interactive_{itype}]"
         elif msg_type == "button":
             msg_text = message["button"]["text"]
         else:
-            msg_text = f"[{msg_type}]"
+            # Unsupported type — ignore silently
+            return jsonify({"status": "ok"}), 200
 
         print(f"📱 {contact_name} ({from_number}): {msg_text}")
 
-        # Track whether this is a brand new lead
         is_new_lead = from_number not in conversation_state
-        if is_new_lead:
-            conversation_state[from_number] = {
-                "name": contact_name,
-                "stage": "new"
-            }
-        else:
-            conversation_state[from_number]["name"] = contact_name
-            
-        conversation_state[from_number]["last_msg"] = datetime.now().isoformat()
-        conversation_state[from_number]["last_text"] = msg_text
 
-        # 1. Save to Google Sheets CRM (non-blocking)
+        # ── CRM save (background) ──
         threading.Thread(
             target=save_lead_to_sheets,
-            args=(from_number, contact_name, msg_text, is_new_lead)
+            args=(from_number, contact_name, msg_text, is_new_lead),
         ).start()
 
-        # 2. Generate and send smart reply
-        reply, exclude_btn = get_smart_reply(msg_text, contact_name, from_number, is_new_lead)
-        if exclude_btn == "NO_BUTTONS":
-            send_whatsapp_message(from_number, reply)
-        else:
-            send_interactive_message(from_number, reply, btn_preset=exclude_btn)
+        # ── Generate reply ──
+        reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead)
+        send_reply(from_number, reply_text, preset)
 
-        # 3. Schedule follow-ups for new leads only
+        # ── Schedule follow-ups for new leads ──
         if is_new_lead:
             schedule_followups(from_number, contact_name)
 
@@ -530,951 +960,212 @@ def receive_message():
     return jsonify({"status": "ok"}), 200
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SMART REPLY ENGINE
-# Priority: New Lead Welcome → Keyword → Course Number → Gemini AI → Fallback
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SMART REPLY ENGINE
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Goal → Course mapping (relative numbering)
-GOAL_COURSES = {
-    "job": [
-        ("PGDCA", "PGDCA - Post Graduate Diploma", "12 Months", "₹15,999"),
-        ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
-        ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
-        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
-    ],
-    "business": [
-        ("AIDM Digital Marketing", "AI-Driven Digital Marketing", "6 Months", "₹19,999"),
-        ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
-        ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
-    ],
-    "basic": [
-        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
-        ("Word Processing & Data Entry", "Word Processing & Data Entry", "6 Months", "₹4,800"),
-        ("Computer Teacher Training", "Computer Teacher Training", "1 Year", "₹7,999"),
-    ],
-    "accounting": [
-        ("SAP Financial Accounting", "SAP Financial Accounting", "4-6 Months", "₹11,999"),
-        ("GST & Payroll", "GST & Payroll Diploma", "6 Months", "₹5,499"),
-        ("Corporate Business Accounting", "Corporate Business Accounting", "1 Year", "₹7,999"),
-    ],
-}
-
-FULL_FEE_TABLE = (
-    "💰 *Course Fees - The Oxford Computers*\n"
-    "━━━━━━━━━━━━━━━━\n"
-    "1. PGDCA - ₹15,999 (12M)\n"
-    "2. AIDM Digital Marketing - ₹19,999 (6M)\n"
-    "3. SAP Accounting - ₹11,999 (4-6M)\n"
-    "4. Python - ₹4,499 (3M)\n"
-    "5. GST & Payroll - ₹5,499 (6M)\n"
-    "6. DCA Fast Track - ₹6,400 (6M)\n"
-    "7. Teacher Training - ₹7,999 (1Y)\n"
-    "8. Business Accounting - ₹7,999 (1Y)\n"
-    "9. Data Entry - ₹4,800 (6M)\n"
-    "10. Web Designing - ₹5,999 (6M)\n"
-    "━━━━━━━━━━━━━━━━\n"
-    "🎓 All courses Kerala State Rutronix Approved\n"
-    "📊 EMI facility available!\n\n"
-    "Ithu one-time investment aanu.\n"
-    "Job kittiyal 1-2 months-il recover cheyyam! 💪\n\n"
-    "Demo kaanan varamo, atho seat reserve cheyyano?"
-)
-
-COURSE_FEES = {
-    "PGDCA": ("₹15,999", "12 Months"),
-    "AIDM Digital Marketing": ("₹19,999", "6 Months"),
-    "SAP Financial Accounting": ("₹11,999", "4-6 Months"),
-    "Python Programming": ("₹4,499", "3 Months"),
-    "GST & Payroll": ("₹5,499", "6 Months"),
-    "DCA Fast Track": ("₹6,400", "6 Months"),
-    "Computer Teacher Training": ("₹7,999", "1 Year"),
-    "Corporate Business Accounting": ("₹7,999", "1 Year"),
-    "Word Processing & Data Entry": ("₹4,800", "6 Months"),
-    "Professional Diploma in Web Designing": ("₹5,999", "6 Months"),
-}
-
-VISIT_KEYWORDS = ["visit", "office", "varam", "neritt", "address", "location", "എവിടെ", "വരാം"]
-HANDOFF_KEYWORDS = ["call me", "counselor", "confused", "doubt", "office number", "talk to counselor", "വിളിക്കൂ", "സംശയം"]
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SMART REPLY ENGINE
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Goal → Course mapping (relative numbering)
-GOAL_COURSES = {
-    "job": [
-        ("PGDCA", "PGDCA - Post Graduate Diploma", "12 Months", "₹15,999"),
-        ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
-        ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
-        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
-    ],
-    "business": [
-        ("AIDM Digital Marketing", "AI-Driven Digital Marketing", "6 Months", "₹19,999"),
-        ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
-        ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
-    ],
-    "basic": [
-        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
-        ("Word Processing & Data Entry", "Word Processing & Data Entry", "6 Months", "₹4,800"),
-        ("Computer Teacher Training", "Computer Teacher Training", "1 Year", "₹7,999"),
-    ],
-    "accounting": [
-        ("SAP Financial Accounting", "SAP Financial Accounting", "4-6 Months", "₹11,999"),
-        ("GST & Payroll", "GST & Payroll Diploma", "6 Months", "₹5,499"),
-        ("Corporate Business Accounting", "Corporate Business Accounting", "1 Year", "₹7,999"),
-    ],
-}
-
-FULL_FEE_TABLE = (
-    "💰 *Course Fees - The Oxford Computers*\n"
-    "━━━━━━━━━━━━━━━━\n"
-    "1. PGDCA - ₹15,999 (12M)\n"
-    "2. AIDM Digital Marketing - ₹19,999 (6M)\n"
-    "3. SAP Accounting - ₹11,999 (4-6M)\n"
-    "4. Python - ₹4,499 (3M)\n"
-    "5. GST & Payroll - ₹5,499 (6M)\n"
-    "6. DCA Fast Track - ₹6,400 (6M)\n"
-    "7. Teacher Training - ₹7,999 (1Y)\n"
-    "8. Business Accounting - ₹7,999 (1Y)\n"
-    "9. Data Entry - ₹4,800 (6M)\n"
-    "10. Web Designing - ₹5,999 (6M)\n"
-    "━━━━━━━━━━━━━━━━\n"
-    "🎓 All courses Kerala State Rutronix Approved\n"
-    "📊 EMI facility available!\n\n"
-    "Ithu one-time investment aanu.\n"
-    "Job kittiyal 1-2 months-il recover cheyyam! 💪\n\n"
-    "Demo kaanan varamo, atho seat reserve cheyyano?"
-)
-
-COURSE_FEES = {
-    "PGDCA": ("₹15,999", "12 Months"),
-    "AIDM Digital Marketing": ("₹19,999", "6 Months"),
-    "SAP Financial Accounting": ("₹11,999", "4-6 Months"),
-    "Python Programming": ("₹4,499", "3 Months"),
-    "GST & Payroll": ("₹5,499", "6 Months"),
-    "DCA Fast Track": ("₹6,400", "6 Months"),
-    "Computer Teacher Training": ("₹7,999", "1 Year"),
-    "Corporate Business Accounting": ("₹7,999", "1 Year"),
-    "Word Processing & Data Entry": ("₹4,800", "6 Months"),
-    "Professional Diploma in Web Designing": ("₹5,999", "6 Months"),
-}
-
-VISIT_KEYWORDS = ["visit", "office", "varam", "neritt", "address", "location", "എവിടെ", "വരാം"]
-HANDOFF_KEYWORDS = ["call me", "counselor", "confused", "doubt", "office number", "talk to counselor", "വിളിക്കൂ", "സംശയം"]
-
-def get_smart_reply(msg_text, name, phone, is_new_lead):
-    reply, btn_preset = _get_smart_reply_internal(msg_text, name, phone, is_new_lead)
-    if msg_text.lower().strip() == "exit":
-        btn_preset = "NO_BUTTONS"
-    return reply, btn_preset
-
-def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
-    msg_lower = msg_text.lower().strip()
-    
-    if phone not in conversation_state:
-        conversation_state[phone] = {
-            "name": name, "stage": "new", "course": "Not Selected",
-            "last_msg": datetime.now().isoformat(), "last_text": msg_text,
-            "last_reply": ""
-        }
-        
-    state = conversation_state[phone]
-    current_stage = state.get("stage", "new")
-    course = state.get("course", "Not Selected")
-    last_reply = state.get("last_reply", "")
-
-    # Helpers
-    is_offer_intent = any(w in msg_lower for w in ["offer", "discount", "special price", "offer undo", "offer unda"])
-    is_help_choose = any(w in msg_lower for w in ["which course", "best course", "course select", "help me choose", "not sure", "confused", "entha course", "ethu course"])
-    is_job_goal = msg_lower in ["1", "job", "job oriented", "career", "software job", "it job"]
-    is_business_goal = msg_lower in ["2", "business", "freelance", "own business"]
-    is_basic_goal = msg_lower in ["3", "basic", "basic computer", "office job"]
-    is_accounting_goal = msg_lower in ["4", "accounting", "tax", "gst", "finance"]
-    is_not_sure_goal = msg_lower in ["5", "not sure", "confused"]
-
-    # a) EXIT
-    if msg_lower == "exit":
-        state["stage"] = "active"
-        return (
-            f"👋 നന്ദി {name}!\n\n"
-            "The Oxford Computers-ൽ നിന്ന് വിളിക്കാം\n"
-            "📞 9447329972\n\n"
-            "🌐 theoxfordedu.com\n"
-            "വീണ്ടും message cheyyoo! 😊"
-        ), "NO_BUTTONS"
-
-    # RESTART COMMAND
-    if msg_lower in ["restart", "start", "start over"]:
-        state["stage"] = "goal_selection"
-        state["last_reply"] = "welcome"
-        return get_welcome_message(name), "BUTTONS_GOAL"
-
-    # GREETING OR VERY SHORT NEW LEAD - only show welcome if not already in goal_selection
-    greetings = ["hi", "hello", "hai", "hii", "നമസ്കാരം", "hey"]
-    if msg_lower in greetings or (is_new_lead and len(msg_lower) <= 2 and not msg_lower.isdigit()):
-        if current_stage == "goal_selection" and last_reply == "welcome":
-            # Already showed welcome, nudge forward
-            return (
-                f"😊 {name}, 1 muthal 5 vare oru number reply cheyyoo!\n\n"
-                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic | 4️⃣ Accounting | 5️⃣ Not sure"
-            ), "BUTTONS_GOAL"
-        state["stage"] = "goal_selection"
-        state["last_reply"] = "welcome"
-        return get_welcome_message(name), "BUTTONS_GOAL"
-
-    # b) CURRENT STAGE HANDLERS (for specific stage inputs like numbers, dates)
-    if current_stage == "demo_time_selection" and msg_lower in ["1", "2", "3"]:
-        times = {"1": "Morning", "2": "Afternoon", "3": "Evening"}
-        selected_time = times[msg_lower]
-        state["batch_time"] = selected_time
-        state["stage"] = "demo_date_selection"
-        return (
-            f"✅ {selected_time} confirmed!\n\n"
-            "Preferred date ഏതാണ്?\n"
-            "(Example: Tomorrow, Monday, April 30)\n\n"
-            "Date reply cheyyoo! 📅"
-        ), "NO_BUTTONS"
-
-    if current_stage == "demo_date_selection" and not is_offer_intent and not is_help_choose:
-        user_date = msg_text.strip()
-        state["stage"] = "demo_booked"
-        batch_time = state.get("batch_time", "")
-        status_msg = f"Demo Booked: {course} {batch_time} {user_date}"
-        threading.Thread(target=update_lead_status, args=(phone, status_msg)).start()
-        return (
-            "🎉 *Demo Class Booked!*\n\n"
-            f"📚 Course: {course}\n"
-            f"⏰ Time: {batch_time}\n"
-            f"📅 Date: {user_date}\n"
-            "📍 The Oxford Computers, Malayinkeezhu\n\n"
-            "നാളെ ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും!\n"
-            "📞 9447329972 | 🌐 theoxfordedu.com"
-        ), "BUTTONS_AFTER_DEMO"
-
-    if current_stage == "offer_selection" and msg_lower in ["1", "2", "3", "4"]:
-        offer_map = {
-            "1": ("CWPDE", "Certificate in Word Processing & Data Entry", "₹4,800", "6 Months", "https://rzp.io/rzp/xkWdKtd"),
-            "2": ("DCA", "Diploma in Computer Applications", "₹6,400", "6 Months", "https://rzp.io/rzp/mJPPtM9x"),
-            "3": ("AIDM", "AI-Driven Digital Marketing", "₹19,999", "6 Months", "https://rzp.io/rzp/vF76sj7Y"),
-            "4": ("PGDCA", "Post Graduate Diploma in Computer Applications", "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
-        }
-        code, full_name, price, dur, link = offer_map[msg_lower]
-        state["stage"] = "payment_sent"
-        state["offer_course"] = code
-        return (
-            f"✅ *{code} - Great Choice!*\n\n"
-            f"📚 {full_name}\n"
-            f"⏱ Duration: {dur}\n"
-            f"🎓 Kerala State Rutronix Approved\n"
-            f"💰 Special Price: *{price}*\n\n"
-            "✅ Government certified\n"
-            "✅ Receipt after payment\n"
-            f"📍 Oxford Computers, Malayinkeezhu\n\n"
-            f"👇 *Secure Payment Link:*\n{link}\n\n"
-            "Payment ശേഷം Transaction ID\n"
-            "ഇവിടെ reply cheyyoo 📩\n"
-            "(Example: T2504281234)"
-        ), "NO_BUTTONS"
-
-    if current_stage == "payment_sent":
-        user_txn = msg_text.strip()
-        state["stage"] = "enrolled"
-        offer_course = state.get("offer_course", "Unknown")
-        note_timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M]")
-        note_msg = f"{note_timestamp} Payment: {user_txn} Course: {offer_course}"
-        threading.Thread(target=update_lead_status, args=(phone, f"Payment Received: {user_txn}", note_msg)).start()
-        return (
-            "🎉 *Payment Received!*\n\n"
-            f"✅ Transaction ID: {user_txn}\n"
-            f"📚 Course: {offer_course}\n"
-            f"👤 Name: {name}\n\n"
-            "Seat confirmed! Welcome to\n"
-            "*The Oxford Computers* 🎓\n\n"
-            "📞 9447329972 - batch details\n"
-            "📍 Malayinkeezhu, Thiruvananthapuram\n\n"
-            "കാണാൻ കാത്തിരിക്കുന്നു! 😊"
-        ), "BUTTONS_AFTER_DEMO"
-
-    if current_stage == "course_recommendation" and msg_lower in ["1", "2", "3", "4"]:
-        goal = state.get("goal", "job")
-        courses = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
-        idx = int(msg_lower) - 1
-        if 0 <= idx < len(courses):
-            course_key, display, dur, fee = courses[idx]
-            state["stage"] = "course_viewed"
-            state["course"] = course_key
-            threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {course_key}")).start()
-            course_msg_map = {
-                "PGDCA": _PGDCA_MSG, "AIDM Digital Marketing": _AIDM_MSG,
-                "SAP Financial Accounting": _SAP_MSG, "Python Programming": _PYTHON_MSG,
-                "GST & Payroll": _GST_MSG, "DCA Fast Track": _DCA_MSG,
-                "Computer Teacher Training": _TEACHER_MSG,
-                "Corporate Business Accounting": _ACCOUNTING_MSG,
-                "Word Processing & Data Entry": _WORD_MSG,
-                "Professional Diploma in Web Designing": _WEB_MSG,
-            }
-            detail = course_msg_map.get(course_key, "")
-            return (
-                f"✅ *{display}* - Great choice!\n\n"
-                f"{detail}\n"
-                f"💰 Fee: {fee} | ⏱ {dur}\n"
-                f"🎓 Kerala State Rutronix Approved\n\n"
-                f"Free demo class book cheyyatte? 🎓"
-            ), "BUTTONS_COURSE"
-
-    # c) INTENT PHRASES (offer/fees/demo/visit/call/help_choose/courses)
-    # "courses" or "restart" keyword - reset to goal_selection with anti-loop guard
-    if msg_lower in ["course", "courses", "padikkanam", "study"]:
-        if current_stage == "goal_selection" and last_reply == "welcome":
-            return (
-                f"Already courses list kaanichu 😊\n\n"
-                "Ningalk enthu type course aanu vendath?\n"
-                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic | 4️⃣ Accounting | 5️⃣ Not sure"
-            ), "BUTTONS_GOAL"
-        state["stage"] = "goal_selection"
-        state["last_reply"] = "welcome"
-        return get_welcome_message(name), "BUTTONS_GOAL"
-
-    if is_offer_intent:
-        state["stage"] = "offer_selection"
-        # do NOT reset last_reply here
-        return (
-            "🔥 *Today's Special Offer!*\n"
-            "━━━━━━━━━━━━━━━━\n"
-            "🎓 Kerala State Rutronix Approved\n\n"
-            "1️⃣ CWPDE - ₹4,800 (6M)\n"
-            "2️⃣ DCA - ₹6,400 (6M)\n"
-            "3️⃣ AIDM - ₹19,999 (6M)\n"
-            "4️⃣ PGDCA - ₹15,999 (12M)\n"
-            "━━━━━━━━━━━━━━━━\n"
-            "⚡ Limited seats! Book now!\n\n"
-            "Number reply cheyyoo 💳"
-        ), "BUTTONS_OFFER"
-
-    if msg_lower == "pay":
-        if current_stage == "offer_selection":
-            return "Please reply with 1, 2, 3, or 4 to select the course you want to enroll in! 💳", "NO_BUTTONS"
-        return "To make a payment, please type *OFFER* to see available payment options! 💳", "BUTTONS_OFFER"
-
-    if any(w in msg_lower for w in ["fees", "fee", "price"]):
-        # Do not reset stage to active, keep previous stage
-        if course and course != "Not Selected" and course in COURSE_FEES:
-            fee, duration = COURSE_FEES[course]
-            return (
-                f"💰 *{course} - Fee Details*\n\n"
-                f"📋 Fee: {fee}\n"
-                f"⏱ Duration: {duration}\n"
-                f"🎓 Kerala State Rutronix Approved\n\n"
-                "📊 EMI available - monthly installments!\n\n"
-                "Ithu one-time investment aanu.\n"
-                "Job kittiyal 1-2 months-il recover cheyyam! 💪\n\n"
-                "Demo kaanan varamo, atho seat reserve cheyyano?"
-            ), "BUTTONS_FEES"
-        return FULL_FEE_TABLE, "BUTTONS_FEES"
-
-    if msg_lower in ["demo", "free class", "free demo"]:
-        state["stage"] = "demo_time_selection"  # go to demo flow, not goal_selection
-        return (
-            "🎓 *Free Demo Class Booking*\n\n"
-            "Preferred batch time ഏത്?\n\n"
-            "1️⃣ Morning - 9 AM to 11 AM\n"
-            "2️⃣ Afternoon - 12 PM to 2 PM\n"
-            "3️⃣ Evening - 5 PM to 7 PM\n\n"
-            "Number reply cheyyoo! 📅"
-        ), "NO_BUTTONS"
-
-    if any(kw in msg_lower for kw in VISIT_KEYWORDS):
-        state["stage"] = "visit_interested"  # set to visit, NOT goal_selection
-        threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested")).start()
-        return (
-            f"🏢 *Office Visit - Welcome {name}!*\n\n"
-            "📍 *The Oxford Computers*\n"
-            "   Malayinkeezhu Junction\n"
-            "   Thiruvananthapuram, Kerala\n\n"
-            "⏰ Office Hours: 9 AM – 7 PM (Mon-Sat)\n"
-            "📞 9447329972\n\n"
-            "Eppol varananu convenient?\n"
-            "Morning / Afternoon / Evening? 😊"
-        ), "BUTTONS_COURSE"
-
-    if any(kw in msg_lower for kw in HANDOFF_KEYWORDS):
-        state["stage"] = "call_requested"  # set to call, NOT goal_selection
-        threading.Thread(target=update_lead_status, args=(phone, "Call Requested")).start()
-        return (
-            f"😊 Of course {name}!\n\n"
-            "Oru experienced counselor connect cheyyam.\n"
-            "📞 *9447329972* - vilikku!\n\n"
-            "⏰ Available: 9 AM – 7 PM (Mon-Sat)\n"
-            "📍 Oxford Computers, Malayinkeezhu\n\n"
-            "Allenkil ividé message cheyyoo,\n"
-            "njan help cheyyam! 🙌"
-        ), "NO_BUTTONS"
-
-    if is_help_choose or is_not_sure_goal:
-        # Only change stage if not already in not_sure (avoid resetting)
-        if current_stage != "not_sure":
-            state["stage"] = "not_sure"
-        if gemini_client:
-            try:
-                return get_gemini_reply(
-                    f"Student {name} is unsure which course to pick. Ask about their qualification, interest, and career goal. Then suggest the best course.", name
-                ), "BUTTONS_GOAL"
-            except Exception:
-                pass
-        return (
-            f"{name}, no problem! 😊\n\n"
-            "Ningalude qualification enthanu?\n"
-            "Eppol enthu cheyyunnu?\n"
-            "Ethu type job aanu interest?\n\n"
-            "Reply cheyyoo - best course recommend cheyyam! 🎓"
-        ), "BUTTONS_GOAL"
-
-    # d) GOAL WORDS
-    if is_job_goal:
-        goal = "job"
-        courses = GOAL_COURSES[goal]
-        state["stage"] = "course_recommendation"
-        state["goal"] = goal
-        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
-        for i, (_, display, dur, fee) in enumerate(courses, 1):
-            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
-        lines.append("\nCourse number reply cheyyoo! 🎓")
-        return "\n".join(lines), "NO_BUTTONS"
-
-    if is_business_goal:
-        goal = "business"
-        courses = GOAL_COURSES[goal]
-        state["stage"] = "course_recommendation"
-        state["goal"] = goal
-        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
-        for i, (_, display, dur, fee) in enumerate(courses, 1):
-            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
-        lines.append("\nCourse number reply cheyyoo! 🎓")
-        return "\n".join(lines), "NO_BUTTONS"
-
-    if is_basic_goal:
-        goal = "basic"
-        courses = GOAL_COURSES[goal]
-        state["stage"] = "course_recommendation"
-        state["goal"] = goal
-        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
-        for i, (_, display, dur, fee) in enumerate(courses, 1):
-            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
-        lines.append("\nCourse number reply cheyyoo! 🎓")
-        return "\n".join(lines), "NO_BUTTONS"
-
-    if is_accounting_goal:
-        goal = "accounting"
-        courses = GOAL_COURSES[goal]
-        state["stage"] = "course_recommendation"
-        state["goal"] = goal
-        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
-        for i, (_, display, dur, fee) in enumerate(courses, 1):
-            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
-        lines.append("\nCourse number reply cheyyoo! 🎓")
-        return "\n".join(lines), "NO_BUTTONS"
-
-    # e) COURSE KEYWORDS
-    if msg_lower in ["timing", "batch"]:
-        return (
-            "⏰ *Batch Timings*\n\n"
-            "🌅 Morning: 9 AM – 11 AM\n"
-            "☀️ Afternoon: 12 PM – 2 PM\n"
-            "🌆 Evening: 5 PM – 7 PM\n\n"
-            "Weekend batches available! 📅\n"
-            "Preferred timing reply cheyyoo!"
-        ), "BUTTONS_COURSE"
-
-    if msg_lower == "certificate":
-        return (
-            "🏆 *Government Certified Certificate*\n\n"
-            "✅ Kerala State Rutronix approved\n"
-            "✅ Job interviews-ൽ valid\n\n"
-            "Real government-backed certification! 💪"
-        ), "BUTTONS_COURSE"
-
-    if msg_lower in ["placement", "job assistance", "placement support"]:
-        return (
-            "💼 *Placement Support*\n\n"
-            "✅ 100% placement assistance\n"
-            "✅ Resume preparation & Interview coaching\n\n"
-            "Students Kerala & Gulf-ൽ working! 🌟"
-        ), "BUTTONS_COURSE"
-
-    course_kw_map = {
-        "pgdca": _PGDCA_MSG, "pgd": _PGDCA_MSG,
-        "aidm": _AIDM_MSG, "sap": _SAP_MSG,
-        "python": _PYTHON_MSG, "gst": _GST_MSG, "tally": _GST_MSG,
-        "dca": _DCA_MSG, "teacher": _TEACHER_MSG,
-        "accounting": _ACCOUNTING_MSG, "web": _WEB_MSG,
-    }
-    if msg_lower in course_kw_map:
-        state["stage"] = "course_viewed"
-        kw_to_course = {
-            "pgdca": "PGDCA", "pgd": "PGDCA", "aidm": "AIDM Digital Marketing",
-            "sap": "SAP Financial Accounting", "python": "Python Programming",
-            "gst": "GST & Payroll", "tally": "GST & Payroll",
-            "dca": "DCA Fast Track", "teacher": "Computer Teacher Training",
-            "accounting": "Corporate Business Accounting", "web": "Professional Diploma in Web Designing",
-        }
-        cname = kw_to_course.get(msg_lower, "Not Selected")
-        state["course"] = cname
-        fee, dur = COURSE_FEES.get(cname, ("", ""))
-        return course_kw_map[msg_lower] + f"\n\n💰 Fee: {fee} | ⏱ {dur}\n🎓 Kerala State Rutronix Approved\n\nFree demo class book cheyyatte? 🎓", "BUTTONS_COURSE"
-
-    if msg_lower in [str(i) for i in range(1, 11)]:
-        courses_dict = {
-            "1": ("PGDCA", _PGDCA_MSG),
-            "2": ("AIDM Digital Marketing", _AIDM_MSG),
-            "3": ("SAP Financial Accounting", _SAP_MSG),
-            "4": ("Python Programming", _PYTHON_MSG),
-            "5": ("GST & Payroll", _GST_MSG),
-            "6": ("DCA Fast Track", _DCA_MSG),
-            "7": ("Computer Teacher Training", _TEACHER_MSG),
-            "8": ("Corporate Business Accounting", _ACCOUNTING_MSG),
-            "9": ("Word Processing & Data Entry", _WORD_MSG),
-            "10": ("Professional Diploma in Web Designing", _WEB_MSG),
-        }
-        info = courses_dict.get(msg_lower)
-        if info:
-            cname, cdetail = info
-            state["stage"] = "course_viewed"
-            state["course"] = cname
-            threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {cname}")).start()
-            fee, dur = COURSE_FEES.get(cname, ("", ""))
-            return f"✅ *{cname}* - Great choice!\n\n{cdetail}\n\n💰 Fee: {fee} | ⏱ {dur}\n🎓 Kerala State Rutronix Approved\n\nFree demo class book cheyyatte? 🎓", "BUTTONS_COURSE"
-
-    # f) GEMINI FALLBACK
-    if gemini_client:
-        try:
-            return get_gemini_reply(msg_text, name), "BUTTONS_COURSE"
-        except Exception:
-            return get_smart_fallback(name, msg_text), "BUTTONS_COURSE"
-    return get_smart_fallback(name, msg_text), "BUTTONS_COURSE"
-
-def get_welcome_message(name):
-    return (
-        f"👋 നമസ്കാരം *{name}*!\n\n"
-        "*The Oxford Computers*-ലേക്ക് സ്വാഗതം! 🎓\n"
-        "Kerala Govt Certified • AI-Enabled Courses\n\n"
-        "നിങ്ങൾ എന്താണ് ലക്ഷ്യം? 🤔\n\n"
-        "1️⃣ Job Oriented - IT/Software career\n"
-        "2️⃣ Business/Freelance\n"
-        "3️⃣ Basic Computer/Office Job\n"
-        "4️⃣ Accounting/Tax\n"
-        "5️⃣ Not sure - help me choose\n\n"
-        "Number reply cheyyoo! 📝"
-    )
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ✅ GEMINI AI REPLY - With 429 error handling
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def get_gemini_reply(msg_text, name, return_fallback=True):
-    try:
-        prompt = f"""{INSTITUTE_INFO}
-
-Student name: {name}
-Student message: "{msg_text}"
-"""
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
-        return response.text.strip()
-
-    except Exception as e:
-        error_str = str(e).lower()
-        if "429" in str(e) or "quota" in error_str or "resource" in error_str:
-            print(f"⚠️ Gemini quota exceeded - using smart fallback")
-        else:
-            print(f"⚠️ Gemini error: {e}")
-        
-        if return_fallback:
-            return get_smart_fallback(name, msg_text)
-        return None
-
-def get_smart_fallback(name, msg_text=""):
-    msg_lower = msg_text.lower() if msg_text else ""
-
-    if any(w in msg_lower for w in ["fee", "price", "cost", "vila"]):
-        return (
-            f"😊 {name}, fees ariyaan aagrahikkunnathin nandi!\n\n"
-            "Government approved courses ₹4,499 muthal.\n"
-            "EMI facility undh!\n\n"
-            "Exact fee ariyaan *FEES* reply cheyyoo 💰\n"
-            "📞 9447329972"
-        )
-    if any(w in msg_lower for w in ["job", "placement", "work", "career"]):
-        return (
-            f"{name}, nalla chodyam! 💪\n\n"
-            "Oxford-il 100% placement assistance undh.\n"
-            "Kerala & Gulf-il students working aanu.\n\n"
-            "Best course ariyaan *COURSES* reply cheyyoo 📚\n"
-            "Or free demo try cheyyoo: *DEMO* 🎓"
-        )
-    if any(w in msg_lower for w in ["course", "padikkaan", "learn", "study"]):
-        return (
-            f"{name}, 10 government certified courses und! 📚\n\n"
-            "Ningalude goal enthanu?\n"
-            "Job? Business? Basic computer?\n\n"
-            "*COURSES* reply cheythal help cheyyam! 🎓"
-        )
-
-    return (
-        f"😊 Nandi {name}!\n\n"
-        "Njan Aaliza - The Oxford Computers-nte\n"
-        "Senior Admission Counselor.\n\n"
-        "Ningalkku help cheyyatte?\n"
-        "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
-        "📞 9447329972"
-    )
-
-def get_fallback_reply(name):
-    return get_smart_fallback(name)
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# GOOGLE SHEETS CRM
-# Sheet columns: Timestamp | Name | Phone | Last Message | Status | Source | Notes
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def get_sheet():
+# ═══════════════════════════════════════════════════════
+#  GOOGLE SHEETS CRM
+# ═══════════════════════════════════════════════════════
+def _get_sheet():
     scope = [
         "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
+        "https://www.googleapis.com/auth/drive",
     ]
-    # ✅ FIXED: reads GOOGLE_CREDENTIALS env var (matches Railway dashboard)
     creds_json = json.loads(GOOGLE_CREDENTIALS_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
     client = gspread.authorize(creds)
     return client.open_by_key(SHEETS_ID)
 
 
-def save_lead_to_sheets(phone, name, message, is_new_lead):
-    """Save or update lead in Google Sheets"""
+def save_lead_to_sheets(phone: str, name: str, message: str, is_new: bool):
     try:
-        if not SHEETS_ID or not GOOGLE_CREDENTIALS_JSON or GOOGLE_CREDENTIALS_JSON == "{}":
-            print("⚠️ Sheets skipped - SHEETS_ID or GOOGLE_CREDENTIALS not configured")
+        if not SHEETS_ID or GOOGLE_CREDENTIALS_JSON == "{}":
             return
+        wb  = _get_sheet()
+        titles = [s.title for s in wb.worksheets()]
+        ws  = wb.worksheet("Leads") if "Leads" in titles else wb.sheet1
 
-        wb = get_sheet()
-
-        # Use 'Leads' sheet if it exists, otherwise use first sheet
-        sheet_titles = [s.title for s in wb.worksheets()]
-        leads_sheet = wb.worksheet("Leads") if "Leads" in sheet_titles else wb.sheet1
-
-        # Setup header row if sheet is empty
-        first_cell = leads_sheet.cell(1, 1).value
-        if not first_cell:
-            leads_sheet.update("A1:G1", [
+        # Init headers if blank
+        if not ws.cell(1, 1).value:
+            ws.update("A1:G1", [
                 ["Timestamp", "Name", "Phone", "Last Message", "Status", "Source", "Notes"]
             ])
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        note_timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M]")
-        note_entry = f"{note_timestamp} {message}"
+        ts    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        note  = f"[{ts}] {message}"
 
-        if is_new_lead:
-            row = [timestamp, name, phone, message, "New Lead", "WhatsApp", note_entry]
-            leads_sheet.append_row(row)
-            print(f"✅ New lead saved: {name} ({phone})")
+        if is_new:
+            ws.append_row([ts, name, phone, message, "New Lead", "WhatsApp", note])
+            print(f"✅ CRM: new lead saved — {name}")
         else:
-            all_phones = leads_sheet.col_values(3)
-            if phone in all_phones:
-                row_idx = all_phones.index(phone) + 1
-                leads_sheet.update_cell(row_idx, 1, timestamp)
-                leads_sheet.update_cell(row_idx, 4, message)
-                
-                existing_note = leads_sheet.cell(row_idx, 7).value or ""
-                new_note = f"{existing_note}\n{note_entry}" if existing_note else note_entry
-                leads_sheet.update_cell(row_idx, 7, new_note)
-                
-                print(f"✅ Lead updated: {name} ({phone})")
-
+            phones = ws.col_values(3)
+            if phone in phones:
+                row = phones.index(phone) + 1
+                ws.update_cell(row, 1, ts)
+                ws.update_cell(row, 4, message)
+                existing = ws.cell(row, 7).value or ""
+                ws.update_cell(row, 7, f"{existing}\n{note}" if existing else note)
+                print(f"✅ CRM: lead updated — {name}")
     except Exception as e:
-        print(f"⚠️ Sheets error: {e}")
+        print(f"⚠️  Sheets save error: {e}")
 
 
-def update_lead_status(phone, status, append_note=None):
-    """Update lead status column in Google Sheets"""
+def update_lead_status(phone: str, status: str, append_note: str = ""):
     try:
-        if not SHEETS_ID or not GOOGLE_CREDENTIALS_JSON or GOOGLE_CREDENTIALS_JSON == "{}":
+        if not SHEETS_ID or GOOGLE_CREDENTIALS_JSON == "{}":
             return
-        wb = get_sheet()
-        sheet_titles = [s.title for s in wb.worksheets()]
-        leads_sheet = wb.worksheet("Leads") if "Leads" in sheet_titles else wb.sheet1
-        all_phones = leads_sheet.col_values(3)
-        if phone in all_phones:
-            row_idx = all_phones.index(phone) + 1
-            leads_sheet.update_cell(row_idx, 5, status)
+        wb  = _get_sheet()
+        titles = [s.title for s in wb.worksheets()]
+        ws  = wb.worksheet("Leads") if "Leads" in titles else wb.sheet1
+        phones = ws.col_values(3)
+        if phone in phones:
+            row = phones.index(phone) + 1
+            ws.update_cell(row, 5, status)
             if append_note:
-                existing_note = leads_sheet.cell(row_idx, 7).value or ""
-                new_note = f"{existing_note}\n{append_note}" if existing_note else append_note
-                leads_sheet.update_cell(row_idx, 7, new_note)
-            print(f"✅ Status updated: {phone} → {status}")
+                existing = ws.cell(row, 7).value or ""
+                ws.update_cell(row, 7, f"{existing}\n{append_note}" if existing else append_note)
+            print(f"✅ CRM: status → {status} ({phone})")
     except Exception as e:
-        print(f"⚠️ Status update error: {e}")
+        print(f"⚠️  Sheets status error: {e}")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# MULTI-DAY FOLLOW-UP SCHEDULER
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FOLLOWUP_MESSAGES = [
+# ═══════════════════════════════════════════════════════
+#  MULTI-DAY FOLLOW-UP SCHEDULER
+# ═══════════════════════════════════════════════════════
+FOLLOWUP_TEMPLATES = [
     {
         "day": 1,
         "hours": 24,
         "message": (
-            "{name}-നു് നമസ്കാരം! 👋\n\n"
-            "The Oxford Computers-ൽ നിന്ന്...\n\n"
-            "നിങ്കൾ course-നെ കുറിച്ച് ആലോചിച്ചോ? 🤔\n\n"
-            "ഒരു *free demo class* try ചെയ്ത് നോക്കൂ -\n"
+            "👋 {name}, The Oxford Computers ইthu!\n\n"
+            "Course-ntekunich aadichirunno? 🤔\n\n"
+            "Oru *free demo class* try cheyyoo —\n"
             "zero commitment, 100% free! 🎓\n\n"
-            "*DEMO* reply ചെയ്താൽ book ചെയ്യാം!"
-        )
+            "*DEMO* reply cheyyoo — book cheyyam! ✅"
+        ),
     },
     {
         "day": 3,
         "hours": 72,
         "message": (
-            "👋 {name}, The Oxford Computers here!\n\n"
-            "🌟 *Student Success Story*\n\n"
-            "Riya (Attingal) - Web Design course complete ചെയ്ത്\n"
-            "ഇപ്പോൾ ₹25,000/month earn ചെയ്യുന്നു! 💪\n\n"
-            "താങ്കൾക്കും ഇത് possible ആണ്.\n"
-            "Government certified course + Placement support.\n\n"
-            "📅 Next batch starting soon!\n"
-            "Seat reserve ചെയ്യാൻ reply ചെയ്യൂ 🙌"
-        )
+            "🌟 {name}, oru student success story!\n\n"
+            "Riya (Attingal) — Web Design course cheythitt\n"
+            "ippol ₹25,000/month earn cheyyunnu! 💪\n\n"
+            "Ningalkum possible aanu. Government certified\n"
+            "course + placement support — Oxford ready aanu!\n\n"
+            "📅 Next batch starting soon — seat reserve cheyyano?"
+        ),
     },
     {
         "day": 7,
         "hours": 168,
         "message": (
-            "{name}, last message! 😊\n\n"
-            "The Oxford Computers - *Special Offer*\n\n"
-            "🎁 ഈ batch-ൽ join ചെയ്യുന്നവർക്ക്:\n"
+            "{name}, last message from Oxford! 😊\n\n"
+            "🎁 *Special offer this batch:*\n"
             "✅ Free registration (₹500 waived)\n"
             "✅ Free study materials\n"
             "✅ Flexible EMI option\n\n"
             "📍 Malayinkeezhu, Trivandrum\n"
-            "🌐 theoxfordedu.com\n\n"
-            "കൂടുതൽ info: *FEES* അല്ലെങ്കിൽ *DEMO* reply ചെയ്യൂ!"
-        )
-    }
+            "📞 9447329972 | 🌐 theoxfordedu.com\n\n"
+            "Details: *FEES* or *DEMO* reply cheyyoo!"
+        ),
+    },
 ]
 
 
-def schedule_followups(phone, name):
-    """Schedule multi-day follow-up messages for a new lead"""
+def schedule_followups(phone: str, name: str):
     now = datetime.now()
-    for followup in FOLLOWUP_MESSAGES:
-        send_at = now + timedelta(hours=followup["hours"])
+    for tmpl in FOLLOWUP_TEMPLATES:
         follow_up_queue.append({
-            "phone": phone,
-            "name": name,
-            "send_at": send_at,
-            "message": followup["message"].format(name=name),
-            "day": followup["day"],
-            "done": False
+            "phone":   phone,
+            "name":    name,
+            "send_at": now + timedelta(hours=tmpl["hours"]),
+            "message": tmpl["message"].format(name=name),
+            "day":     tmpl["day"],
+            "done":    False,
         })
-    print(f"📅 Follow-ups scheduled for {name} ({phone})")
+    print(f"📅 Follow-ups scheduled for {name}")
 
 
-def process_followup_queue():
-    """Background thread - checks every 5 min and sends due follow-ups"""
+def _followup_worker():
     while True:
         try:
             now = datetime.now()
             for item in follow_up_queue:
-                if not item["done"] and now >= item["send_at"]:
-                    # Skip if lead replied within last 6 hours (they're active)
-                    state = conversation_state.get(item["phone"], {})
-                    last_msg_time = state.get("last_msg", "")
-                    if last_msg_time:
-                        last_dt = datetime.fromisoformat(last_msg_time)
-                        if (now - last_dt).total_seconds() < 21600:  # 6 hours
-                            item["done"] = True
-                            print(f"⏭️ Follow-up skipped - {item['name']} recently active")
-                            continue
-
-                    send_whatsapp_message(item["phone"], item["message"])
-                    threading.Thread(
-                        target=update_lead_status,
-                        args=(item["phone"], f"Follow-up Day {item['day']} Sent")
-                    ).start()
-                    item["done"] = True
-                    print(f"📤 Follow-up Day {item['day']} sent to {item['name']}")
-
+                if item["done"] or now < item["send_at"]:
+                    continue
+                # Skip if lead was active in the last 6 hours
+                st = conversation_state.get(item["phone"], {})
+                last = st.get("last_msg", "")
+                if last:
+                    delta = (now - datetime.fromisoformat(last)).total_seconds()
+                    if delta < 21_600:
+                        item["done"] = True
+                        print(f"⏭️  Follow-up skipped — {item['name']} recently active")
+                        continue
+                send_text(item["phone"], item["message"])
+                threading.Thread(
+                    target=update_lead_status,
+                    args=(item["phone"], f"Follow-up Day {item['day']} Sent"),
+                ).start()
+                item["done"] = True
+                print(f"📤 Follow-up Day {item['day']} → {item['name']}")
         except Exception as e:
-            print(f"⚠️ Follow-up queue error: {e}")
+            print(f"⚠️  Follow-up worker error: {e}")
+        time.sleep(300)
 
-        time.sleep(300)  # Check every 5 minutes
 
-
-# Start background follow-up processor
-followup_thread = threading.Thread(target=process_followup_queue, daemon=True)
-followup_thread.start()
+threading.Thread(target=_followup_worker, daemon=True).start()
 print("✅ Follow-up scheduler started")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SEND WHATSAPP MESSAGE - Named Button Presets
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-BUTTON_PRESETS = {
-    "BUTTONS_GOAL": [
-        {"id": "1", "title": "💼 Job Oriented"},
-        {"id": "2", "title": "🚀 Business"},
-        {"id": "3", "title": "🖥️ Basic Computer"},
-    ],
-    "BUTTONS_COURSE": [
-        {"id": "DEMO", "title": "🎓 Free Demo"},
-        {"id": "FEES", "title": "💰 Fees"},
-        {"id": "VISIT", "title": "🏢 Visit Office"},
-    ],
-    "BUTTONS_FEES": [
-        {"id": "DEMO", "title": "🎓 Free Demo"},
-        {"id": "OFFER", "title": "🔥 Pay Now"},
-        {"id": "CALL", "title": "📞 Call Us"},
-    ],
-    "BUTTONS_OFFER": [
-        {"id": "OFFER", "title": "💳 Pay Now"},
-        {"id": "DEMO", "title": "🎓 Free Demo"},
-        {"id": "VISIT", "title": "🏢 Visit Office"},
-    ],
-    "BUTTONS_AFTER_DEMO": [
-        {"id": "COURSES", "title": "📚 Courses"},
-        {"id": "OFFER", "title": "🔥 Offer"},
-        {"id": "VISIT", "title": "🏢 Visit Office"},
-    ],
-}
-
-def send_interactive_message(to_number, body_text, btn_preset=None):
-    """Sends WhatsApp interactive message with named button presets"""
-    if not btn_preset or btn_preset == "NO_BUTTONS":
-        return send_whatsapp_message(to_number, body_text)
-
-    buttons_data = BUTTON_PRESETS.get(btn_preset, BUTTON_PRESETS["BUTTONS_COURSE"])
-    buttons = [{"type": "reply", "reply": btn} for btn in buttons_data]
-
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_number,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": {"text": body_text},
-            "action": {"buttons": buttons}
-        }
-    }
-    resp = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
-    print(f"📤 Sent interactive [{btn_preset}] to {to_number}: HTTP {resp.status_code}")
-
-    if resp.status_code != 200:
-        print("⚠️ Interactive failed, falling back to plain text")
-        return send_whatsapp_message(to_number, body_text)
-
-    return resp
-
-def send_whatsapp_message(to_number, message_text):
-    """Send a plain text WhatsApp message"""
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_number,
-        "type": "text",
-        "text": {"body": message_text}
-    }
-    resp = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
-    print(f"📤 Sent to {to_number}: HTTP {resp.status_code}")
-    return resp
-
-
-def send_template_message(to_number, template_name, lang="en", components=None):
-    """Send a Meta-approved template message"""
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_number,
-        "type": "template",
-        "template": {"name": template_name, "language": {"code": lang}}
-    }
-    if components:
-        payload["template"]["components"] = components
-    return requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# BROADCAST API
-# POST /broadcast  |  Header: X-API-Key
-# Body: { "numbers": [...], "message": "...", "delay_seconds": 2 }
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  BROADCAST — plain text
+#  POST /broadcast  |  Header: X-API-Key
+#  Body: { "numbers": [...], "message": "...", "delay_seconds": 2 }
+# ═══════════════════════════════════════════════════════
 @app.route("/broadcast", methods=["POST"])
 def broadcast():
     if request.headers.get("X-API-Key") != BROADCAST_API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data    = request.get_json()
-    numbers = data.get("numbers", [])
-    message = data.get("message", "")
-    delay   = data.get("delay_seconds", 2)
+    body    = request.get_json(silent=True) or {}
+    numbers = body.get("numbers", [])
+    message = body.get("message", "")
+    delay   = body.get("delay_seconds", 2)
 
     if not numbers or not message:
         return jsonify({"error": "numbers and message are required"}), 400
 
     results = []
-    for number in numbers:
-        # Normalize to Indian format
-        number = str(number).strip()
-        if not number.startswith("91"):
-            number = "91" + number.lstrip("0")
+    for num in numbers:
+        num = str(num).strip()
+        if not num.startswith("91"):
+            num = "91" + num.lstrip("0")
+        r = send_text(num, message)
+        results.append({"number": num, "status": r.status_code, "ok": r.status_code == 200})
+        time.sleep(delay)
 
-        resp = send_whatsapp_message(number, message)
-        results.append({
-            "number": number,
-            "status": resp.status_code,
-            "success": resp.status_code == 200
-        })
-        time.sleep(delay)  # Rate limiting
-
-    success_count = sum(1 for r in results if r["success"])
-    return jsonify({
-        "total": len(numbers),
-        "success": success_count,
-        "failed": len(numbers) - success_count,
-        "results": results
-    })
+    ok = sum(1 for x in results if x["ok"])
+    return jsonify({"total": len(numbers), "success": ok,
+                    "failed": len(numbers) - ok, "results": results})
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TEMPLATE BROADCAST API
-# POST /broadcast-template  |  Header: X-API-Key
-# Body: { "numbers": [...], "template_name": "...", "language": "en", "variables": ["{name}"] }
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  BROADCAST — template
+#  POST /broadcast-template  |  Header: X-API-Key
+#  Body: { "numbers": [...], "template_name": "...",
+#          "language": "en", "variables": ["{name}"],
+#          "delay_seconds": 2 }
+# ═══════════════════════════════════════════════════════
 @app.route("/broadcast-template", methods=["POST"])
 def broadcast_template():
     if request.headers.get("X-API-Key") != BROADCAST_API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json()
-    numbers = data.get("numbers", [])
-    template_name = data.get("template_name", "")
-    language = data.get("language", "en")
-    variables = data.get("variables", [])
-    delay = data.get("delay_seconds", 2)
+    body          = request.get_json(silent=True) or {}
+    numbers       = body.get("numbers", [])
+    template_name = body.get("template_name", "")
+    language      = body.get("language", "en")
+    variables     = body.get("variables", [])
+    delay         = body.get("delay_seconds", 2)
 
     if not numbers or not template_name:
         return jsonify({"error": "numbers and template_name are required"}), 400
@@ -1482,91 +1173,43 @@ def broadcast_template():
     results = []
     for item in numbers:
         if isinstance(item, dict):
-            number = str(item.get("phone", "")).strip()
+            num  = str(item.get("phone", "")).strip()
             name = str(item.get("name", ""))
         else:
-            number = str(item).strip()
+            num  = str(item).strip()
             name = ""
 
-        if not number.startswith("91"):
-            number = "91" + number.lstrip("0")
+        if not num.startswith("91"):
+            num = "91" + num.lstrip("0")
 
-        # Resolve variables
-        resolved_vars = []
-        for var in variables:
-            if var == "{name}":
-                resolved_vars.append(name)
-            else:
-                resolved_vars.append(str(var))
-
+        resolved = [name if v == "{name}" else str(v) for v in variables]
         components = []
-        if resolved_vars:
-            parameters = [{"type": "text", "text": v} for v in resolved_vars]
-            components.append({
-                "type": "body",
-                "parameters": parameters
-            })
+        if resolved:
+            components = [{"type": "body",
+                           "parameters": [{"type": "text", "text": v} for v in resolved]}]
 
-        resp = send_template_message(number, template_name, lang=language, components=components)
-        results.append({
-            "number": number,
-            "status": resp.status_code,
-            "success": resp.status_code == 200
-        })
+        r = send_template(num, template_name, language, components or None)
+        results.append({"number": num, "status": r.status_code, "ok": r.status_code == 200})
         time.sleep(delay)
 
-    success_count = sum(1 for r in results if r["success"])
-    return jsonify({
-        "total": len(numbers),
-        "success": success_count,
-        "failed": len(numbers) - success_count,
-        "results": results
-    })
+    ok = sum(1 for x in results if x["ok"])
+    return jsonify({"total": len(numbers), "success": ok,
+                    "failed": len(numbers) - ok, "results": results})
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ADMIN STATS API
-# GET /stats  |  Header: X-Admin-Key
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-@app.route("/stats", methods=["GET"])
-def stats():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    total_leads       = len(conversation_state)
-    demo_requests     = sum(1 for s in conversation_state.values() if s.get("stage") == "demo_requested")
-    pending_followups = sum(1 for f in follow_up_queue if not f["done"])
-
-    return jsonify({
-        "total_leads": total_leads,
-        "demo_requests": demo_requests,
-        "pending_followups": pending_followups,
-        "active_conversations": [
-            {
-                "name": v["name"],
-                "last_message": v.get("last_text", ""),
-                "stage": v.get("stage", "new"),
-                "last_active": v.get("last_msg", "")
-            }
-            for v in conversation_state.values()
-        ]
-    })
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# MANUAL FOLLOW-UP TRIGGER (testing / admin use)
-# POST /trigger-followup  |  Header: X-Admin-Key
-# Body: { "phone": "919...", "name": "...", "message": "..." }
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  MANUAL FOLLOW-UP TRIGGER
+#  POST /trigger-followup  |  Header: X-Admin-Key
+#  Body: { "phone": "919...", "name": "...", "message": "..." }
+# ═══════════════════════════════════════════════════════
 @app.route("/trigger-followup", methods=["POST"])
 def trigger_followup():
     if request.headers.get("X-Admin-Key") != ADMIN_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data    = request.get_json()
-    phone   = data.get("phone", "")
-    name    = data.get("name", "Student")
-    message = data.get("message", "")
+    body    = request.get_json(silent=True) or {}
+    phone   = body.get("phone", "")
+    message = body.get("message", "")
 
     if not phone or not message:
         return jsonify({"error": "phone and message are required"}), 400
@@ -1574,32 +1217,55 @@ def trigger_followup():
     if not phone.startswith("91"):
         phone = "91" + phone.lstrip("0")
 
-    resp = send_whatsapp_message(phone, message)
+    r = send_text(phone, message)
+    return jsonify({"ok": r.status_code == 200, "status": r.status_code, "phone": phone})
+
+
+# ═══════════════════════════════════════════════════════
+#  ADMIN STATS
+#  GET /stats  |  Header: X-Admin-Key
+# ═══════════════════════════════════════════════════════
+@app.route("/stats", methods=["GET"])
+def stats():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
     return jsonify({
-        "success": resp.status_code == 200,
-        "status": resp.status_code,
-        "phone": phone
+        "total_leads":       len(conversation_state),
+        "pending_followups": sum(1 for f in follow_up_queue if not f["done"]),
+        "stage_breakdown": {
+            s: sum(1 for v in conversation_state.values() if v.get("stage") == s)
+            for s in {"new", "goal_selection", "course_recommendation", "course_viewed",
+                      "demo_time_ask", "demo_date_ask", "demo_booked",
+                      "offer_menu", "payment_pending", "enrolled", "not_sure", "done"}
+        },
+        "active_conversations": [
+            {
+                "name":        v["name"],
+                "stage":       v.get("stage", ""),
+                "last_text":   v.get("last_text", ""),
+                "last_active": v.get("last_msg", ""),
+                "course":      v.get("course", ""),
+            }
+            for v in conversation_state.values()
+        ],
     })
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# BROADCAST ADMIN PANEL
-# GET /panel?key=<ADMIN_KEY>
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  ADMIN PANEL
+#  GET /panel?key=<ADMIN_KEY>
+# ═══════════════════════════════════════════════════════
 @app.route("/panel", methods=["GET"])
 def admin_panel():
-    admin_key = request.args.get("key", "")
-    if admin_key != ADMIN_KEY:
-        return """
-        <html>
-        <body style='font-family:sans-serif;text-align:center;padding:50px;
-                     background:#0a0f0d;color:#25D366'>
-          <h2>🔒 Access Denied</h2>
-          <p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>
-        </body>
-        </html>
-        """, 403
-
+    if request.args.get("key", "") != ADMIN_KEY:
+        return (
+            "<html><body style='font-family:sans-serif;text-align:center;"
+            "padding:50px;background:#0a0f0d;color:#25D366'>"
+            "<h2>🔒 Access Denied</h2>"
+            "<p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>"
+            "</body></html>"
+        ), 403
     try:
         with open("panel.html", "r", encoding="utf-8") as f:
             return f.read(), 200, {"Content-Type": "text/html"}
@@ -1607,33 +1273,36 @@ def admin_panel():
         return "panel.html not found in project root", 404
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# HEALTH CHECK
-# GET /
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  HEALTH CHECK
+#  GET /
+# ═══════════════════════════════════════════════════════
 @app.route("/", methods=["GET"])
 def health():
     return jsonify({
-        "status": "running ✅",
-        "app": "Oxford Computers WhatsApp AI System v2.1",
-        "sdk": "google-genai (new)",
-        "features": [
-            "Google Sheets CRM",
-            "Gemini AI Chatbot (gemini-2.0-flash)",
-            "Keyword Fast Replies",
-            "Broadcast API",
-            "Multi-day Follow-up Scheduler"
-        ],
-        "leads_in_memory": len(conversation_state),
+        "status":            "running ✅",
+        "app":               "Oxford Computers WhatsApp AI System v3.0",
+        "sdk":               "google-genai (gemini-2.0-flash)",
+        "leads_in_memory":   len(conversation_state),
         "pending_followups": sum(1 for f in follow_up_queue if not f["done"]),
-        "gemini_active": gemini_client is not None,
-        "sheets_configured": bool(SHEETS_ID and GOOGLE_CREDENTIALS_JSON != "{}")
+        "gemini_active":     gemini_client is not None,
+        "sheets_configured": bool(SHEETS_ID and GOOGLE_CREDENTIALS_JSON != "{}"),
+        "features": [
+            "Stage-based conversation state machine",
+            "Google Sheets CRM",
+            "Gemini 2.0 Flash AI (humanised Manglish)",
+            "Interactive WhatsApp buttons (named presets)",
+            "Broadcast API",
+            "Template Broadcast API",
+            "Multi-day Follow-up Scheduler",
+            "Admin Stats + Manual Trigger",
+        ],
     })
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ENTRY POINT
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ═══════════════════════════════════════════════════════
+#  ENTRY POINT
+# ═══════════════════════════════════════════════════════
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
