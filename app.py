@@ -938,7 +938,7 @@ def get_smart_fallback(name, msg_text=""):
 
     if any(w in msg_lower for w in ["fee", "price", "cost", "vila"]):
         return (
-            f"😊 {name}, fees ariyaan aagrahikkunnathin nanadi!\n\n"
+            f"😊 {name}, fees ariyaan aagrahikkunnathinu nandi!\n\n"
             "Government approved courses ₹4,499 muthal.\n"
             "EMI facility undh!\n\n"
             "Exact fee ariyaan *FEES* reply cheyyoo 💰\n"
@@ -961,7 +961,7 @@ def get_smart_fallback(name, msg_text=""):
         )
 
     return (
-        f"😊 Nanadi {name}!\n\n"
+        f"😊 Nandi {name}!\n\n"
         "Njan Aaliza — Oxford Computers-nte\n"
         "Senior Admission Counselor.\n\n"
         "Ningalkku help cheyyatte?\n"
