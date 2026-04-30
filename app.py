@@ -685,12 +685,16 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
     current_stage = state.get("stage", "new")
     course = state.get("course", "Not Selected")
 
-    # 1. New lead check: ALWAYS show goal selection
-    if is_new_lead:
-        state["stage"] = "goal_selection"
-        return get_welcome_message(name), "BUTTONS_GOAL"
+    # Helpers
+    is_offer_intent = any(w in msg_lower for w in ["offer", "discount", "special price", "offer undo", "offer unda"])
+    is_help_choose = any(w in msg_lower for w in ["which course", "best course", "course select", "help me choose", "not sure", "confused", "entha course", "ethu course"])
+    is_job_goal = msg_lower in ["1", "job", "job oriented", "career", "software job", "it job"]
+    is_business_goal = msg_lower in ["2", "business", "freelance", "own business"]
+    is_basic_goal = msg_lower in ["3", "basic", "basic computer", "office job"]
+    is_accounting_goal = msg_lower in ["4", "accounting", "tax", "gst", "finance"]
+    is_not_sure_goal = msg_lower in ["5", "not sure", "confused"]
 
-    # 2. KEYWORD INTERCEPTS
+    # a) EXIT
     if msg_lower == "exit":
         state["stage"] = "active"
         return (
@@ -701,18 +705,114 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "വീണ്ടും message cheyyoo! 😊"
         ), "NO_BUTTONS"
 
-    if msg_lower in ["demo", "free class", "free demo"]:
-        state["stage"] = "demo_time_selection"
+    # GREETING OR VERY SHORT NEW LEAD
+    greetings = ["hi", "hello", "hai", "hii", "നമസ്കാരം", "hey"]
+    if msg_lower in greetings or (is_new_lead and len(msg_lower) <= 2 and not msg_lower.isdigit()):
+        state["stage"] = "goal_selection"
+        return get_welcome_message(name), "BUTTONS_GOAL"
+
+    # b) CURRENT STAGE HANDLERS (for specific stage inputs like numbers, dates)
+    if current_stage == "demo_time_selection" and msg_lower in ["1", "2", "3"]:
+        times = {"1": "Morning", "2": "Afternoon", "3": "Evening"}
+        selected_time = times[msg_lower]
+        state["batch_time"] = selected_time
+        state["stage"] = "demo_date_selection"
         return (
-            "🎓 *Free Demo Class Booking*\n\n"
-            "Preferred batch time ഏത്?\n\n"
-            "1️⃣ Morning - 9 AM to 11 AM\n"
-            "2️⃣ Afternoon - 12 PM to 2 PM\n"
-            "3️⃣ Evening - 5 PM to 7 PM\n\n"
-            "Number reply cheyyoo! 📅"
+            f"✅ {selected_time} confirmed!\n\n"
+            "Preferred date ഏതാണ്?\n"
+            "(Example: Tomorrow, Monday, April 30)\n\n"
+            "Date reply cheyyoo! 📅"
         ), "NO_BUTTONS"
 
-    if msg_lower == "offer":
+    if current_stage == "demo_date_selection" and not is_offer_intent and not is_help_choose:
+        user_date = msg_text.strip()
+        state["stage"] = "demo_booked"
+        batch_time = state.get("batch_time", "")
+        status_msg = f"Demo Booked: {course} {batch_time} {user_date}"
+        threading.Thread(target=update_lead_status, args=(phone, status_msg)).start()
+        return (
+            "🎉 *Demo Class Booked!*\n\n"
+            f"📚 Course: {course}\n"
+            f"⏰ Time: {batch_time}\n"
+            f"📅 Date: {user_date}\n"
+            "📍 The Oxford Computers, Malayinkeezhu\n\n"
+            "നാളെ ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും!\n"
+            "📞 9447329972 | 🌐 theoxfordedu.com"
+        ), "BUTTONS_AFTER_DEMO"
+
+    if current_stage == "offer_selection" and msg_lower in ["1", "2", "3", "4"]:
+        offer_map = {
+            "1": ("CWPDE", "Certificate in Word Processing & Data Entry", "₹4,800", "6 Months", "https://rzp.io/rzp/xkWdKtd"),
+            "2": ("DCA", "Diploma in Computer Applications", "₹6,400", "6 Months", "https://rzp.io/rzp/mJPPtM9x"),
+            "3": ("AIDM", "AI-Driven Digital Marketing", "₹19,999", "6 Months", "https://rzp.io/rzp/vF76sj7Y"),
+            "4": ("PGDCA", "Post Graduate Diploma in Computer Applications", "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
+        }
+        code, full_name, price, dur, link = offer_map[msg_lower]
+        state["stage"] = "payment_sent"
+        state["offer_course"] = code
+        return (
+            f"✅ *{code} - Great Choice!*\n\n"
+            f"📚 {full_name}\n"
+            f"⏱ Duration: {dur}\n"
+            f"🎓 Kerala State Rutronix Approved\n"
+            f"💰 Special Price: *{price}*\n\n"
+            "✅ Government certified\n"
+            "✅ Receipt after payment\n"
+            f"📍 Oxford Computers, Malayinkeezhu\n\n"
+            f"👇 *Secure Payment Link:*\n{link}\n\n"
+            "Payment ശേഷം Transaction ID\n"
+            "ഇവിടെ reply cheyyoo 📩\n"
+            "(Example: T2504281234)"
+        ), "NO_BUTTONS"
+
+    if current_stage == "payment_sent":
+        user_txn = msg_text.strip()
+        state["stage"] = "enrolled"
+        offer_course = state.get("offer_course", "Unknown")
+        note_timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M]")
+        note_msg = f"{note_timestamp} Payment: {user_txn} Course: {offer_course}"
+        threading.Thread(target=update_lead_status, args=(phone, f"Payment Received: {user_txn}", note_msg)).start()
+        return (
+            "🎉 *Payment Received!*\n\n"
+            f"✅ Transaction ID: {user_txn}\n"
+            f"📚 Course: {offer_course}\n"
+            f"👤 Name: {name}\n\n"
+            "Seat confirmed! Welcome to\n"
+            "*The Oxford Computers* 🎓\n\n"
+            "📞 9447329972 - batch details\n"
+            "📍 Malayinkeezhu, Thiruvananthapuram\n\n"
+            "കാണാൻ കാത്തിരിക്കുന്നു! 😊"
+        ), "BUTTONS_AFTER_DEMO"
+
+    if current_stage == "course_recommendation" and msg_lower in ["1", "2", "3", "4"]:
+        goal = state.get("goal", "job")
+        courses = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
+        idx = int(msg_lower) - 1
+        if 0 <= idx < len(courses):
+            course_key, display, dur, fee = courses[idx]
+            state["stage"] = "course_viewed"
+            state["course"] = course_key
+            threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {course_key}")).start()
+            course_msg_map = {
+                "PGDCA": _PGDCA_MSG, "AIDM Digital Marketing": _AIDM_MSG,
+                "SAP Financial Accounting": _SAP_MSG, "Python Programming": _PYTHON_MSG,
+                "GST & Payroll": _GST_MSG, "DCA Fast Track": _DCA_MSG,
+                "Computer Teacher Training": _TEACHER_MSG,
+                "Corporate Business Accounting": _ACCOUNTING_MSG,
+                "Word Processing & Data Entry": _WORD_MSG,
+                "Professional Diploma in Web Designing": _WEB_MSG,
+            }
+            detail = course_msg_map.get(course_key, "")
+            return (
+                f"✅ *{display}* - Great choice!\n\n"
+                f"{detail}\n"
+                f"💰 Fee: {fee} | ⏱ {dur}\n"
+                f"🎓 Kerala State Rutronix Approved\n\n"
+                f"Free demo class book cheyyatte? 🎓"
+            ), "BUTTONS_COURSE"
+
+    # c) INTENT PHRASES (offer/fees/demo/visit/call/help_choose)
+    if is_offer_intent:
         state["stage"] = "offer_selection"
         return (
             "🔥 *Today's Special Offer!*\n"
@@ -732,8 +832,8 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             return "Please reply with 1, 2, 3, or 4 to select the course you want to enroll in! 💳", "NO_BUTTONS"
         return "To make a payment, please type *OFFER* to see available payment options! 💳", "BUTTONS_OFFER"
 
-    if msg_lower in ["fees", "fee", "price"]:
-        state["stage"] = "active"
+    if any(w in msg_lower for w in ["fees", "fee", "price"]):
+        # Do not reset stage to active, keep previous stage
         if course and course != "Not Selected" and course in COURSE_FEES:
             fee, duration = COURSE_FEES[course]
             return (
@@ -748,9 +848,16 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             ), "BUTTONS_FEES"
         return FULL_FEE_TABLE, "BUTTONS_FEES"
 
-    if msg_lower in ["courses", "course"]:
-        state["stage"] = "goal_selection"
-        return get_welcome_message(name), "BUTTONS_GOAL"
+    if msg_lower in ["demo", "free class", "free demo"]:
+        state["stage"] = "demo_time_selection"
+        return (
+            "🎓 *Free Demo Class Booking*\n\n"
+            "Preferred batch time ഏത്?\n\n"
+            "1️⃣ Morning - 9 AM to 11 AM\n"
+            "2️⃣ Afternoon - 12 PM to 2 PM\n"
+            "3️⃣ Evening - 5 PM to 7 PM\n\n"
+            "Number reply cheyyoo! 📅"
+        ), "NO_BUTTONS"
 
     if any(kw in msg_lower for kw in VISIT_KEYWORDS):
         state["stage"] = "visit_interested"
@@ -779,151 +886,69 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "njan help cheyyam! 🙌"
         ), "NO_BUTTONS"
 
-    # 3. STAGE-BASED FLOWS
-    if current_stage == "goal_selection":
-        goal_map = {"1": "job", "2": "business", "3": "basic", "4": "accounting"}
-        if msg_lower in goal_map:
-            goal = goal_map[msg_lower]
-            courses = GOAL_COURSES[goal]
-            state["stage"] = "course_recommendation"
-            state["goal"] = goal
-            lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
-            for i, (_, display, dur, fee) in enumerate(courses, 1):
-                lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
-            lines.append("\nCourse number reply cheyyoo! 🎓")
-            return "\n".join(lines), "NO_BUTTONS"
-        elif msg_lower == "5":
-            state["stage"] = "not_sure"
-            if gemini_client:
-                try:
-                    return get_gemini_reply(
-                        f"Student {name} is unsure which course to pick. Ask about their qualification, interest, and career goal. Then suggest the best course.", name
-                    ), "BUTTONS_GOAL"
-                except Exception:
-                    pass
-            return (
-                f"{name}, no problem! 😊\n\n"
-                "Ningalude qualification enthanu?\n"
-                "Eppol enthu cheyyunnu?\n"
-                "Ethu type job aanu interest?\n\n"
-                "Reply cheyyoo - best course recommend cheyyam! 🎓"
-            ), "BUTTONS_GOAL"
-
-    if current_stage == "course_recommendation":
-        goal = state.get("goal", "job")
-        courses = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
-        idx = int(msg_lower) - 1 if msg_lower.isdigit() else -1
-        if 0 <= idx < len(courses):
-            course_key, display, dur, fee = courses[idx]
-            state["stage"] = "course_viewed"
-            state["course"] = course_key
-            threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {course_key}")).start()
-            course_msg_map = {
-                "PGDCA": _PGDCA_MSG, "AIDM Digital Marketing": _AIDM_MSG,
-                "SAP Financial Accounting": _SAP_MSG, "Python Programming": _PYTHON_MSG,
-                "GST & Payroll": _GST_MSG, "DCA Fast Track": _DCA_MSG,
-                "Computer Teacher Training": _TEACHER_MSG,
-                "Corporate Business Accounting": _ACCOUNTING_MSG,
-                "Word Processing & Data Entry": _WORD_MSG,
-                "Professional Diploma in Web Designing": _WEB_MSG,
-            }
-            detail = course_msg_map.get(course_key, "")
-            return (
-                f"✅ *{display}* - Great choice!\n\n"
-                f"{detail}\n"
-                f"💰 Fee: {fee} | ⏱ {dur}\n"
-                f"🎓 Kerala State Rutronix Approved\n\n"
-                f"Free demo class book cheyyatte? 🎓"
-            ), "BUTTONS_COURSE"
-
-    if current_stage == "demo_time_selection":
-        if msg_lower in ["1", "2", "3"]:
-            times = {"1": "Morning", "2": "Afternoon", "3": "Evening"}
-            selected_time = times[msg_lower]
-            state["batch_time"] = selected_time
-            state["stage"] = "demo_date_selection"
-            return (
-                f"✅ {selected_time} confirmed!\n\n"
-                "Preferred date ഏതാണ്?\n"
-                "(Example: Tomorrow, Monday, April 30)\n\n"
-                "Date reply cheyyoo! 📅"
-            ), "NO_BUTTONS"
-
-    if current_stage == "demo_date_selection":
-        user_date = msg_text.strip()
-        state["stage"] = "demo_booked"
-        batch_time = state.get("batch_time", "")
-        status_msg = f"Demo Booked: {course} {batch_time} {user_date}"
-        threading.Thread(target=update_lead_status, args=(phone, status_msg)).start()
+    if is_help_choose or is_not_sure_goal:
+        state["stage"] = "not_sure"
+        if gemini_client:
+            try:
+                return get_gemini_reply(
+                    f"Student {name} is unsure which course to pick. Ask about their qualification, interest, and career goal. Then suggest the best course.", name
+                ), "BUTTONS_GOAL"
+            except Exception:
+                pass
         return (
-            "🎉 *Demo Class Booked!*\n\n"
-            f"📚 Course: {course}\n"
-            f"⏰ Time: {batch_time}\n"
-            f"📅 Date: {user_date}\n"
-            "📍 The Oxford Computers, Malayinkeezhu\n\n"
-            "നാളെ ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും!\n"
-            "📞 9447329972 | 🌐 theoxfordedu.com"
-        ), "BUTTONS_AFTER_DEMO"
+            f"{name}, no problem! 😊\n\n"
+            "Ningalude qualification enthanu?\n"
+            "Eppol enthu cheyyunnu?\n"
+            "Ethu type job aanu interest?\n\n"
+            "Reply cheyyoo - best course recommend cheyyam! 🎓"
+        ), "BUTTONS_GOAL"
 
-    if current_stage == "offer_selection":
-        offer_map = {
-            "1": ("CWPDE", "Certificate in Word Processing & Data Entry", "₹4,800", "6 Months", "https://rzp.io/rzp/xkWdKtd"),
-            "2": ("DCA", "Diploma in Computer Applications", "₹6,400", "6 Months", "https://rzp.io/rzp/mJPPtM9x"),
-            "3": ("AIDM", "AI-Driven Digital Marketing", "₹19,999", "6 Months", "https://rzp.io/rzp/vF76sj7Y"),
-            "4": ("PGDCA", "Post Graduate Diploma in Computer Applications", "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
-        }
-        if msg_lower in offer_map:
-            code, full_name, price, dur, link = offer_map[msg_lower]
-            state["stage"] = "payment_sent"
-            state["offer_course"] = code
-            return (
-                f"✅ *{code} - Great Choice!*\n\n"
-                f"📚 {full_name}\n"
-                f"⏱ Duration: {dur}\n"
-                f"🎓 Kerala State Rutronix Approved\n"
-                f"💰 Special Price: *{price}*\n\n"
-                "✅ Government certified\n"
-                "✅ Receipt after payment\n"
-                f"📍 Oxford Computers, Malayinkeezhu\n\n"
-                f"👇 *Secure Payment Link:*\n{link}\n\n"
-                "Payment ശേഷം Transaction ID\n"
-                "ഇവിടെ reply cheyyoo 📩\n"
-                "(Example: T2504281234)"
-            ), "NO_BUTTONS"
+    # d) GOAL WORDS
+    if is_job_goal:
+        goal = "job"
+        courses = GOAL_COURSES[goal]
+        state["stage"] = "course_recommendation"
+        state["goal"] = goal
+        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
+        for i, (_, display, dur, fee) in enumerate(courses, 1):
+            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
+        lines.append("\nCourse number reply cheyyoo! 🎓")
+        return "\n".join(lines), "NO_BUTTONS"
 
-    if current_stage == "payment_sent":
-        user_txn = msg_text.strip()
-        state["stage"] = "enrolled"
-        offer_course = state.get("offer_course", "Unknown")
-        note_timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M]")
-        note_msg = f"{note_timestamp} Payment: {user_txn} Course: {offer_course}"
-        threading.Thread(target=update_lead_status, args=(phone, f"Payment Received: {user_txn}", note_msg)).start()
-        return (
-            "🎉 *Payment Received!*\n\n"
-            f"✅ Transaction ID: {user_txn}\n"
-            f"📚 Course: {offer_course}\n"
-            f"👤 Name: {name}\n\n"
-            "Seat confirmed! Welcome to\n"
-            "*The Oxford Computers* 🎓\n\n"
-            "📞 9447329972 - batch details\n"
-            "📍 Malayinkeezhu, Thiruvananthapuram\n\n"
-            "കാണാൻ കാത്തിരിക്കുന്നു! 😊"
-        ), "BUTTONS_AFTER_DEMO"
+    if is_business_goal:
+        goal = "business"
+        courses = GOAL_COURSES[goal]
+        state["stage"] = "course_recommendation"
+        state["goal"] = goal
+        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
+        for i, (_, display, dur, fee) in enumerate(courses, 1):
+            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
+        lines.append("\nCourse number reply cheyyoo! 🎓")
+        return "\n".join(lines), "NO_BUTTONS"
 
-    # 4. EXACT KEYWORDS → keyword reply + fee
-    exact_keywords = [
-        "timing", "batch", "certificate", "job", "placement", "നമസ്കാരം",
-        "pgdca", "pgd", "aidm", "sap", "python", "gst",
-        "tally", "dca", "teacher", "accounting", "web",
-        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"
-    ]
+    if is_basic_goal:
+        goal = "basic"
+        courses = GOAL_COURSES[goal]
+        state["stage"] = "course_recommendation"
+        state["goal"] = goal
+        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
+        for i, (_, display, dur, fee) in enumerate(courses, 1):
+            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
+        lines.append("\nCourse number reply cheyyoo! 🎓")
+        return "\n".join(lines), "NO_BUTTONS"
 
-    if msg_lower not in exact_keywords and gemini_client:
-        try:
-            return get_gemini_reply(msg_text, name), "BUTTONS_COURSE"
-        except Exception:
-            return get_smart_fallback(name, msg_text), "BUTTONS_COURSE"
+    if is_accounting_goal:
+        goal = "accounting"
+        courses = GOAL_COURSES[goal]
+        state["stage"] = "course_recommendation"
+        state["goal"] = goal
+        lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
+        for i, (_, display, dur, fee) in enumerate(courses, 1):
+            lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
+        lines.append("\nCourse number reply cheyyoo! 🎓")
+        return "\n".join(lines), "NO_BUTTONS"
 
+    # e) COURSE KEYWORDS
     if msg_lower in ["timing", "batch"]:
         return (
             "⏰ *Batch Timings*\n\n"
@@ -942,7 +967,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "Real government-backed certification! 💪"
         ), "BUTTONS_COURSE"
 
-    if msg_lower in ["job", "placement"]:
+    if msg_lower in ["placement", "job assistance", "placement support"]:
         return (
             "💼 *Placement Support*\n\n"
             "✅ 100% placement assistance\n"
@@ -950,7 +975,6 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "Students Kerala & Gulf-ൽ working! 🌟"
         ), "BUTTONS_COURSE"
 
-    # Individual course keywords
     course_kw_map = {
         "pgdca": _PGDCA_MSG, "pgd": _PGDCA_MSG,
         "aidm": _AIDM_MSG, "sap": _SAP_MSG,
@@ -973,7 +997,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         return course_kw_map[msg_lower] + f"\n\n💰 Fee: {fee} | ⏱ {dur}\n🎓 Kerala State Rutronix Approved\n\nFree demo class book cheyyatte? 🎓", "BUTTONS_COURSE"
 
     if msg_lower in [str(i) for i in range(1, 11)]:
-        courses = {
+        courses_dict = {
             "1": ("PGDCA", _PGDCA_MSG),
             "2": ("AIDM Digital Marketing", _AIDM_MSG),
             "3": ("SAP Financial Accounting", _SAP_MSG),
@@ -985,7 +1009,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "9": ("Word Processing & Data Entry", _WORD_MSG),
             "10": ("Professional Diploma in Web Designing", _WEB_MSG),
         }
-        info = courses.get(msg_lower)
+        info = courses_dict.get(msg_lower)
         if info:
             cname, cdetail = info
             state["stage"] = "course_viewed"
@@ -994,6 +1018,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             fee, dur = COURSE_FEES.get(cname, ("", ""))
             return f"✅ *{cname}* - Great choice!\n\n{cdetail}\n\n💰 Fee: {fee} | ⏱ {dur}\n🎓 Kerala State Rutronix Approved\n\nFree demo class book cheyyatte? 🎓", "BUTTONS_COURSE"
 
+    # f) GEMINI FALLBACK
     if gemini_client:
         try:
             return get_gemini_reply(msg_text, name), "BUTTONS_COURSE"
@@ -1045,7 +1070,7 @@ def get_smart_fallback(name, msg_text=""):
 
     if any(w in msg_lower for w in ["fee", "price", "cost", "vila"]):
         return (
-            f"😊 {name}, fees ariyaan aagrahikkunnathin nanadi!\n\n"
+            f"😊 {name}, fees ariyaan aagrahikkunnathin nandi!\n\n"
             "Government approved courses ₹4,499 muthal.\n"
             "EMI facility undh!\n\n"
             "Exact fee ariyaan *FEES* reply cheyyoo 💰\n"
@@ -1061,15 +1086,15 @@ def get_smart_fallback(name, msg_text=""):
         )
     if any(w in msg_lower for w in ["course", "padikkaan", "learn", "study"]):
         return (
-            f"{name}, 10 government certified courses undh! 📚\n\n"
+            f"{name}, 10 government certified courses und! 📚\n\n"
             "Ningalude goal enthanu?\n"
             "Job? Business? Basic computer?\n\n"
             "*COURSES* reply cheythal help cheyyam! 🎓"
         )
 
     return (
-        f"😊 Nanadi {name}!\n\n"
-        "Njan Aaliza - Oxford Computers-nte\n"
+        f"😊 Nandi {name}!\n\n"
+        "Njan Aaliza - The Oxford Computers-nte\n"
         "Senior Admission Counselor.\n\n"
         "Ningalkku help cheyyatte?\n"
         "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
@@ -1181,7 +1206,7 @@ FOLLOWUP_MESSAGES = [
         "day": 3,
         "hours": 72,
         "message": (
-            "👋 {name}, Oxford Computers here!\n\n"
+            "👋 {name}, The Oxford Computers here!\n\n"
             "🌟 *Student Success Story*\n\n"
             "Riya (Attingal) - Web Design course complete ചെയ്ത്\n"
             "ഇപ്പോൾ ₹25,000/month earn ചെയ്യുന്നു! 💪\n\n"
