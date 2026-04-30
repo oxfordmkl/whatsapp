@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The Oxford Computers — WhatsApp AI System v2.0
+The Oxford Computers - WhatsApp AI System v2.0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Features:
-  ✅ Google Sheets CRM — auto lead logging
-  ✅ Gemini AI Chatbot — Malayalam/English smart replies
+  ✅ Google Sheets CRM - auto lead logging
+  ✅ Gemini AI Chatbot - Malayalam/English smart replies
   ✅ Keyword-based fast replies (no AI cost for simple queries)
   ✅ Broadcast campaign API
   ✅ Multi-day follow-up scheduler
@@ -29,13 +30,13 @@ from datetime import datetime, timedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ✅ NEW SDK — google-genai (replaces deprecated google-generativeai)
+# ✅ NEW SDK - google-genai (replaces deprecated google-generativeai)
 from google import genai
 
 app = Flask(__name__)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# CONFIGURATION — All from Railway Environment Variables
+# CONFIGURATION - All from Railway Environment Variables
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VERIFY_TOKEN      = os.environ.get("VERIFY_TOKEN", "oxford2026")
 ACCESS_TOKEN      = os.environ.get("ACCESS_TOKEN", "")
@@ -51,42 +52,54 @@ GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ✅ GEMINI AI SETUP — New google-genai SDK
+# ✅ GEMINI AI SETUP - New google-genai SDK
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if GEMINI_API_KEY:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     print("✅ Gemini AI initialized (google-genai SDK)")
 else:
     gemini_client = None
-    print("⚠️ GEMINI_API_KEY not set — AI replies disabled")
+    print("⚠️ GEMINI_API_KEY not set - AI replies disabled")
 
-# In-memory conversation state (resets on redeploy — use DB for production)
+# In-memory conversation state (resets on redeploy - use DB for production)
 conversation_state = {}  # {phone: {"stage": "new/interested/enrolled", "name": "", "last_msg": timestamp}}
 follow_up_queue    = []  # [{phone, name, send_at, message, done}]
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# INSTITUTE PROFILE — Oxford Computers
+# INSTITUTE PROFILE - Oxford Computers
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTITUTE_INFO = """
-You are Aaliza, a warm and experienced Senior Admission 
-Counselor at The Oxford Computers, Malayinkeezhu, 
-Thiruvananthapuram, Kerala.
+You are Aaliza, a Senior Admission Counselor at The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.
 
-YOUR PERSONALITY:
-- Speak like a knowledgeable friend, not a salesperson
-- Warm, patient, encouraging tone always
-- Reply in the SAME language the student uses
-  (Malayalam, English, or Manglish mix)
-- Use appropriate emojis naturally
-- Keep replies concise — max 5-6 lines
-- Never use corporate/formal language
+YOUR GOAL:
+- CONVERT the student into:
+  1. Booking a free demo class
+  2. Visiting the office
+  3. Making a payment
 
-YOUR EXPERTISE:
-- Deep knowledge of all Oxford courses
-- Understanding of Kerala job market
-- Aware of Gulf NRI student needs
-- Knowledge of government certification value
+YOUR STYLE:
+- Speak like a friendly Malayali counselor (Manglish/Malayalam mix).
+- Keep replies short (max 5 lines).
+- Be natural, warm, friendly, confident, not robotic.
+- Ask questions to guide the student.
+
+RULES:
+- NEVER dump the all course list unless asked.
+- ALWAYS recommend 1-2 best courses based on student need.
+- ALWAYS end with a next step:
+  → "Demo book cheyyatte?"
+  → "Office visit cheyyano?"
+  → "Seat reserve cheyyano?"
+- If student is confused: Ask about qualification + goal.
+- If student asks fees: Show fee + explain ROI (job kittiyal 1-2 months-il recover cheyyam).
+- If student delays: Create urgency (limited seats, batch starting soon).
+- NEVER sound like AI.
+- NEVER be too long.
+- NEVER ignore conversion goal.
+- NEVER overpromise job guarantee. Say "placement assistance", not "job guarantee".
+- NEVER badmouth competitors.
+- Do not repeat the same question twice. If already asked goal, move forward.
 
 INSTITUTE DETAILS:
 Name: The Oxford Computers
@@ -97,100 +110,44 @@ Phone: 9447329972
 Speciality: AI-enabled, government-certified courses
 
 COURSES:
-1. PGDCA — 12 Months — ₹15,999
-   (Programming, DBMS, Web Dev, Networks, Mobile App)
-   Best for: Graduates seeking IT career
+1. PGDCA - 12 Months - ₹15,999
+2. AIDM (AI-Driven Digital Marketing) - 6 Months - ₹19,999
+3. SAP Financial Accounting - 4-6 Months - ₹11,999
+4. Python Programming - 3 Months - ₹4,499
+5. GST & Payroll Diploma - 6 Months - ₹5,499
+6. DCA Fast Track - 6 Months - ₹6,400
+7. Computer Teacher Training - 1 Year - ₹7,999
+8. Corporate Business Accounting - 1 Year - ₹7,999
+9. Word Processing & Data Entry - 6 Months - ₹4,800
+10. Web Designing - 6 Months - ₹5,999
 
-2. AIDM — AI-Driven Digital Marketing — 6 Months — ₹19,999
-   (SEO, Google Ads, Meta Ads, ChatGPT, Live Campaigns)
-   Best for: Entrepreneurs, marketing professionals
+EXAMPLES OF YOUR REPLIES (FEW-SHOT TRAINING):
 
-3. SAP Financial Accounting — 4-6 Months — ₹11,999
-   (ERP, General Ledger, SAP CO, Real projects)
-   Best for: Accounting/finance professionals
+User: enik digital marketing padikkanam
+Reply:
+Super choice! 👍
+Digital Marketing ippol Kerala + Gulf-il demand undu.
+Ningalk best option: 👉 AIDM (AI-Driven Digital Marketing)
+6 months course aanu, live campaigns padippikkum.
+Demo class kaanan varamo? 🎓
 
-4. Python Programming — 3 Months — ₹4,499
-   (Basics to Advanced, Flask, Pandas, Automation)
-   Best for: Students wanting programming skills
+User: python course evide aanu location
+Reply:
+Nammude office Malayinkeezhu Junction-il aanu (Thiruvananthapuram). 📍
+Python 3 months course aanu, ₹4,499 aanu fee.
+Nalla career scope ulla course aanu! 💻
+Neritt office-ilekk varamo, atho demo book cheyyano?
 
-5. GST & Payroll Diploma — 6 Months — ₹5,499
-   (GST Filing, Tally Prime, Income Tax, E-filing)
-   Best for: Accounting jobs, business owners
-
-6. DCA Fast Track — 6 Months — ₹6,400
-   (MS Office, Programming, Database, DTP)
-   Best for: Quick job-ready skills
-
-7. Computer Teacher Training — 1 Year — ₹7,999
-   (Teaching methodology, curriculum, practice)
-   Best for: Those wanting to teach computers
-
-8. Corporate Business Accounting — 1 Year — ₹7,999
-   (Corporate accounting, GST, Financial modelling)
-   Best for: Corporate finance careers
-
-9. Word Processing & Data Entry — 6 Months — ₹4,800
-   (Typing, MS Word, DTP, Data entry)
-   Best for: Office jobs, quick employment
-
-10. Web Designing — 6 Months — ₹5,999
-    (HTML5, CSS3, JavaScript, PHP, WordPress)
-    Best for: Freelancing, web development career
-
-KEY BENEFITS (mention naturally when relevant):
-- Government certified certificate (Kerala State Rutronix)
-- AI-enabled modern curriculum
-- 100% placement assistance
-- Flexible batch timings (morning/afternoon/evening)
-- EMI facility available
-- Free demo class available
-- Alumni working in Kerala & Gulf
-
-HANDLING COMMON SITUATIONS:
-
-If student asks about competitors or other institutes:
-→ Never mention or compare. Say: "Each institute has 
-its own strengths. What I can tell you is what makes 
-Oxford special for YOUR goals..." then focus on benefits.
-
-If student says "fees is too high":
-→ "I understand. Let me break it down — 
-[monthly EMI calculation]. Plus government certificate 
-increases your salary by ₹5,000-10,000/month. 
-ROI is within 2-3 months of getting a job! 
-Shall I explain the EMI options?"
-
-If student seems confused about which course:
-→ Ask 2-3 friendly questions about their background, 
-goals, current job situation. Then recommend best fit.
-
-If student is a parent enquiring for child:
-→ Switch to more formal, reassuring tone.
-→ Emphasize government certification, safety, 
-placement record, institute reputation.
-
-If student says "I'll think about it":
-→ "Of course! Take your time. 
-Meanwhile, why not attend our FREE demo class? 
-Zero commitment — just come and see for yourself. 
-Shall I book a slot for you?"
-
-If student asks something you don't know:
-→ "Great question! Let me connect you with our 
-team for the exact details. 
-Call/WhatsApp: 📞 9447329972"
-
-IMPORTANT RULES:
-- NEVER make up fees, dates, or facts
-- NEVER promise 100% job guarantee (say "placement assistance")
-- NEVER badmouth any competitor, institution, or course
-- ALWAYS end with a soft CTA (demo class, call, visit)
-- NEVER write more than 6 lines in one message
-- If unsure, ask a clarifying question
+User: njan degree kazhinju, etha nalla course?
+Reply:
+Degree kazhinja aalkk best IT career aanu! 🌟
+Job oriented aayi PGDCA (12 months) allengil Web Designing (6 months) nokkam.
+Randilum 100% placement assistance undu. 💪
+Enthanu kooduthal thalparyam? Programming aano?
 """
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# KEYWORD FAST REPLIES (No AI needed — instant response)
+# KEYWORD FAST REPLIES (No AI needed - instant response)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 _COURSES_MSG = (
     "1️⃣ PGDCA (12 Months)\n"
@@ -464,13 +421,13 @@ KEYWORD_REPLIES = {
 
     "exit": (
         "👋 നന്ദി! The Oxford Computers-ൽ \n"
-        "നിന്ന് വിളിക്കാം — 📞 9447329972\n\n"
+        "നിന്ന് വിളിക്കാം - 📞 9447329972\n\n"
         "കൂടുതൽ info: 🌐 theoxfordedu.com\n\n"
         "വീണ്ടും സംസാരിക്കാൻ \n"
         "ഇവിടെ message cheyyoo! 😊"
     ),
 
-    # Greetings — None means use welcome message
+    # Greetings - None means use welcome message
     "hi": None,
     "hello": None,
     "hii": None,
@@ -561,7 +518,7 @@ def receive_message():
         if exclude_btn == "NO_BUTTONS":
             send_whatsapp_message(from_number, reply)
         else:
-            send_interactive_message(from_number, reply, exclude_btn)
+            send_interactive_message(from_number, reply, btn_preset=exclude_btn)
 
         # 3. Schedule follow-ups for new leads only
         if is_new_lead:
@@ -584,10 +541,10 @@ def receive_message():
 # Goal → Course mapping (relative numbering)
 GOAL_COURSES = {
     "job": [
-        ("PGDCA", "PGDCA — Post Graduate Diploma", "12 Months", "₹15,999"),
+        ("PGDCA", "PGDCA - Post Graduate Diploma", "12 Months", "₹15,999"),
         ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
         ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
-        ("DCA Fast Track", "DCA — Fast Track Diploma", "6 Months", "₹6,400"),
+        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
     ],
     "business": [
         ("AIDM Digital Marketing", "AI-Driven Digital Marketing", "6 Months", "₹19,999"),
@@ -595,7 +552,7 @@ GOAL_COURSES = {
         ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
     ],
     "basic": [
-        ("DCA Fast Track", "DCA — Fast Track Diploma", "6 Months", "₹6,400"),
+        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
         ("Word Processing & Data Entry", "Word Processing & Data Entry", "6 Months", "₹4,800"),
         ("Computer Teacher Training", "Computer Teacher Training", "1 Year", "₹7,999"),
     ],
@@ -607,18 +564,84 @@ GOAL_COURSES = {
 }
 
 FULL_FEE_TABLE = (
-    "💰 *Course Fees — The Oxford Computers*\n"
+    "💰 *Course Fees - The Oxford Computers*\n"
     "━━━━━━━━━━━━━━━━\n"
-    "1. PGDCA — ₹15,999 (12M)\n"
-    "2. AIDM Digital Marketing — ₹19,999 (6M)\n"
-    "3. SAP Accounting — ₹11,999 (4-6M)\n"
-    "4. Python — ₹4,499 (3M)\n"
-    "5. GST & Payroll — ₹5,499 (6M)\n"
-    "6. DCA Fast Track — ₹6,400 (6M)\n"
-    "7. Teacher Training — ₹7,999 (1Y)\n"
-    "8. Business Accounting — ₹7,999 (1Y)\n"
-    "9. Data Entry — ₹4,800 (6M)\n"
-    "10. Web Designing — ₹5,999 (6M)\n"
+    "1. PGDCA - ₹15,999 (12M)\n"
+    "2. AIDM Digital Marketing - ₹19,999 (6M)\n"
+    "3. SAP Accounting - ₹11,999 (4-6M)\n"
+    "4. Python - ₹4,499 (3M)\n"
+    "5. GST & Payroll - ₹5,499 (6M)\n"
+    "6. DCA Fast Track - ₹6,400 (6M)\n"
+    "7. Teacher Training - ₹7,999 (1Y)\n"
+    "8. Business Accounting - ₹7,999 (1Y)\n"
+    "9. Data Entry - ₹4,800 (6M)\n"
+    "10. Web Designing - ₹5,999 (6M)\n"
+    "━━━━━━━━━━━━━━━━\n"
+    "🎓 All courses Kerala State Rutronix Approved\n"
+    "📊 EMI facility available!\n\n"
+    "Ithu one-time investment aanu.\n"
+    "Job kittiyal 1-2 months-il recover cheyyam! 💪\n\n"
+    "Demo kaanan varamo, atho seat reserve cheyyano?"
+)
+
+COURSE_FEES = {
+    "PGDCA": ("₹15,999", "12 Months"),
+    "AIDM Digital Marketing": ("₹19,999", "6 Months"),
+    "SAP Financial Accounting": ("₹11,999", "4-6 Months"),
+    "Python Programming": ("₹4,499", "3 Months"),
+    "GST & Payroll": ("₹5,499", "6 Months"),
+    "DCA Fast Track": ("₹6,400", "6 Months"),
+    "Computer Teacher Training": ("₹7,999", "1 Year"),
+    "Corporate Business Accounting": ("₹7,999", "1 Year"),
+    "Word Processing & Data Entry": ("₹4,800", "6 Months"),
+    "Professional Diploma in Web Designing": ("₹5,999", "6 Months"),
+}
+
+VISIT_KEYWORDS = ["visit", "office", "varam", "neritt", "address", "location", "എവിടെ", "വരാം"]
+HANDOFF_KEYWORDS = ["call me", "counselor", "confused", "doubt", "office number", "talk to counselor", "വിളിക്കൂ", "സംശയം"]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SMART REPLY ENGINE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Goal → Course mapping (relative numbering)
+GOAL_COURSES = {
+    "job": [
+        ("PGDCA", "PGDCA - Post Graduate Diploma", "12 Months", "₹15,999"),
+        ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
+        ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
+        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
+    ],
+    "business": [
+        ("AIDM Digital Marketing", "AI-Driven Digital Marketing", "6 Months", "₹19,999"),
+        ("Professional Diploma in Web Designing", "Web Designing", "6 Months", "₹5,999"),
+        ("Python Programming", "Python Programming", "3 Months", "₹4,499"),
+    ],
+    "basic": [
+        ("DCA Fast Track", "DCA - Fast Track Diploma", "6 Months", "₹6,400"),
+        ("Word Processing & Data Entry", "Word Processing & Data Entry", "6 Months", "₹4,800"),
+        ("Computer Teacher Training", "Computer Teacher Training", "1 Year", "₹7,999"),
+    ],
+    "accounting": [
+        ("SAP Financial Accounting", "SAP Financial Accounting", "4-6 Months", "₹11,999"),
+        ("GST & Payroll", "GST & Payroll Diploma", "6 Months", "₹5,499"),
+        ("Corporate Business Accounting", "Corporate Business Accounting", "1 Year", "₹7,999"),
+    ],
+}
+
+FULL_FEE_TABLE = (
+    "💰 *Course Fees - The Oxford Computers*\n"
+    "━━━━━━━━━━━━━━━━\n"
+    "1. PGDCA - ₹15,999 (12M)\n"
+    "2. AIDM Digital Marketing - ₹19,999 (6M)\n"
+    "3. SAP Accounting - ₹11,999 (4-6M)\n"
+    "4. Python - ₹4,499 (3M)\n"
+    "5. GST & Payroll - ₹5,499 (6M)\n"
+    "6. DCA Fast Track - ₹6,400 (6M)\n"
+    "7. Teacher Training - ₹7,999 (1Y)\n"
+    "8. Business Accounting - ₹7,999 (1Y)\n"
+    "9. Data Entry - ₹4,800 (6M)\n"
+    "10. Web Designing - ₹5,999 (6M)\n"
     "━━━━━━━━━━━━━━━━\n"
     "🎓 All courses Kerala State Rutronix Approved\n"
     "📊 EMI facility available!\n\n"
@@ -683,9 +706,9 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         return (
             "🎓 *Free Demo Class Booking*\n\n"
             "Preferred batch time ഏത്?\n\n"
-            "1️⃣ Morning — 9 AM to 11 AM\n"
-            "2️⃣ Afternoon — 12 PM to 2 PM\n"
-            "3️⃣ Evening — 5 PM to 7 PM\n\n"
+            "1️⃣ Morning - 9 AM to 11 AM\n"
+            "2️⃣ Afternoon - 12 PM to 2 PM\n"
+            "3️⃣ Evening - 5 PM to 7 PM\n\n"
             "Number reply cheyyoo! 📅"
         ), "NO_BUTTONS"
 
@@ -695,10 +718,10 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "🔥 *Today's Special Offer!*\n"
             "━━━━━━━━━━━━━━━━\n"
             "🎓 Kerala State Rutronix Approved\n\n"
-            "1️⃣ CWPDE — ₹4,800 (6M)\n"
-            "2️⃣ DCA — ₹6,400 (6M)\n"
-            "3️⃣ AIDM — ₹19,999 (6M)\n"
-            "4️⃣ PGDCA — ₹15,999 (12M)\n"
+            "1️⃣ CWPDE - ₹4,800 (6M)\n"
+            "2️⃣ DCA - ₹6,400 (6M)\n"
+            "3️⃣ AIDM - ₹19,999 (6M)\n"
+            "4️⃣ PGDCA - ₹15,999 (12M)\n"
             "━━━━━━━━━━━━━━━━\n"
             "⚡ Limited seats! Book now!\n\n"
             "Number reply cheyyoo 💳"
@@ -714,11 +737,11 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         if course and course != "Not Selected" and course in COURSE_FEES:
             fee, duration = COURSE_FEES[course]
             return (
-                f"💰 *{course} — Fee Details*\n\n"
+                f"💰 *{course} - Fee Details*\n\n"
                 f"📋 Fee: {fee}\n"
                 f"⏱ Duration: {duration}\n"
                 f"🎓 Kerala State Rutronix Approved\n\n"
-                "📊 EMI available — monthly installments!\n\n"
+                "📊 EMI available - monthly installments!\n\n"
                 "Ithu one-time investment aanu.\n"
                 "Job kittiyal 1-2 months-il recover cheyyam! 💪\n\n"
                 "Demo kaanan varamo, atho seat reserve cheyyano?"
@@ -733,7 +756,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         state["stage"] = "visit_interested"
         threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested")).start()
         return (
-            f"🏢 *Office Visit — Welcome {name}!*\n\n"
+            f"🏢 *Office Visit - Welcome {name}!*\n\n"
             "📍 *The Oxford Computers*\n"
             "   Malayinkeezhu Junction\n"
             "   Thiruvananthapuram, Kerala\n\n"
@@ -749,7 +772,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         return (
             f"😊 Of course {name}!\n\n"
             "Oru experienced counselor connect cheyyam.\n"
-            "📞 *9447329972* — vilikku!\n\n"
+            "📞 *9447329972* - vilikku!\n\n"
             "⏰ Available: 9 AM – 7 PM (Mon-Sat)\n"
             "📍 Oxford Computers, Malayinkeezhu\n\n"
             "Allenkil ividé message cheyyoo,\n"
@@ -766,7 +789,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             state["goal"] = goal
             lines = ["📚 *നിങ്ങൾക്ക് best ആയ courses:*\n"]
             for i, (_, display, dur, fee) in enumerate(courses, 1):
-                lines.append(f"{i}️⃣ {display} — {dur} — {fee}")
+                lines.append(f"{i}️⃣ {display} - {dur} - {fee}")
             lines.append("\nCourse number reply cheyyoo! 🎓")
             return "\n".join(lines), "NO_BUTTONS"
         elif msg_lower == "5":
@@ -783,7 +806,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 "Ningalude qualification enthanu?\n"
                 "Eppol enthu cheyyunnu?\n"
                 "Ethu type job aanu interest?\n\n"
-                "Reply cheyyoo — best course recommend cheyyam! 🎓"
+                "Reply cheyyoo - best course recommend cheyyam! 🎓"
             ), "BUTTONS_GOAL"
 
     if current_stage == "course_recommendation":
@@ -806,7 +829,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             }
             detail = course_msg_map.get(course_key, "")
             return (
-                f"✅ *{display}* — Great choice!\n\n"
+                f"✅ *{display}* - Great choice!\n\n"
                 f"{detail}\n"
                 f"💰 Fee: {fee} | ⏱ {dur}\n"
                 f"🎓 Kerala State Rutronix Approved\n\n"
@@ -854,7 +877,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             state["stage"] = "payment_sent"
             state["offer_course"] = code
             return (
-                f"✅ *{code} — Great Choice!*\n\n"
+                f"✅ *{code} - Great Choice!*\n\n"
                 f"📚 {full_name}\n"
                 f"⏱ Duration: {dur}\n"
                 f"🎓 Kerala State Rutronix Approved\n"
@@ -882,7 +905,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             f"👤 Name: {name}\n\n"
             "Seat confirmed! Welcome to\n"
             "*The Oxford Computers* 🎓\n\n"
-            "📞 9447329972 — batch details\n"
+            "📞 9447329972 - batch details\n"
             "📍 Malayinkeezhu, Thiruvananthapuram\n\n"
             "കാണാൻ കാത്തിരിക്കുന്നു! 😊"
         ), "BUTTONS_AFTER_DEMO"
@@ -969,7 +992,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             state["course"] = cname
             threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {cname}")).start()
             fee, dur = COURSE_FEES.get(cname, ("", ""))
-            return f"✅ *{cname}* — Great choice!\n\n{cdetail}\n\n💰 Fee: {fee} | ⏱ {dur}\n🎓 Kerala State Rutronix Approved\n\nFree demo class book cheyyatte? 🎓", "BUTTONS_COURSE"
+            return f"✅ *{cname}* - Great choice!\n\n{cdetail}\n\n💰 Fee: {fee} | ⏱ {dur}\n🎓 Kerala State Rutronix Approved\n\nFree demo class book cheyyatte? 🎓", "BUTTONS_COURSE"
 
     if gemini_client:
         try:
@@ -984,28 +1007,24 @@ def get_welcome_message(name):
         "*The Oxford Computers*-ലേക്ക് സ്വാഗതം! 🎓\n"
         "Kerala Govt Certified • AI-Enabled Courses\n\n"
         "നിങ്ങൾ എന്താണ് ലക്ഷ്യം? 🤔\n\n"
-        "1️⃣ Job Oriented — IT/Software career\n"
+        "1️⃣ Job Oriented - IT/Software career\n"
         "2️⃣ Business/Freelance\n"
         "3️⃣ Basic Computer/Office Job\n"
         "4️⃣ Accounting/Tax\n"
-        "5️⃣ Not sure — help me choose\n\n"
+        "5️⃣ Not sure - help me choose\n\n"
         "Number reply cheyyoo! 📝"
     )
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ✅ GEMINI AI REPLY - With 429 error handling
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def get_gemini_reply(msg_text, name):
-    """Get AI-powered reply with quota error handling"""
     try:
         prompt = f"""{INSTITUTE_INFO}
 
 Student name: {name}
 Student message: "{msg_text}"
-
-Reply as Aaliza (Senior Admission Counselor).
-Keep reply under 5-6 lines. Use Malayalam/Manglish if student uses it.
-Always guide toward: demo class booking, office visit, or payment.
-Never sound robotic. Be warm and natural.
-End with a soft CTA.
 """
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash",
@@ -1016,19 +1035,17 @@ End with a soft CTA.
     except Exception as e:
         error_str = str(e).lower()
         if "429" in str(e) or "quota" in error_str or "resource" in error_str:
-            print(f"⚠️ Gemini quota exceeded — using smart fallback")
+            print(f"⚠️ Gemini quota exceeded - using smart fallback")
         else:
             print(f"⚠️ Gemini error: {e}")
         return get_smart_fallback(name, msg_text)
 
-
 def get_smart_fallback(name, msg_text=""):
-    """Contextual fallback when Gemini is unavailable"""
     msg_lower = msg_text.lower() if msg_text else ""
 
     if any(w in msg_lower for w in ["fee", "price", "cost", "vila"]):
         return (
-            f"😊 {name}, fees ariyaan aagrahikkunnathinu nandi!\n\n"
+            f"😊 {name}, fees ariyaan aagrahikkunnathin nanadi!\n\n"
             "Government approved courses ₹4,499 muthal.\n"
             "EMI facility undh!\n\n"
             "Exact fee ariyaan *FEES* reply cheyyoo 💰\n"
@@ -1051,18 +1068,16 @@ def get_smart_fallback(name, msg_text=""):
         )
 
     return (
-        f"😊 Nandi {name}!\n\n"
-        "Njan Aaliza — Oxford Computers-nte\n"
+        f"😊 Nanadi {name}!\n\n"
+        "Njan Aaliza - Oxford Computers-nte\n"
         "Senior Admission Counselor.\n\n"
         "Ningalkku help cheyyatte?\n"
         "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
         "📞 9447329972"
     )
 
-
 def get_fallback_reply(name):
     return get_smart_fallback(name)
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # GOOGLE SHEETS CRM
@@ -1084,7 +1099,7 @@ def save_lead_to_sheets(phone, name, message, is_new_lead):
     """Save or update lead in Google Sheets"""
     try:
         if not SHEETS_ID or not GOOGLE_CREDENTIALS_JSON or GOOGLE_CREDENTIALS_JSON == "{}":
-            print("⚠️ Sheets skipped — SHEETS_ID or GOOGLE_CREDENTIALS not configured")
+            print("⚠️ Sheets skipped - SHEETS_ID or GOOGLE_CREDENTIALS not configured")
             return
 
         wb = get_sheet()
@@ -1157,7 +1172,7 @@ FOLLOWUP_MESSAGES = [
             "{name}-നു് നമസ്കാരം! 👋\n\n"
             "The Oxford Computers-ൽ നിന്ന്...\n\n"
             "നിങ്കൾ course-നെ കുറിച്ച് ആലോചിച്ചോ? 🤔\n\n"
-            "ഒരു *free demo class* try ചെയ്ത് നോക്കൂ —\n"
+            "ഒരു *free demo class* try ചെയ്ത് നോക്കൂ -\n"
             "zero commitment, 100% free! 🎓\n\n"
             "*DEMO* reply ചെയ്താൽ book ചെയ്യാം!"
         )
@@ -1168,7 +1183,7 @@ FOLLOWUP_MESSAGES = [
         "message": (
             "👋 {name}, Oxford Computers here!\n\n"
             "🌟 *Student Success Story*\n\n"
-            "Riya (Attingal) — Web Design course complete ചെയ്ത്\n"
+            "Riya (Attingal) - Web Design course complete ചെയ്ത്\n"
             "ഇപ്പോൾ ₹25,000/month earn ചെയ്യുന്നു! 💪\n\n"
             "താങ്കൾക്കും ഇത് possible ആണ്.\n"
             "Government certified course + Placement support.\n\n"
@@ -1181,7 +1196,7 @@ FOLLOWUP_MESSAGES = [
         "hours": 168,
         "message": (
             "{name}, last message! 😊\n\n"
-            "The Oxford Computers — *Special Offer*\n\n"
+            "The Oxford Computers - *Special Offer*\n\n"
             "🎁 ഈ batch-ൽ join ചെയ്യുന്നവർക്ക്:\n"
             "✅ Free registration (₹500 waived)\n"
             "✅ Free study materials\n"
@@ -1211,7 +1226,7 @@ def schedule_followups(phone, name):
 
 
 def process_followup_queue():
-    """Background thread — checks every 5 min and sends due follow-ups"""
+    """Background thread - checks every 5 min and sends due follow-ups"""
     while True:
         try:
             now = datetime.now()
@@ -1224,7 +1239,7 @@ def process_followup_queue():
                         last_dt = datetime.fromisoformat(last_msg_time)
                         if (now - last_dt).total_seconds() < 21600:  # 6 hours
                             item["done"] = True
-                            print(f"⏭️ Follow-up skipped — {item['name']} recently active")
+                            print(f"⏭️ Follow-up skipped - {item['name']} recently active")
                             continue
 
                     send_whatsapp_message(item["phone"], item["message"])
@@ -1248,7 +1263,7 @@ print("✅ Follow-up scheduler started")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SEND WHATSAPP MESSAGE — Named Button Presets
+# SEND WHATSAPP MESSAGE - Named Button Presets
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 BUTTON_PRESETS = {
