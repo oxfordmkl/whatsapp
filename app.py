@@ -809,9 +809,18 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "Payment link ഉടൻ അയക്കാം! 💳"
         ), "OFFER"
 
-    # Long messages → Gemini AI (smart counselor)
-    if len(msg_lower) > 20 and gemini_client:
-        return get_gemini_reply(msg_text, name), None
+    # Smart routing → Gemini AI unless it's an exact short keyword
+    if len(msg_lower) > 10 and gemini_client:
+        # Check if it's NOT an exact keyword match
+        exact_keywords = [
+            "fees", "fee", "demo", "courses", "course", "offer",
+            "hi", "hello", "hai", "hii", "location", "address",
+            "timing", "batch", "certificate", "job", "placement",
+            "നമസ്കാരം", "എവിടെ",
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"
+        ]
+        if msg_lower.strip() not in exact_keywords:
+            return get_gemini_reply(msg_text, name), None
 
     # KEYWORD_REPLIES loop
     for keyword, reply in KEYWORD_REPLIES.items():
