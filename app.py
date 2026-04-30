@@ -763,12 +763,19 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             f"കാണാൻ കാത്തിരിക്കുന്നു! 😊"
         ), "NO_BUTTONS"
 
-    # 3. Check for long messages to route to Gemini
-    if len(msg_lower) > 20:
-        # Long message — use Gemini for smart reply
-        if gemini_client:
-            return get_gemini_reply(msg_text, name), None
-        return get_fallback_reply(name), None
+    # 3. Smart routing — keywords only for exact/short matches
+    exact_keywords = [
+        "fees", "fee", "price", "demo", "courses", "course",
+        "offer", "hi", "hello", "hai", "hii", "location",
+        "address", "timing", "batch", "certificate", "job",
+        "placement", "നമസ്കാരം", "എവിടെ", "exit",
+        "pgdca", "pgd", "aidm", "sap", "python", "gst",
+        "tally", "dca", "teacher", "accounting", "web",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"
+    ]
+
+    if msg_lower.strip() not in exact_keywords and gemini_client:
+        return get_gemini_reply(msg_text, name), None
 
     # 4. Short message — check keywords
     # Explicit 'demo'
