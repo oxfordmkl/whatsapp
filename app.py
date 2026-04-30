@@ -678,12 +678,14 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
     if phone not in conversation_state:
         conversation_state[phone] = {
             "name": name, "stage": "new", "course": "Not Selected",
-            "last_msg": datetime.now().isoformat(), "last_text": msg_text
+            "last_msg": datetime.now().isoformat(), "last_text": msg_text,
+            "last_reply": ""
         }
         
     state = conversation_state[phone]
     current_stage = state.get("stage", "new")
     course = state.get("course", "Not Selected")
+    last_reply = state.get("last_reply", "")
 
     # Helpers
     is_offer_intent = any(w in msg_lower for w in ["offer", "discount", "special price", "offer undo", "offer unda"])
@@ -705,10 +707,23 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
             "വീണ്ടും message cheyyoo! 😊"
         ), "NO_BUTTONS"
 
-    # GREETING OR VERY SHORT NEW LEAD
+    # RESTART COMMAND
+    if msg_lower in ["restart", "start", "start over"]:
+        state["stage"] = "goal_selection"
+        state["last_reply"] = "welcome"
+        return get_welcome_message(name), "BUTTONS_GOAL"
+
+    # GREETING OR VERY SHORT NEW LEAD - only show welcome if not already in goal_selection
     greetings = ["hi", "hello", "hai", "hii", "നമസ്കാരം", "hey"]
     if msg_lower in greetings or (is_new_lead and len(msg_lower) <= 2 and not msg_lower.isdigit()):
+        if current_stage == "goal_selection" and last_reply == "welcome":
+            # Already showed welcome, nudge forward
+            return (
+                f"😊 {name}, 1 muthal 5 vare oru number reply cheyyoo!\n\n"
+                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic | 4️⃣ Accounting | 5️⃣ Not sure"
+            ), "BUTTONS_GOAL"
         state["stage"] = "goal_selection"
+        state["last_reply"] = "welcome"
         return get_welcome_message(name), "BUTTONS_GOAL"
 
     # b) CURRENT STAGE HANDLERS (for specific stage inputs like numbers, dates)
@@ -811,9 +826,22 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
                 f"Free demo class book cheyyatte? 🎓"
             ), "BUTTONS_COURSE"
 
-    # c) INTENT PHRASES (offer/fees/demo/visit/call/help_choose)
+    # c) INTENT PHRASES (offer/fees/demo/visit/call/help_choose/courses)
+    # "courses" or "restart" keyword - reset to goal_selection with anti-loop guard
+    if msg_lower in ["course", "courses", "padikkanam", "study"]:
+        if current_stage == "goal_selection" and last_reply == "welcome":
+            return (
+                f"Already courses list kaanichu 😊\n\n"
+                "Ningalk enthu type course aanu vendath?\n"
+                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic | 4️⃣ Accounting | 5️⃣ Not sure"
+            ), "BUTTONS_GOAL"
+        state["stage"] = "goal_selection"
+        state["last_reply"] = "welcome"
+        return get_welcome_message(name), "BUTTONS_GOAL"
+
     if is_offer_intent:
         state["stage"] = "offer_selection"
+        # do NOT reset last_reply here
         return (
             "🔥 *Today's Special Offer!*\n"
             "━━━━━━━━━━━━━━━━\n"
@@ -849,7 +877,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         return FULL_FEE_TABLE, "BUTTONS_FEES"
 
     if msg_lower in ["demo", "free class", "free demo"]:
-        state["stage"] = "demo_time_selection"
+        state["stage"] = "demo_time_selection"  # go to demo flow, not goal_selection
         return (
             "🎓 *Free Demo Class Booking*\n\n"
             "Preferred batch time ഏത്?\n\n"
@@ -860,7 +888,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         ), "NO_BUTTONS"
 
     if any(kw in msg_lower for kw in VISIT_KEYWORDS):
-        state["stage"] = "visit_interested"
+        state["stage"] = "visit_interested"  # set to visit, NOT goal_selection
         threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested")).start()
         return (
             f"🏢 *Office Visit - Welcome {name}!*\n\n"
@@ -874,7 +902,7 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         ), "BUTTONS_COURSE"
 
     if any(kw in msg_lower for kw in HANDOFF_KEYWORDS):
-        state["stage"] = "call_requested"
+        state["stage"] = "call_requested"  # set to call, NOT goal_selection
         threading.Thread(target=update_lead_status, args=(phone, "Call Requested")).start()
         return (
             f"😊 Of course {name}!\n\n"
@@ -887,7 +915,9 @@ def _get_smart_reply_internal(msg_text, name, phone, is_new_lead):
         ), "NO_BUTTONS"
 
     if is_help_choose or is_not_sure_goal:
-        state["stage"] = "not_sure"
+        # Only change stage if not already in not_sure (avoid resetting)
+        if current_stage != "not_sure":
+            state["stage"] = "not_sure"
         if gemini_client:
             try:
                 return get_gemini_reply(
