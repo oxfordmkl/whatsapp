@@ -149,7 +149,7 @@ _SAP = (
     "⏱ 4-6 Months | 🎓 SAP Alliance Certificate\n"
     "📋 GL Accounting, AP/AR, Asset Accounting, SAP CO, Real-Time Project\n"
     "💡 Best for commerce graduates & accounting professionals\n"
-    "💰 Fee: ₹11,999"
+    "💰 Fee: ₹15,999"
 )
 _PYTHON = (
     "📚 *Python — Beginner to Advanced*\n"
@@ -163,7 +163,7 @@ _GST = (
     "⏱ 6 Months | 🎓 Rutronix Certified\n"
     "📋 GST Concepts, Income Tax, Tally Prime, Payroll Processing, E-filing\n"
     "💡 Best for accounting professionals & commerce students\n"
-    "💰 Fee: ₹5,499"
+    "💰 Fee: ₹18999"
 )
 _DCA = (
     "📚 *DCA — Diploma in Computer Applications (Fast Track)*\n"
@@ -177,14 +177,14 @@ _TEACHER = (
     "⏱ 1 Year | 🎓 Rutronix Certified\n"
     "📋 Teaching Methodology, MS Office Pedagogy, Programming Basics, Practice Teaching\n"
     "💡 Best for aspiring computer teachers\n"
-    "💰 Fee: ₹7,999"
+    "💰 Fee: ₹11,999"
 )
 _ACCOUNTING = (
     "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
     "⏱ 1 Year | 🎓 Rutronix Certified\n"
     "📋 Corporate Accounting, GST, Income Tax Corporate, Financial Modelling, Case Studies\n"
     "💡 Best for advanced accounting and finance careers\n"
-    "💰 Fee: ₹7,999"
+    "💰 Fee: ₹40000"
 )
 _WORD = (
     "📚 *Certificate in Word Processing & Data Entry*\n"
@@ -218,14 +218,14 @@ ALL_COURSES = {
 COURSE_FEES = {
     "PGDCA":                         ("₹15,999", "12 Months"),
     "AIDM Digital Marketing":        ("₹19,999", "6 Months"),
-    "SAP Financial Accounting":      ("₹11,999", "4-6 Months"),
+    "SAP Financial Accounting":      ("₹15,999", "4-6 Months"),
     "Python Programming":            ("₹4,499",  "3 Months"),
-    "GST & Payroll":                 ("₹5,499",  "6 Months"),
+    "GST & Payroll":                 ("₹18,999",  "6 Months"),
     "DCA Fast Track":                ("₹6,400",  "6 Months"),
-    "Computer Teacher Training":     ("₹7,999",  "1 Year"),
-    "Corporate Business Accounting": ("₹7,999",  "1 Year"),
+    "Computer Teacher Training":     ("₹11,999",  "1 Year"),
+    "Corporate Business Accounting": ("₹40000",  "1 Year"),
     "Word Processing & Data Entry":  ("₹4,800",  "6 Months"),
-    "Professional Web Designing":    ("₹5,999",  "6 Months"),
+    "Professional Web Designing":    ("₹8,800",  "6 Months"),
 }
 
 # Keyword → course name (for short-word triggers)
@@ -247,23 +247,23 @@ GOAL_COURSES = {
     "job": [
         ("1",  "PGDCA — Post Graduate Diploma",    "12 Months", "₹15,999"),
         ("4",  "Python Programming",               "3 Months",  "₹4,499"),
-        ("10", "Web Designing",                    "6 Months",  "₹5,999"),
+        ("10", "Web Designing",                    "6 Months",  "₹8,800"),
         ("6",  "DCA Fast Track",                   "6 Months",  "₹6,400"),
     ],
     "business": [
         ("2",  "AI-Driven Digital Marketing",      "6 Months",  "₹19,999"),
-        ("10", "Web Designing",                    "6 Months",  "₹5,999"),
+        ("10", "Web Designing",                    "6 Months",  "₹8,800"),
         ("4",  "Python Programming",               "3 Months",  "₹4,499"),
     ],
     "basic": [
         ("6",  "DCA Fast Track",                   "6 Months",  "₹6,400"),
         ("9",  "Word Processing & Data Entry",     "6 Months",  "₹4,800"),
-        ("7",  "Computer Teacher Training",        "1 Year",    "₹7,999"),
+        ("7",  "Computer Teacher Training",        "1 Year",    "₹11,999"),
     ],
     "accounting": [
         ("3",  "SAP Financial Accounting",         "4-6 Months","₹11,999"),
-        ("5",  "GST & Payroll Diploma",            "6 Months",  "₹5,499"),
-        ("8",  "Corporate Business Accounting",    "1 Year",    "₹7,999"),
+        ("5",  "GST & Payroll Diploma",            "6 Months",  "₹18,999"),
+        ("8",  "Corporate Business Accounting",    "1 Year",    "₹40,000"),
     ],
 }
 
@@ -282,12 +282,12 @@ FULL_FEE_TABLE = (
     "2️⃣  AIDM Digital Marketing ₹19,999  (6M)\n"
     "3️⃣  SAP Accounting         ₹11,999  (4-6M)\n"
     "4️⃣  Python Programming     ₹4,499   (3M)\n"
-    "5️⃣  GST & Payroll          ₹5,499   (6M)\n"
+    "5️⃣  GST & Payroll          ₹18,999  (6M)\n"
     "6️⃣  DCA Fast Track         ₹6,400   (6M)\n"
-    "7️⃣  Computer Teaching      ₹7,999   (1Y)\n"
-    "8️⃣  Business Accounting    ₹7,999   (1Y)\n"
+    "7️⃣  Computer Teaching      ₹11,999   (1Y)\n"
+    "8️⃣  Business Accounting    ₹40,000   (1Y)\n"
     "9️⃣  Word Processing        ₹4,800   (6M)\n"
-    "🔟 Web Designing           ₹5,999   (6M)\n"
+    "🔟 Web Designing           ₹8,800   (6M)\n"
     "━━━━━━━━━━━━━━━━\n"
     "🎓 Kerala State Rutronix Approved\n"
     "📊 EMI / installment option available!\n\n"
@@ -451,18 +451,18 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
 
 def smart_fallback(name: str, msg: str = "") -> str:
     m = msg.lower()
-    if any(w in m for w in ["fee", "price", "cost", "vila", "ethra"]):
+    if any(w in m for w in ["fee", "price", "cost", "vila", "ethra","fees"]):
         return (
             f"😊 {name}, fees ariyaan government approved rates und!\n\n"
             "Courses ₹4,499 muthal thodangunnu.\n"
-            "EMI / installment option um undh! 📊\n\n"
+            "EMI / installment option um und! 📊\n\n"
             "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
             "📞 9447329972"
         )
     if any(w in m for w in ["job", "placement", "work", "career"]):
         return (
             f"{name}, nalla chodyam! 💪\n\n"
-            "Oxford-il 100% placement assistance undh.\n"
+            "Oxford-il 100% placement assistance und.\n"
             "Students Kerala & Gulf-il work cheyyunnu. 🌍\n\n"
             "Best course ariyaan: *COURSES* reply cheyyoo 📚\n"
             "Or demo: *DEMO* 🎓"
@@ -470,7 +470,7 @@ def smart_fallback(name: str, msg: str = "") -> str:
     return (
         f"😊 Nandi {name}!\n\n"
         "Njan Aaliza — Oxford Computers-nte counselor.\n"
-        "Ningalkku enthu help cheyyam?\n\n"
+        "Ningalkku njan enthu help cheyyanam?\n\n"
         "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
         "📞 9447329972"
     )
@@ -608,7 +608,7 @@ def msg_visit() -> tuple[str, str]:
         "📍 *The Oxford Computers*\n"
         "   Malayinkeezhu Junction\n"
         "   Thiruvananthapuram, Kerala\n\n"
-        "⏰ Office Hours: 9 AM – 7 PM (Mon–Sat)\n"
+        "⏰ Office Hours: 9 AM – 5 PM (Mon–Sat)\n"
         "📞 9447329972\n\n"
         "Eppol varananu convenient?\n"
         "Morning / Afternoon / Evening? 😊"
@@ -630,7 +630,7 @@ def msg_call_us(name: str) -> tuple[str, str]:
 
 def msg_exit(name: str) -> tuple[str, str]:
     text = (
-        f"👋 Nandi {name}! Oru nalla divasam aakatte! 😊\n\n"
+        f"👋 Nandi {name}! Oru nalla divasam nerunnu! 😊\n\n"
         "The Oxford Computers — always here for you.\n"
         "📞 9447329972 | 🌐 theoxfordedu.com\n\n"
         "Thiriche message cheyyoo — happy to help!"
