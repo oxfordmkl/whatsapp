@@ -180,8 +180,8 @@ Job aanu main goal alle?"
 _PGDCA = (
     "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
     "⏱ 12 Months | 🎓 Rutronix + State Approved\n"
-    "📋 C, C++, Java, DBMS, Web Dev, Networks, Mobile App, Final Project\n"
-    "💡 Best for graduates seeking an IT career\n"
+    "📋  C++/ Java, PYTHON, DBMS, Web Dev, Networks, Mobile App, Final Project\n"
+    "💡 Best for graduates seeking an Govt+IT career\n"
     "💰 Fee: ₹15,999"
 )
 _AIDM = (
@@ -504,6 +504,7 @@ def smart_fallback(name: str, msg: str = "") -> str:
             "Courses ₹1,999 muthal thudangunnu.\n"
             "EMI / installment option um und! 📊\n\n"
             "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
+            "Coursukal kanan *COURSES* ennu reply cheyyuka 📚\n"
             "📞 9447329972"
         )
     if any(w in m for w in ["job", "placement", "work", "career"]):
