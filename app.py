@@ -603,6 +603,21 @@ def msg_welcome(name: str) -> tuple[str, str]:
     return text, "GOAL"
 
 
+def msg_website_lead() -> tuple[str, str]:
+    text = (
+        "Super 👍 ningal correct place-il aanu 😊\n\n"
+        "Ningalk best course suggest cheyyan njan help cheyyam\n\n"
+        "Ningalude main goal entha? 👇\n\n"
+        "1️⃣ Job oriented (fast job)\n"
+        "2️⃣ Business / Freelance\n"
+        "3️⃣ Basic computer / office job\n"
+        "4️⃣ Accounting / GST\n"
+        "5️⃣ Not sure"
+    )
+    return text, "GOAL"
+
+
+
 def msg_goal_courses(goal: str, name: str) -> tuple[str, str]:
     courses = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
     lines = [f"📚 *{name}-kku best ആയ courses:*\n"]
@@ -869,6 +884,12 @@ def smart_reply(msg_text: str, name: str, phone: str,
     st["last_text"] = raw
     stage   = st["stage"]
     course  = st["course"]
+
+    # ── 0. WEBSITE DEFAULT MESSAGE (High Priority) ────
+    if "course details" in low or "want course details" in low:
+        st["stage"] = "goal_selection"
+        st["course"] = ""
+        return msg_website_lead()
 
     # ── 1. BRAND NEW LEAD ─────────────────────────────
     if is_new_lead:
