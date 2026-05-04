@@ -501,7 +501,7 @@ def smart_fallback(name: str, msg: str = "") -> str:
     if any(w in m for w in ["fee", "price", "cost", "vila", "ethra","fees"]):
         return (
             f"😊 {name}, fees ariyaan government approved rates und!\n\n"
-            "Courses ₹4,499 muthal thodangunnu.\n"
+            "Courses ₹1,999 muthal thudangunnu.\n"
             "EMI / installment option um und! 📊\n\n"
             "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
             "📞 9447329972"
@@ -516,7 +516,7 @@ def smart_fallback(name: str, msg: str = "") -> str:
         )
     return (
         f"😊 Nandi {name}!\n\n"
-        "Njan Aaliza — Oxford Computers-nte counselor.\n"
+        "Njan Aaliza — The Oxford Computers-nte counselor.\n"
         "Ningalkku njan enthu help cheyyanam?\n\n"
         "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
         "📞 9447329972"
@@ -1235,7 +1235,7 @@ FOLLOWUP_TEMPLATES = [
         "day": 1,
         "hours": 24,
         "message": (
-            "Hi {name} 😊 Aaliza here from Oxford Computers.\n\n"
+            "Hi {name} 😊 Aaliza here from The Oxford Computers.\n\n"
             "Course about alochichu nokkiyo?\n"
             "Confusion undenkil njan help cheyyam.\n\n"
             "Oru free demo class attend cheythal clarity varum 🎓\n"
@@ -1261,7 +1261,7 @@ FOLLOWUP_TEMPLATES = [
             "This batch-il free demo + EMI option available aanu.\n"
             "Seat limited aanu.\n\n"
             "Interested aanenkil *DEMO* or *VISIT* reply cheyyoo.\n"
-            "All the best from Oxford Computers 🎓"
+            "All the best from The Oxford Computers 🎓"
         ),
     },
 ]
