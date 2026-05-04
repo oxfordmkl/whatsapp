@@ -322,6 +322,15 @@ OFFER_MENU = {
     "4": ("PGDCA", "Post Graduate Diploma in Computer Applications",   "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
 }
 
+# Direct payment links keyed by course name (from st["course"])
+# Courses without a link will show counselor fallback message
+COURSE_PAYMENT_LINKS = {
+    "Word Processing & Data Entry":  ("CWPDE", "Certificate in Word Processing & Data Entry", "₹4,800",  "6 Months",  "https://rzp.io/rzp/xkWdKtd"),
+    "DCA Fast Track":                ("DCA",   "Diploma in Computer Applications",            "₹6,400",  "6 Months",  "https://rzp.io/rzp/mJPPtM9x"),
+    "AIDM Digital Marketing":        ("AIDM",  "AI-Driven Digital Marketing",                 "₹19,999", "6 Months",  "https://rzp.io/rzp/vF76sj7Y"),
+    "PGDCA":                         ("PGDCA", "Post Graduate Diploma in Computer Applications", "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
+}
+
 FULL_FEE_TABLE = (
     "💰 *Course Fees — The Oxford Computers*\n"
     "━━━━━━━━━━━━━━━━\n"
@@ -365,9 +374,9 @@ BUTTON_PRESETS = {
         {"id": "VISIT", "title": "🏢 Visit Office"},
     ],
     "FEES": [
-        {"id": "DEMO",  "title": "🎓 Free Demo"},
-        {"id": "OFFER", "title": "🔥 Enrol Now"},
-        {"id": "CALL",  "title": "📞 Call Us"},
+        {"id": "DEMO",       "title": "🎓 Free Demo"},
+        {"id": "ENROLL_NOW", "title": "💳 Enrol Now"},
+        {"id": "CALL",       "title": "📞 Call Us"},
     ],
     "OFFER": [
         {"id": "DEMO",  "title": "🎓 Free Demo"},
@@ -375,9 +384,9 @@ BUTTON_PRESETS = {
         {"id": "CALL",  "title": "📞 Call Us"},
     ],
     "AFTER_BOOKING": [
-        {"id": "COURSES", "title": "📚 More Courses"},
-        {"id": "OFFER",   "title": "🔥 Enrol Now"},
-        {"id": "VISIT",   "title": "🏢 Visit Office"},
+        {"id": "COURSES",    "title": "📚 More Courses"},
+        {"id": "ENROLL_NOW", "title": "💳 Enrol Now"},
+        {"id": "VISIT",      "title": "🏢 Visit Office"},
     ],
 }
 
@@ -888,8 +897,44 @@ def smart_reply(msg_text: str, name: str, phone: str,
         st["stage"] = "demo_time_ask"
         return msg_demo_time_ask()
 
-    # Offer / payment menu
-    if low in {"offer", "pay", "enrol", "enroll", "payment", "fees pay", "seat"}:
+    # ── ENROLL NOW button (from FEES / AFTER_BOOKING preset) ──
+    # Sends direct payment link for selected course — never shows offer menu
+    if low in {"enroll_now", "enrol_now", "pay_now"}:
+        if course and course in COURSE_PAYMENT_LINKS:
+            code, full_name, price, dur, link = COURSE_PAYMENT_LINKS[course]
+            st["stage"] = "payment_pending"
+            st["offer_course"] = code
+            return msg_payment_link(code, full_name, price, dur, link)
+        elif course:
+            # Course selected but no payment link available yet
+            text = (
+                f"😊 {name}, {course}-nte payment link prepare aavunnu.\n\n"
+                "Counselor directly help cheyyum:\n"
+                "📞 *9447329972* — ippol call cheyyoo\n\n"
+                "Athinu munpu oru free demo attend cheyyano? 🎓"
+            )
+            return text, "COURSE"
+        else:
+            return (
+                f"😊 {name}, aadhyam oru course select cheyyoo!\n\n"
+                "Course list kaanan *COURSES* reply cheyyoo.\n"
+                "Athil ningalkku best option njan suggest cheyyam 🎓"
+            ), "GOAL"
+
+    # ── Explicit OFFER MENU — only for deliberate offer/discount intent ──
+    if low in {"offer", "today offer", "offer undo", "discount"} or \
+       ("offer" in low and "discount" in low):
+        st["stage"] = "offer_menu"
+        return msg_offer_menu()
+
+    # ── Generic payment trigger (typed keywords) ──
+    if low in {"pay", "payment", "enrol", "enroll", "seat", "fees pay", "reserve seat"}:
+        if course and course in COURSE_PAYMENT_LINKS:
+            code, full_name, price, dur, link = COURSE_PAYMENT_LINKS[course]
+            st["stage"] = "payment_pending"
+            st["offer_course"] = code
+            return msg_payment_link(code, full_name, price, dur, link)
+        # No course selected — show offer menu as fallback
         st["stage"] = "offer_menu"
         return msg_offer_menu()
 
