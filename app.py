@@ -18,6 +18,7 @@
 import os
 import json
 import time
+import random
 import threading
 import requests
 from flask import Flask, request, jsonify
@@ -83,26 +84,34 @@ AALIZA_PROMPT = """
 You are Aaliza, Senior Admission Counselor at The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.
 
 YOUR SOLE GOAL:
-Convert the student into ONE of these three actions:
+Convert the student into one of these three actions:
   1. Book a free demo class
   2. Visit the office
-  3. Make a payment
+  3. Make a payment / reserve a seat
 
 YOUR COMMUNICATION STYLE:
-- Speak exactly like a warm, confident Malayali counselor — natural Manglish / Malayalam mix.
-- Maximum 4-5 lines per reply. Never longer.
-- Be human. Never robotic. Never use corporate jargon.
-- Ask one focused question per reply to move the conversation forward.
-- Always end with a clear next step suggestion.
+- Speak exactly like a warm, confident Malayali senior counselor.
+- Use natural Malayalam/Manglish mix. Real human tone, not corporate.
+- Maximum 4-6 lines per reply. Never longer.
+- One focused question per reply only.
+- ALWAYS end with one of:
+    "Demo book cheyyatte?"
+    or "Office visit cheyyano?"
+    or "Seat reserve cheyyano?"
 
 STRICT RULES:
-- NEVER list all courses unless the student explicitly asks.
+- NEVER list all courses unless student explicitly asks.
 - NEVER say "job guarantee" — always say "placement assistance".
-- NEVER badmouth competitors.
-- NEVER repeat a question you already asked in this conversation.
-- If you already know their goal, recommend the course — don't ask the goal again.
-- Create gentle urgency: "limited seats", "batch starting soon".
-- If they ask fees, explain ROI: "job kittiyal 1-2 months-il recover cheyyam".
+- NEVER badmouth any competitor.
+- NEVER repeat a question already asked.
+- If goal is clear, skip goal question — recommend 1-2 best courses directly.
+- If goal is unclear, ask qualification + career goal FIRST.
+- Create gentle urgency: "limited seats", "next batch starting soon".
+- If fees concern, explain EMI + ROI logic immediately.
+- If student says "I will think" or "nokkatte", push free demo softly — not payment.
+- If student says "not interested", politely ask reason and reframe.
+- If student says "no time", mention flexible morning/evening batches.
+- If student says "confused", reassure and ask qualification + goal.
 
 INSTITUTE DETAILS:
 Name: The Oxford Computers
@@ -115,29 +124,54 @@ COURSES & FEES:
 2. AIDM (AI Digital Mktg)  — 6 Months  — ₹19,999
 3. SAP Financial Accounting — 4-6 Months— ₹11,999
 4. Python Programming       — 3 Months  — ₹4,499
-5. GST & Payroll Diploma    — 6 Months  — ₹5,499
+5. GST & Payroll Diploma    — 6 Months  — ₹18,999
 6. DCA Fast Track           — 6 Months  — ₹6,400
-7. Computer Teacher Training— 1 Year    — ₹7,999
-8. Corporate Biz Accounting — 1 Year    — ₹7,999
+7. Computer Teacher Training— 1 Year    — ₹11,999
+8. Corporate Biz Accounting — 1 Year    — ₹40,000
 9. Word Processing & Entry  — 6 Months  — ₹4,800
-10. Web Designing           — 6 Months  — ₹5,999
+10. Web Designing           — 6 Months  — ₹8,800
 
-EXAMPLE REPLIES (match this style exactly):
+HOOK + VALUE + CTA STYLE — ALWAYS follow this:
+"Digital Marketing ippol demand und 👍
+Freelance + business growth randinum useful aanu.
+AIDM ningalkku nalla option aanu.
+Oru free demo kaanumbo clarity varum… book cheyyatte? 🎓"
 
-Student: "enik digital marketing padikkanam"
-Aaliza: "Super choice! 👍 Digital Marketing-inu ippol Kerala + Gulf-il demand kooduthaanu.
-Ningalkku best option: AIDM — AI-Driven Digital Marketing (6 months, ₹19,999).
-Live campaigns, SEO, Meta Ads ellaam padikkaam. 🎯
-Demo class free aanu — oru thavashe nokkaamo? 🎓"
+OBJECTION HANDLING — use these exact styles:
 
-Student: "degree kazhinjittu entha cheyyenda?"
-Aaliza: "Degree kazhinja aalkku IT career super aanu! 🌟
-PGDCA (12M) allengil Web Designing (6M) — randum nalla options.
-Enthu field-il interest aanu? Programming aano, design aano? 🤔"
+User: "fees high aanu"
+Aaliza:
+"Athu doubt varunnath normal aanu 😊
+Pakshe ithu expense alla… skill investment aanu.
+EMI option und, so tension venda 👍
+Demo kaanumbo value clear aavum… book cheyyatte?"
 
-Student: "fees ethraya?"
-Aaliza: "Ningalude interest-ulla course enna?"
-(Ask first — then show specific fee with ROI explanation.)
+User: "njan nokkatte"
+Aaliza:
+"Sure 😊 take your time.
+Pakshe demo kaanathe decision edukkaruthu.
+Just 1 free class kaanumbo clarity varum 👍
+Book cheyyatte?"
+
+User: "interest illa"
+Aaliza:
+"Ok 😊 problem illa.
+Just ariyan… interest illa ennath course type kondaano,
+time issue aano? Njan better option suggest cheyyam 👍"
+
+User: "time illa"
+Aaliza:
+"Athu common issue aanu 😊
+Athinu morning/evening flexible batches und.
+Schedule adjust cheythu padikkaam 👍
+Demo-il timing clear cheyyam… varamo?"
+
+User: "confused aanu"
+Aaliza:
+"Confuse aavunnath normal aanu 😊
+Njan simple aayi guide cheyyam.
++2 / Degree / Working aano?
+Job aanu main goal alle?"
 """
 
 # ═══════════════════════════════════════════════════════
@@ -490,6 +524,57 @@ def smart_fallback(name: str, msg: str = "") -> str:
 
 
 # ═══════════════════════════════════════════════════════
+#  SCRIPT BANKS — randomised human phrases
+# ═══════════════════════════════════════════════════════
+DEMO_CTA = [
+    "Oru free demo kaanan varamo? 🎓",
+    "Demo class try cheythu nokkaamo? Zero risk aanu 👍",
+    "One demo kaanumbozhe clarity varum 😊 book cheyyatte?",
+    "Just oru demo mathram kaananam… ok aano?",
+    "Ningal varumbo njan personally explain cheyyam 😊 demo book cheyyatte?",
+]
+
+COURSE_CLOSE = [
+    "Ithu nalla future decision aanu 👍",
+    "Ithu padichal real skill build aakum 💪",
+    "Ithu career confidence koodan nalla option aanu.",
+    "Beginners-kum easy aayi start cheyyan pattunna course aanu.",
+]
+
+URGENCY_LINES = [
+    "Next batch starting soon aanu ⏳",
+    "Limited seats aanu ippol ⚠️",
+    "Late aayal next batch wait cheyyendi varum.",
+    "Current batch fast fill aavunnu.",
+]
+
+TRUST_LINES = [
+    "Kerala State Rutronix approved certificate aanu 🎓",
+    "Placement assistance + interview support und 👍",
+    "Practical training aanu, theory mathram alla.",
+    "EMI / installment option available aanu.",
+]
+
+FEES_VALUE_LINES = [
+    "Ithu one-time investment aanu 😊",
+    "Nalla job kittiyal 1–2 months-il recover cheyyam 💪",
+    "EMI option und, so full amount tension venda 👍",
+    "Skill kittiyal athinte value long-term aanu.",
+]
+
+CONFUSED_LINES = [
+    "Confuse aavunnath normal aanu 😊",
+    "Problem illa, correct course choose cheyyan njan guide cheyyam 👍",
+    "Ellarum first confuse aavum 😄 njan simple aayi explain cheyyam.",
+]
+
+
+def pick(items: list) -> str:
+    """Return a random item from the list."""
+    return random.choice(items)
+
+
+# ═══════════════════════════════════════════════════════
 #  CONVERSATION FLOWS  (pure functions → return (text, preset))
 # ═══════════════════════════════════════════════════════
 def msg_welcome(name: str) -> tuple[str, str]:
@@ -518,12 +603,13 @@ def msg_goal_courses(goal: str, name: str) -> tuple[str, str]:
 
 
 def msg_course_detail(course_idx: str) -> tuple[str, str]:
-    name, card = ALL_COURSES[course_idx]
+    c_name, card = ALL_COURSES[course_idx]
     text = (
-        f"✅ *{name}* — Valare nalla choice! 🎯\n\n"
+        f"✅ *{c_name}* — nalla choice aanu! 🎯\n\n"
         f"{card}\n\n"
-        "🎓 Kerala State Rutronix Approved\n\n"
-        "Free demo class book cheyyatte?"
+        f"{pick(TRUST_LINES)}\n"
+        f"{pick(COURSE_CLOSE)}\n\n"
+        f"{pick(DEMO_CTA)}"
     )
     return text, "COURSE"
 
@@ -565,10 +651,10 @@ def msg_demo_booked(course: str, batch_time: str, date: str) -> tuple[str, str]:
 
 def msg_offer_menu() -> tuple[str, str]:
     text = (
-        "🔥 *Special Offer — Enrol Now!*\n"
+        "🔥 *Special Offer — This Batch Only!*\n"
         "━━━━━━━━━━━━━━━━\n"
-        "🎓 Kerala State Rutronix Approved\n\n"
-        "1️⃣ Word Processing & Data Entry\n"
+        "Kerala State Rutronix Approved courses.\n\n"
+        "1️⃣ CWPDE — Word Processing & Data Entry\n"
         "   💰 ₹4,800 | ⏱ 6 Months\n\n"
         "2️⃣ DCA — Computer Applications\n"
         "   💰 ₹6,400 | ⏱ 6 Months\n\n"
@@ -577,26 +663,27 @@ def msg_offer_menu() -> tuple[str, str]:
         "4️⃣ PGDCA — Post Graduate Diploma\n"
         "   💰 ₹15,999 | ⏱ 12 Months\n"
         "━━━━━━━━━━━━━━━━\n"
-        "⚡ Limited seats — book fast!\n\n"
-        "Course number reply cheyyoo 💳"
+        f"⚠️ {pick(URGENCY_LINES)}\n\n"
+        "Seat reserve cheyyan course number reply cheyyoo.\n"
+        "Unsure aanenkil *DEMO* reply cheyyoo 🎓"
     )
     return text, "OFFER"
 
 
 def msg_payment_link(code, full_name, price, dur, link) -> tuple[str, str]:
     text = (
-        f"✅ *{code} — Great Choice!*\n\n"
+        f"✅ *{code} — Nalla choice aanu!* 🎯\n\n"
         f"📚 {full_name}\n"
         f"⏱ Duration: {dur}\n"
         f"🎓 Kerala State Rutronix Approved\n"
         f"💰 Fee: *{price}*\n\n"
-        "✅ Government certified\n"
-        "✅ Receipt issued after payment\n"
+        "✅ Government certified receipt kittum\n"
+        "✅ Seat confirm aayi confirmation varum\n"
         f"📍 Oxford Computers, Malayinkeezhu\n\n"
         f"👇 *Secure Payment Link:*\n{link}\n\n"
-        "Payment ശേഷം Transaction ID\n"
-        "ഇവിടെ reply cheyyoo 📩\n"
-        "(Example: T2504281234)"
+        "Payment kazhinju *Transaction ID* ivideyum reply cheyyuka 📩\n"
+        "(Example: T2504281234)\n\n"
+        "Any doubt undenkil call cheyyoo: 📞 9447329972"
     )
     return text, None
 
@@ -652,13 +739,108 @@ def msg_exit(name: str) -> tuple[str, str]:
 
 
 # ═══════════════════════════════════════════════════════
+#  OBJECTION DETECTOR + HANDLER
+# ═══════════════════════════════════════════════════════
+def detect_objection(low: str) -> str | None:
+    """Return objection type string or None."""
+    if any(x in low for x in ["fees high", "fee high", "rate high", "expensive",
+                               "costly", "kooduthal", "\u0d15\u0d42\u0d1f\u0d41\u0d24\u0d32\u0d4d", "high aanu"]):
+        return "fees_high"
+    if any(x in low for x in ["think", "nokkatte", "alochikkam", "later", "pinne",
+                               "\u0d28\u0d4b\u0d15\u0d4d\u0d15\u0d1f\u0d4d\u0d1f\u0d46", "\u0d06\u0d32\u0d4b\u0d1a\u0d3f\u0d15\u0d4d\u0d15\u0d3e\u0d02"]):
+        return "think_later"
+    if any(x in low for x in ["interest illa", "not interested", "vend",
+                               "\u0d35\u0d47\u0d23\u0d4d\u0d1f", "illa interest"]):
+        return "not_interested"
+    if any(x in low for x in ["time illa", "busy", "samayam illa", "\u0d38\u0d2e\u0d2f\u0d02 \u0d07\u0d32\u0d4d\u0d32"]):
+        return "time_issue"
+    if any(x in low for x in ["already job", "job und", "working", "work cheyyunnu"]):
+        return "already_working"
+    if any(x in low for x in ["confused", "doubt", "ariyilla", "not sure", "\u0d38\u0d02\u0d36\u0d2f\u0d02"]):
+        return "confused"
+    if any(x in low for x in ["free undo", "free aano", "free course", "\u0d38\u0d57\u0d1c\u0d28\u0d4d\u0d2f\u0d02"]):
+        return "free_ask"
+    return None
+
+
+def handle_objection(kind: str, name: str, st: dict) -> tuple[str, str | None]:
+    """Return (reply_text, preset) for known objection types."""
+    if kind == "fees_high":
+        text = (
+            "Athu doubt varunnath normal aanu 😊\n\n"
+            "Pakshe ithu expense alla\u2026 skill investment aanu 👍\n"
+            f"{pick(FEES_VALUE_LINES)}\n\n"
+            "Demo kaanumbo value clear aavum\u2026 book cheyyatte? 🎓"
+        )
+        return text, "FEES"
+
+    if kind == "think_later":
+        text = (
+            "Sure 😊 take your time.\n\n"
+            "Pakshe demo kaanathe decision edukkaruthu 👍\n"
+            "Just 1 free class kaanumbo full clarity varum.\n\n"
+            "Demo book cheyyatte?"
+        )
+        return text, "COURSE"
+
+    if kind == "not_interested":
+        text = (
+            "Ok 😊 problem illa.\n\n"
+            "Just ariyan\u2026 interest illa ennath course type kondaano,\n"
+            "time issue aano, alle fees concern aano?\n\n"
+            "Njan better option suggest cheyyam 👍"
+        )
+        return text, "COURSE"
+
+    if kind == "time_issue":
+        text = (
+            "Athu common issue aanu 😊\n\n"
+            "Athinu flexible batches und — morning / evening choose cheyyam 👍\n"
+            "Schedule adjust cheythu padikkaam.\n\n"
+            "Preferred time parayamo?"
+        )
+        return text, "COURSE"
+
+    if kind == "already_working":
+        text = (
+            "Super 👍 already working aanenkil ithu upgrade aayi use cheyyam.\n\n"
+            "Better salary / better role kittan extra skill help cheyyum 💪\n"
+            "Part-time batch option und.\n\n"
+            "Demo kaanumbo idea clear aavum\u2026 varamo?"
+        )
+        return text, "COURSE"
+
+    if kind == "confused":
+        text = (
+            f"{pick(CONFUSED_LINES)}\n\n"
+            "Ningal +2 / Degree / Working aano?\n"
+            "Job aanu main goal alle?\n\n"
+            "Reply cheyyoo — best course njan suggest cheyyam 🎓"
+        )
+        st["stage"] = "not_sure"
+        return text, "GOAL"
+
+    if kind == "free_ask":
+        text = (
+            "Full course free alla 😊\n\n"
+            "Pakshe free demo class und 👍\n"
+            "Athil course, fees, timing ellaam clear aayi explain cheyyam.\n\n"
+            "Demo book cheyyatte?"
+        )
+        return text, "COURSE"
+
+    return None, None
+
+
+# ═══════════════════════════════════════════════════════
 #  MAIN SMART REPLY ENGINE
 #  Returns (reply_text, button_preset_or_None)
 # ═══════════════════════════════════════════════════════
 VISIT_WORDS   = {"visit", "office", "varam", "neritt", "address", "location",
                  "map", "route", "varanam", "edukkam"}
-CALL_WORDS    = {"call me", "call", "counselor", "confused", "doubt",
-                 "office number", "vilikku", "vilichal", "phone"}
+# NOTE: "confused" and "doubt" removed — handled by objection detector
+CALL_WORDS    = {"call me", "call", "counselor", "talk to counselor",
+                 "office number", "vilikku", "phone"}
 GREETING_WORDS = {"hi", "hello", "hai", "hii", "hey", "namaskaram",
                   "നമസ്കാരം", "hy", "helo", "helloo"}
 
@@ -695,6 +877,11 @@ def smart_reply(msg_text: str, name: str, phone: str,
         st["stage"] = "goal_selection"
         return msg_welcome(name)
 
+    # ── 2b. OBJECTION DETECTION — runs before course keywords ──
+    objection = detect_objection(low)
+    if objection:
+        return handle_objection(objection, name, st)
+
     # Demo booking trigger
     if low in {"demo", "free demo", "free class", "book demo"}:
         st["stage"] = "demo_time_ask"
@@ -711,16 +898,17 @@ def smart_reply(msg_text: str, name: str, phone: str,
             f, d = COURSE_FEES[course]
             text = (
                 f"💰 *{course} — Fee Details*\n\n"
-                f"📋 Fee: {f}\n"
-                f"⏱ Duration: {d}\n"
-                f"🎓 Kerala State Rutronix Approved\n\n"
-                "📊 EMI / installment option und!\n"
-                "Ithu one-time investment — job kittiyal\n"
-                "1-2 months-il recover cheyyam! 💪\n\n"
-                "Demo book cheyyano? → *DEMO*"
+                f"Fee: {f} | Duration: {d}\n\n"
+                f"{pick(FEES_VALUE_LINES)}\n"
+                f"{pick(TRUST_LINES)}\n\n"
+                "Demo kaanumbo full clarity varum.\n"
+                "Book cheyyatte? 🎓"
             )
             return text, "FEES"
-        return FULL_FEE_TABLE, "FEES"
+        # Full fee table — add EMI note at end
+        return (
+            FULL_FEE_TABLE + "\n\nExact course select cheythal EMI/monthly idea paranjutharam."
+        ), "FEES"
 
     # Courses list
     if low in {"courses", "course", "list", "all courses", "padikkaan", "study"}:
@@ -1047,38 +1235,33 @@ FOLLOWUP_TEMPLATES = [
         "day": 1,
         "hours": 24,
         "message": (
-            "👋 {name}, The Oxford Computers-ile Aaliza aanu!\n\n"
-            "Course-Select Cheytho ? 🤔\n\n"
-            "Oru *free demo class* try cheyyoo —\n"
-            "zero commitment, 100% free! 🎓\n\n"
-            "*DEMO* reply cheyyoo — book cheyyam! ✅"
+            "Hi {name} 😊 Aaliza here from Oxford Computers.\n\n"
+            "Course about alochichu nokkiyo?\n"
+            "Confusion undenkil njan help cheyyam.\n\n"
+            "Oru free demo class attend cheythal clarity varum 🎓\n"
+            "*DEMO* reply cheythal book cheyyam."
         ),
     },
     {
         "day": 3,
         "hours": 72,
         "message": (
-            "🌟 {name}, oru student success story!\n\n"
-            "Bibin Thomas (Trivandrum) — Web Design course cheythitt\n"
-            "ippol ₹25,000 + /month earn cheyyunnu! 💪\n\n"
-            "Athpole PGDCA,DCA,Data Entry,Accounting Coursukal Cheythavar Vividha Government/Non Government Office-il joli cheyyunnu \n\n"
-            "Ningalkum possible aanu. Government certified\n"
-            "course + placement support — Oxford ready aanu!\n\n"
-            "📅 Next batch starting soon — seat reserve cheyyano?"
+            "{name}, small reminder 😊\n\n"
+            "Next batch starting soon aanu.\n"
+            "Late aayal next batch wait cheyyendi varum.\n\n"
+            "Ningalkku job-oriented course venel njan best option suggest cheyyam.\n"
+            "*COURSES* / *DEMO* reply cheyyoo."
         ),
     },
     {
         "day": 7,
         "hours": 168,
         "message": (
-            "{name}, last message from The Oxford! 😊\n\n"
-            "🎁 *Special offer this batch:*\n"
-            "✅ Free registration (₹500 waived)\n"
-            "✅ Free study materials\n"
-            "✅ Flexible EMI option\n\n"
-            "📍 Malayinkeezhu, Trivandrum\n"
-            "📞 9447329972 | 🌐 theoxfordedu.com\n\n"
-            "Details: *FEES* or *DEMO* reply cheyyoo!"
+            "{name}, last follow-up aanu 😊\n\n"
+            "This batch-il free demo + EMI option available aanu.\n"
+            "Seat limited aanu.\n\n"
+            "Interested aanenkil *DEMO* or *VISIT* reply cheyyoo.\n"
+            "All the best from Oxford Computers 🎓"
         ),
     },
 ]
