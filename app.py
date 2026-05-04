@@ -28,6 +28,19 @@ from google import genai
 
 app = Flask(__name__)
 
+def validate_token():
+    r = requests.get(
+        f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}",
+        headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    )
+    if r.status_code == 200:
+        print("✅ WhatsApp token valid")
+    else:
+        print(f"❌ Token invalid: {r.status_code} — {r.text}")
+
+threading.Thread(target=validate_token, daemon=True).start()
+
+
 # ═══════════════════════════════════════════════════════
 #  CONFIGURATION  (Railway environment variables)
 # ═══════════════════════════════════════════════════════
@@ -507,7 +520,7 @@ def msg_goal_courses(goal: str, name: str) -> tuple[str, str]:
 def msg_course_detail(course_idx: str) -> tuple[str, str]:
     name, card = ALL_COURSES[course_idx]
     text = (
-        f"✅ *{name}* — nalla choice! 🎯\n\n"
+        f"✅ *{name}* — Valare nalla choice! 🎯\n\n"
         f"{card}\n\n"
         "🎓 Kerala State Rutronix Approved\n\n"
         "Free demo class book cheyyatte?"
@@ -619,7 +632,7 @@ def msg_visit() -> tuple[str, str]:
 def msg_call_us(name: str) -> tuple[str, str]:
     text = (
         f"😊 Sure {name}!\n\n"
-        "Oru counselor nallathu connect cheyyam.\n"
+        "Nigalkkayi Oru nalla counselorne connect cheyyam.\n"
         "📞 *9447329972* — direct vilikkaamo!\n\n"
         "⏰ Available: 9 AM – 7 PM (Mon–Sat)\n"
         "📍 Oxford Computers, Malayinkeezhu\n\n"
@@ -701,7 +714,7 @@ def smart_reply(msg_text: str, name: str, phone: str,
                 f"📋 Fee: {f}\n"
                 f"⏱ Duration: {d}\n"
                 f"🎓 Kerala State Rutronix Approved\n\n"
-                "📊 EMI / installment option undh!\n"
+                "📊 EMI / installment option und!\n"
                 "Ithu one-time investment — job kittiyal\n"
                 "1-2 months-il recover cheyyam! 💪\n\n"
                 "Demo book cheyyano? → *DEMO*"
@@ -1034,8 +1047,8 @@ FOLLOWUP_TEMPLATES = [
         "day": 1,
         "hours": 24,
         "message": (
-            "👋 {name}, The Oxford Computers ইthu!\n\n"
-            "Course-ntekunich aadichirunno? 🤔\n\n"
+            "👋 {name}, The Oxford Computers-ile Aaliza aanu!\n\n"
+            "Course-Select Cheytho ? 🤔\n\n"
             "Oru *free demo class* try cheyyoo —\n"
             "zero commitment, 100% free! 🎓\n\n"
             "*DEMO* reply cheyyoo — book cheyyam! ✅"
@@ -1046,8 +1059,9 @@ FOLLOWUP_TEMPLATES = [
         "hours": 72,
         "message": (
             "🌟 {name}, oru student success story!\n\n"
-            "Riya (Attingal) — Web Design course cheythitt\n"
-            "ippol ₹25,000/month earn cheyyunnu! 💪\n\n"
+            "Bibin Thomas (Trivandrum) — Web Design course cheythitt\n"
+            "ippol ₹25,000 + /month earn cheyyunnu! 💪\n\n"
+            "Athpole PGDCA,DCA,Data Entry,Accounting Coursukal Cheythavar Vividha Government/Non Government Office-il joli cheyyunnu \n\n"
             "Ningalkum possible aanu. Government certified\n"
             "course + placement support — Oxford ready aanu!\n\n"
             "📅 Next batch starting soon — seat reserve cheyyano?"
@@ -1057,7 +1071,7 @@ FOLLOWUP_TEMPLATES = [
         "day": 7,
         "hours": 168,
         "message": (
-            "{name}, last message from Oxford! 😊\n\n"
+            "{name}, last message from The Oxford! 😊\n\n"
             "🎁 *Special offer this batch:*\n"
             "✅ Free registration (₹500 waived)\n"
             "✅ Free study materials\n"
