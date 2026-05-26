@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
 from app.config import ADMIN_KEY
-from app.state import conversation_state, follow_up_queue
+from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
 
 admin_bp = Blueprint("admin", __name__)
+
 
 @admin_bp.route("/trigger-followup", methods=["POST"])
 def trigger_followup():
@@ -30,24 +31,10 @@ def stats():
         return jsonify({"error": "Unauthorized"}), 401
 
     return jsonify({
-        "total_leads":       len(conversation_state),
-        "pending_followups": sum(1 for f in follow_up_queue if not f["done"]),
-        "stage_breakdown": {
-            s: sum(1 for v in conversation_state.values() if v.get("stage") == s)
-            for s in {"new", "goal_selection", "course_recommendation", "course_viewed",
-                      "demo_time_ask", "demo_date_ask", "demo_booked",
-                      "offer_menu", "payment_pending", "enrolled", "not_sure", "done"}
-        },
-        "active_conversations": [
-            {
-                "name":        v.get("name", ""),
-                "stage":       v.get("stage", ""),
-                "last_text":   v.get("last_text", ""),
-                "last_active": v.get("last_msg", ""),
-                "course":      v.get("course", ""),
-            }
-            for v in conversation_state.values()
-        ],
+        "total_leads":          count_states(),
+        "pending_followups":    count_pending_followups(),
+        "stage_breakdown":      get_stage_breakdown(),
+        "active_conversations": get_all_states(),
     })
 
 

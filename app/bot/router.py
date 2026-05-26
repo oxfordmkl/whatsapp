@@ -1,6 +1,6 @@
 import threading
 from datetime import datetime
-from app.state import conversation_state
+from app.state import get_or_create_state
 from app.bot.constants import (
     ALL_COURSES, COURSE_FEES, KEYWORD_TO_COURSE, GOAL_COURSES,
     OFFER_MENU, COURSE_PAYMENT_LINKS, FULL_FEE_TABLE,
@@ -18,22 +18,9 @@ GREETING_WORDS = {"hi", "hello", "hai", "hii", "hey", "namaskaram",
                   "നമസ്കാരം", "hy", "helo", "helloo"}
 
 
-def _default_state(name: str) -> dict:
-    return {
-        "name":         name,
-        "stage":        "new",
-        "course":       "",
-        "goal":         "",
-        "batch_time":   "",
-        "offer_course": "",
-        "last_msg":     datetime.now().isoformat(),
-        "last_text":    "",
-    }
-
-def _state(phone: str, name: str) -> dict:
-    if phone not in conversation_state:
-        conversation_state[phone] = _default_state(name)
-    return conversation_state[phone]
+def _state(phone: str, name: str):
+    """Load or create DB-backed state. Returns a StateProxy that auto-saves."""
+    return get_or_create_state(phone, name)
 
 
 def msg_welcome(name: str) -> tuple[str, str]:

@@ -10,3 +10,12 @@ ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+
+# ── PostgreSQL (Railway auto-sets DATABASE_URL) ────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is mandatory for persistent state.")
+
+# SQLAlchemy requires postgresql:// not postgres:// (Railway older format fix)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)

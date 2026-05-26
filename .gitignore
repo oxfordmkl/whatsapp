@@ -1,5 +1,6 @@
-venv/
-__pycache__/
-.env
 credentials.json
 credentials_old.json
+waba.txt
+.env
+venv/
+__pycache__/

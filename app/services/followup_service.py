@@ -1,9 +1,11 @@
 import time
 import threading
 from datetime import datetime, timedelta
-from app.state import follow_up_queue, conversation_state
 from app.services.whatsapp_service import send_text
 from app.services.crm_service import update_lead_status
+
+# Populated by init_followup_service() called from create_app()
+_app = None
 
 FOLLOWUP_TEMPLATES = [
     {
@@ -41,45 +43,81 @@ FOLLOWUP_TEMPLATES = [
     },
 ]
 
+
 def schedule_followups(phone: str, name: str):
+    """Write follow-up jobs to DB instead of an in-memory list."""
+    from app.models import FollowUpJob
+    from app.extensions import db
+
     now = datetime.now()
     for tmpl in FOLLOWUP_TEMPLATES:
-        follow_up_queue.append({
-            "phone":   phone,
-            "name":    name,
-            "send_at": now + timedelta(hours=tmpl["hours"]),
-            "message": tmpl["message"].format(name=name),
-            "day":     tmpl["day"],
-            "done":    False,
-        })
-    print(f"📅 Follow-ups scheduled for {name}")
+        job = FollowUpJob(
+            phone=phone,
+            name=name,
+            send_at=now + timedelta(hours=tmpl["hours"]),
+            message=tmpl["message"].format(name=name),
+            day=tmpl["day"],
+            done=False,
+        )
+        db.session.add(job)
+    db.session.commit()
+    print(f"📅 Follow-ups scheduled (DB) for {name}")
+
 
 def _followup_worker():
+    """
+    Polls DB every 5 minutes for pending follow-up jobs.
+    Runs in a daemon thread with its own Flask app context per cycle.
+    """
     while True:
         try:
-            now = datetime.now()
-            for item in follow_up_queue:
-                if item["done"] or now < item["send_at"]:
-                    continue
-                # Skip if lead was active in the last 6 hours
-                st = conversation_state.get(item["phone"], {})
-                last = st.get("last_msg", "")
-                if last:
-                    delta = (now - datetime.fromisoformat(last)).total_seconds()
-                    if delta < 21_600:
-                        item["done"] = True
-                        print(f"⏭️  Follow-up skipped — {item['name']} recently active")
-                        continue
-                send_text(item["phone"], item["message"])
-                threading.Thread(
-                    target=update_lead_status,
-                    args=(item["phone"], f"Follow-up Day {item['day']} Sent"),
-                ).start()
-                item["done"] = True
-                print(f"📤 Follow-up Day {item['day']} → {item['name']}")
+            with _app.app_context():
+                from app.models import FollowUpJob, ConversationState
+                from app.extensions import db
+
+                now = datetime.now()
+                pending = (
+                    FollowUpJob.query
+                    .filter_by(done=False)
+                    .filter(FollowUpJob.send_at <= now)
+                    .all()
+                )
+
+                for job in pending:
+                    # Skip if lead was active in the last 6 hours
+                    state_row = ConversationState.query.filter_by(phone=job.phone).first()
+                    if state_row and state_row.last_msg:
+                        try:
+                            last_dt = datetime.fromisoformat(state_row.last_msg)
+                            if (now - last_dt).total_seconds() < 21_600:
+                                job.done = True
+                                db.session.commit()
+                                print(f"⏭️  Follow-up skipped — {job.name} recently active")
+                                continue
+                        except ValueError:
+                            pass  # Malformed datetime — proceed with sending
+
+                    send_text(job.phone, job.message)
+                    threading.Thread(
+                        target=update_lead_status,
+                        args=(job.phone, f"Follow-up Day {job.day} Sent"),
+                    ).start()
+                    job.done = True
+                    db.session.commit()
+                    print(f"📤 Follow-up Day {job.day} → {job.name}")
+
         except Exception as e:
             print(f"⚠️  Follow-up worker error: {e}")
+
         time.sleep(300)
 
-threading.Thread(target=_followup_worker, daemon=True).start()
-print("✅ Follow-up scheduler started")
+
+def init_followup_service(app):
+    """
+    Called once from create_app().
+    Stores the app reference so the worker thread can open its own app context.
+    """
+    global _app
+    _app = app
+    threading.Thread(target=_followup_worker, daemon=True).start()
+    print("✅ Follow-up scheduler started (DB-backed)")

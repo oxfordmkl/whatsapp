@@ -1,7 +1,7 @@
 import threading
 from flask import Blueprint, request, jsonify
 from app.config import VERIFY_TOKEN
-from app.state import conversation_state
+from app.state import phone_exists
 from app.bot.router import smart_reply
 from app.services.whatsapp_service import send_reply
 from app.services.crm_service import save_lead_to_sheets
@@ -61,7 +61,7 @@ def receive_message():
 
         print(f"📱 {contact_name} ({from_number}): {msg_text}")
 
-        is_new_lead = from_number not in conversation_state
+        is_new_lead = not phone_exists(from_number)
 
         # ── CRM save (background) ──
         threading.Thread(
