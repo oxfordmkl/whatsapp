@@ -1,0 +1,264 @@
+import random
+
+def pick(items: list) -> str:
+    """Return a random item from the list."""
+    return random.choice(items)
+
+
+_PGDCA = (
+    "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
+    "⏱ 12 Months | 🎓 Rutronix + State Approved\n"
+    "📋  C++/ Java, PYTHON, DBMS, Web Dev, Networks, Mobile App, Final Project\n"
+    "💡 Best for graduates seeking an Govt+IT career\n"
+    "💰 Fee: ₹15,999"
+)
+_AIDM = (
+    "📚 *AIDM — AI-Driven Digital Marketing*\n"
+    "⏱ 6 Months | 🎓 Industry Recognised\n"
+    "📋 SEO, Social Media, Google Ads, Meta Ads, ChatGPT/AI Tools, Live Campaigns\n"
+    "💡 Best for marketers, entrepreneurs, beginners\n"
+    "💰 Fee: ₹19,999"
+)
+_SAP = (
+    "📚 *SAP Financial Accounting & Controlling*\n"
+    "⏱ 4-6 Months | 🎓 SAP Alliance Certificate\n"
+    "📋 GL Accounting, AP/AR, Asset Accounting, SAP CO, Real-Time Project\n"
+    "💡 Best for commerce graduates & accounting professionals\n"
+    "💰 Fee: ₹15,999"
+)
+_PYTHON = (
+    "📚 *Python — Beginner to Advanced*\n"
+    "⏱ 3 Months | 🎓 Rutronix Certified\n"
+    "📋 OOP, File Handling, Flask Basics, Pandas, Web Scraping, Automation\n"
+    "💡 Best for beginners and IT aspirants\n"
+    "💰 Fee: ₹4,499"
+)
+_GST = (
+    "📚 *Diploma in GST, Taxation & Payroll*\n"
+    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    "📋 GST Concepts, Income Tax, Tally Prime, Payroll Processing, E-filing\n"
+    "💡 Best for accounting professionals & commerce students\n"
+    "💰 Fee: ₹18999"
+)
+_DCA = (
+    "📚 *DCA — Diploma in Computer Applications (Fast Track)*\n"
+    "⏱ 6 Months | 🎓 Rutronix + State Approved\n"
+    "📋 Computer Fundamentals, MS Office, Programming Basics, Internet, Database, DTP\n"
+    "💡 Best for students and office job seekers\n"
+    "💰 Fee: ₹6,400"
+)
+_TEACHER = (
+    "📚 *Computer Teacher Training Course*\n"
+    "⏱ 1 Year | 🎓 Rutronix Certified\n"
+    "📋 Teaching Methodology, MS Office Pedagogy, Programming Basics, Practice Teaching\n"
+    "💡 Best for aspiring computer teachers\n"
+    "💰 Fee: ₹11,999"
+)
+_ACCOUNTING = (
+    "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
+    "⏱ 1 Year | 🎓 Rutronix Certified\n"
+    "📋 Corporate Accounting, GST, Income Tax Corporate, Financial Modelling, Case Studies\n"
+    "💡 Best for advanced accounting and finance careers\n"
+    "💰 Fee: ₹40000"
+)
+_WORD = (
+    "📚 *Certificate in Word Processing & Data Entry*\n"
+    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    "📋 Touch Typing, MS Word, Data Entry Techniques, DTP Basics, Document Management\n"
+    "💡 Best for data entry professionals and beginners\n"
+    "💰 Fee: ₹4,800"
+)
+_WEB = (
+    "📚 *Professional Diploma in Web Designing*\n"
+    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    "📋 HTML5, CSS3, JavaScript, jQuery, PHP & MySQL, WordPress, Portfolio Project\n"
+    "💡 Best for aspiring web developers and designers\n"
+    "💰 Fee: ₹8,800"
+)
+
+# Index → (name, card)
+ALL_COURSES = {
+    "1":  ("PGDCA",                              _PGDCA),
+    "2":  ("AIDM Digital Marketing",             _AIDM),
+    "3":  ("SAP Financial Accounting",           _SAP),
+    "4":  ("Python Programming",                 _PYTHON),
+    "5":  ("GST & Payroll",                      _GST),
+    "6":  ("DCA Fast Track",                     _DCA),
+    "7":  ("Computer Teacher Training",          _TEACHER),
+    "8":  ("Corporate Business Accounting",      _ACCOUNTING),
+    "9":  ("Word Processing & Data Entry",       _WORD),
+    "10": ("Professional Web Designing",         _WEB),
+}
+
+COURSE_FEES = {
+    "PGDCA":                         ("₹15,999", "12 Months"),
+    "AIDM Digital Marketing":        ("₹19,999", "6 Months"),
+    "SAP Financial Accounting":      ("₹15,999", "4-6 Months"),
+    "Python Programming":            ("₹4,499",  "3 Months"),
+    "GST & Payroll":                 ("₹18,999",  "6 Months"),
+    "DCA Fast Track":                ("₹6,400",  "6 Months"),
+    "Computer Teacher Training":     ("₹11,999",  "1 Year"),
+    "Corporate Business Accounting": ("₹40000",  "1 Year"),
+    "Word Processing & Data Entry":  ("₹4,800",  "6 Months"),
+    "Professional Web Designing":    ("₹8,800",  "6 Months"),
+}
+
+# Keyword → course name (for short-word triggers)
+KEYWORD_TO_COURSE = {
+    "pgdca": "1", "pgd": "1",
+    "aidm": "2", "digital marketing": "2", "digital": "2",
+    "sap": "3", "erp": "3",
+    "python": "4", "programming": "4", "coding": "4",
+    "gst": "5", "tally": "5", "taxation": "5", "payroll": "5",
+    "dca": "6", "fast track": "6",
+    "teacher": "7", "teaching": "7",
+    "accounting": "8", "corporate": "8",
+    "data entry": "9", "typing": "9", "word processing": "9",
+    "web": "10", "web design": "10", "wordpress": "10", "html": "10",
+}
+
+# Goal → recommended course indices
+GOAL_COURSES = {
+    "job": [
+        ("1",  "PGDCA — Post Graduate Diploma",    "12 Months", "₹15,999"),
+        ("4",  "Python Programming",               "3 Months",  "₹4,499"),
+        ("10", "Web Designing",                    "6 Months",  "₹8,800"),
+        ("6",  "DCA Fast Track",                   "6 Months",  "₹6,400"),
+    ],
+    "business": [
+        ("2",  "AI-Driven Digital Marketing",      "6 Months",  "₹19,999"),
+        ("10", "Web Designing",                    "6 Months",  "₹8,800"),
+        ("4",  "Python Programming",               "3 Months",  "₹4,499"),
+    ],
+    "basic": [
+        ("6",  "DCA Fast Track",                   "6 Months",  "₹6,400"),
+        ("9",  "Word Processing & Data Entry",     "6 Months",  "₹4,800"),
+        ("7",  "Computer Teacher Training",        "1 Year",    "₹11,999"),
+    ],
+    "accounting": [
+        ("3",  "SAP Financial Accounting",         "4-6 Months","₹11,999"),
+        ("5",  "GST & Payroll Diploma",            "6 Months",  "₹18,999"),
+        ("8",  "Corporate Business Accounting",    "1 Year",    "₹40,000"),
+    ],
+}
+
+# Offer / payment menu
+OFFER_MENU = {
+    "1": ("CWPDE", "Certificate in Word Processing & Data Entry",      "₹4,800",  "6 Months",  "https://rzp.io/rzp/xkWdKtd"),
+    "2": ("DCA",   "Diploma in Computer Applications",                 "₹6,400",  "6 Months",  "https://rzp.io/rzp/mJPPtM9x"),
+    "3": ("AIDM",  "AI-Driven Digital Marketing",                      "₹19,999", "6 Months",  "https://rzp.io/rzp/vF76sj7Y"),
+    "4": ("PGDCA", "Post Graduate Diploma in Computer Applications",   "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
+}
+
+# Direct payment links keyed by course name (from st["course"])
+# Courses without a link will show counselor fallback message
+COURSE_PAYMENT_LINKS = {
+    "Word Processing & Data Entry":  ("CWPDE", "Certificate in Word Processing & Data Entry", "₹4,800",  "6 Months",  "https://rzp.io/rzp/xkWdKtd"),
+    "DCA Fast Track":                ("DCA",   "Diploma in Computer Applications",            "₹6,400",  "6 Months",  "https://rzp.io/rzp/mJPPtM9x"),
+    "AIDM Digital Marketing":        ("AIDM",  "AI-Driven Digital Marketing",                 "₹19,999", "6 Months",  "https://rzp.io/rzp/vF76sj7Y"),
+    "PGDCA":                         ("PGDCA", "Post Graduate Diploma in Computer Applications", "₹15,999", "12 Months", "https://rzp.io/rzp/KAQ2C7t"),
+}
+
+FULL_FEE_TABLE = (
+    "💰 *Course Fees — The Oxford Computers*\n"
+    "━━━━━━━━━━━━━━━━\n"
+    "1️⃣  PGDCA                  ₹15,999  (12M)\n"
+    "2️⃣  AIDM Digital Marketing ₹19,999  (6M)\n"
+    "3️⃣  SAP Accounting         ₹11,999  (4-6M)\n"
+    "4️⃣  Python Programming     ₹4,499   (3M)\n"
+    "5️⃣  GST & Payroll          ₹18,999  (6M)\n"
+    "6️⃣  DCA Fast Track         ₹6,400   (6M)\n"
+    "7️⃣  Computer Teaching      ₹11,999   (1Y)\n"
+    "8️⃣  Business Accounting    ₹40,000   (1Y)\n"
+    "9️⃣  Word Processing        ₹4,800   (6M)\n"
+    "🔟 Web Designing           ₹8,800   (6M)\n"
+    "━━━━━━━━━━━━━━━━\n"
+    "🎓 Kerala State Rutronix Approved\n"
+    "📊 EMI / installment option available!\n\n"
+    "Ithu one-time investment aanu — job kittiyal\n"
+    "1-2 months-il fee recover cheyyam! 💪\n\n"
+    "Free demo book cheyyano? → *DEMO* reply cheyyoo"
+)
+
+
+# ═══════════════════════════════════════════════════════
+#  INTERACTIVE BUTTON PRESETS
+#  WhatsApp allows max 3 buttons per interactive message
+# ═══════════════════════════════════════════════════════
+BUTTON_PRESETS = {
+    "GOAL": [
+        {"id": "1", "title": "💼 Job / IT Career"},
+        {"id": "2", "title": "🚀 Business/Freelance"},
+        {"id": "3", "title": "🖥️ Basic Computer"},
+    ],
+    "GOAL_MORE": [
+        {"id": "4", "title": "📊 Accounting / Tax"},
+        {"id": "5", "title": "🤔 Help me choose"},
+        {"id": "DEMO", "title": "🎓 Free Demo"},
+    ],
+    "COURSE": [
+        {"id": "DEMO",  "title": "🎓 Free Demo"},
+        {"id": "FEES",  "title": "💰 See Fees"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+    ],
+    "FEES": [
+        {"id": "DEMO",       "title": "🎓 Free Demo"},
+        {"id": "ENROLL_NOW", "title": "💳 Enrol Now"},
+        {"id": "CALL",       "title": "📞 Call Us"},
+    ],
+    "OFFER": [
+        {"id": "DEMO",  "title": "🎓 Free Demo"},
+        {"id": "VISIT", "title": "🏢 Visit Office"},
+        {"id": "CALL",  "title": "📞 Call Us"},
+    ],
+    "AFTER_BOOKING": [
+        {"id": "COURSES",    "title": "📚 More Courses"},
+        {"id": "ENROLL_NOW", "title": "💳 Enrol Now"},
+        {"id": "VISIT",      "title": "🏢 Visit Office"},
+    ],
+}
+
+# ═══════════════════════════════════════════════════════
+#  SCRIPT BANKS — randomised human phrases
+# ═══════════════════════════════════════════════════════
+DEMO_CTA = [
+    "Oru free demo kaanan varamo? 🎓",
+    "Demo class try cheythu nokkaamo? Zero risk aanu 👍",
+    "One demo kaanumbozhe clarity varum 😊 book cheyyatte?",
+    "Just oru demo mathram kaananam… ok aano?",
+    "Ningal varumbo njan personally explain cheyyam 😊 demo book cheyyatte?",
+]
+
+COURSE_CLOSE = [
+    "Ithu nalla future decision aanu 👍",
+    "Ithu padichal real skill build aakum 💪",
+    "Ithu career confidence koodan nalla option aanu.",
+    "Beginners-kum easy aayi start cheyyan pattunna course aanu.",
+]
+
+URGENCY_LINES = [
+    "Next batch starting soon aanu ⏳",
+    "Limited seats aanu ippol ⚠️",
+    "Late aayal next batch wait cheyyendi varum.",
+    "Current batch fast fill aavunnu.",
+]
+
+TRUST_LINES = [
+    "Kerala State Rutronix approved certificate aanu 🎓",
+    "Placement assistance + interview support und 👍",
+    "Practical training aanu, theory mathram alla.",
+    "EMI / installment option available aanu.",
+]
+
+FEES_VALUE_LINES = [
+    "Ithu one-time investment aanu 😊",
+    "Nalla job kittiyal 1–2 months-il recover cheyyam 💪",
+    "EMI option und, so full amount tension venda 👍",
+    "Skill kittiyal athinte value long-term aanu.",
+]
+
+CONFUSED_LINES = [
+    "Confuse aavunnath normal aanu 😊",
+    "Problem illa, correct course choose cheyyan njan guide cheyyam 👍",
+    "Ellarum first confuse aavum 😄 njan simple aayi explain cheyyam.",
+]

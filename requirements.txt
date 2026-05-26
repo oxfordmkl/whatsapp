@@ -1,6 +1,5 @@
-flask
-gunicorn
+Flask
 requests
 gspread
 oauth2client
-google-genai>=0.3.0
+google-genai
