@@ -4,7 +4,14 @@ from app.extensions import db, migrate
 
 
 def create_app():
-    app = Flask(__name__)
+    from pathlib import Path
+
+    BASE_DIR = Path(__file__).resolve().parent.parent
+
+    app = Flask(
+        __name__,
+        template_folder=str(BASE_DIR / "templates")
+)
 
     # ── SQLAlchemy / PostgreSQL config ────────────────────────────────────
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
