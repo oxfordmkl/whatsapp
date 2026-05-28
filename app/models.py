@@ -20,7 +20,15 @@ class ConversationState(db.Model):
     last_msg     = db.Column(db.String(50),  default="")
     last_text    = db.Column(db.Text,        default="")
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow,
-                             onupdate=datetime.utcnow)
+                             onupdate=datetime.utcnow, nullable=False)
+
+    # ── Phase 4A: CRM Expansion Fields ──
+    created_at     = db.Column(db.DateTime,    default=datetime.utcnow, nullable=False)
+    lead_status    = db.Column(db.String(50),  nullable=True, default="Lead")
+    assigned_staff = db.Column(db.String(100), nullable=True)
+    lead_score     = db.Column(db.Integer,     nullable=True, default=0)
+    is_admitted    = db.Column(db.Boolean,     nullable=True, default=False)
+    notes          = db.Column(db.Text,        nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -32,6 +40,11 @@ class ConversationState(db.Model):
             "offer_course": self.offer_course,
             "last_msg":     self.last_msg,
             "last_text":    self.last_text,
+            "lead_status":  self.lead_status,
+            "assigned_staff": self.assigned_staff,
+            "lead_score":   self.lead_score,
+            "is_admitted":  self.is_admitted,
+            "notes":        self.notes,
         }
 
 
