@@ -6,6 +6,7 @@ from app.bot.router import smart_reply
 from app.services.whatsapp_service import send_reply
 from app.services.crm_service import save_lead_to_sheets
 from app.services.followup_service import schedule_followups
+from app.services.log_service import log_message
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -63,6 +64,13 @@ def receive_message():
 
         is_new_lead = not phone_exists(from_number)
 
+        # ── Log inbound user message (daemon thread — non-blocking) ──
+        threading.Thread(
+            target=log_message,
+            args=(from_number, "inbound", "user", msg_text),
+            daemon=True,
+        ).start()
+
         # ── CRM save (background) ──
         threading.Thread(
             target=save_lead_to_sheets,
@@ -72,6 +80,13 @@ def receive_message():
         # ── Generate reply ──
         reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead)
         send_reply(from_number, reply_text, preset)
+
+        # ── Log outbound AI reply (daemon thread — non-blocking) ──
+        threading.Thread(
+            target=log_message,
+            args=(from_number, "outbound", "ai", reply_text),
+            daemon=True,
+        ).start()
 
         # ── Schedule follow-ups for new leads ──
         if is_new_lead:

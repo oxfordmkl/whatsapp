@@ -63,3 +63,24 @@ class FollowUpJob(db.Model):
     day        = db.Column(db.Integer,     nullable=False)
     done       = db.Column(db.Boolean,     default=False, index=True)
     created_at = db.Column(db.DateTime,    default=datetime.utcnow)
+
+
+class MessageLog(db.Model):
+    """
+    Immutable append-only log of every inbound and outbound message.
+    One row per message event. No foreign key constraints.
+    Phase 4D.
+    """
+    __tablename__ = "message_log"
+
+    id           = db.Column(db.Integer,    primary_key=True)
+    phone        = db.Column(db.String(20), nullable=False, index=True)
+    direction    = db.Column(db.String(10), nullable=False)   # "inbound" | "outbound"
+    message_type = db.Column(db.String(20), nullable=False)   # "user" | "ai" | "followup" | "manual"
+    message_text = db.Column(db.Text,       nullable=True)
+    meta_json    = db.Column(db.Text,       nullable=True)    # optional JSON string
+    created_at   = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index("idx_msg_phone_created", "phone", "created_at"),
+    )

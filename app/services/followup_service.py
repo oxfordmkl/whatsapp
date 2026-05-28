@@ -106,9 +106,19 @@ def _followup_worker():
                         target=update_lead_status,
                         args=(job.phone, f"Follow-up Day {job.day} Sent"),
                     ).start()
+                    # ── Log outbound followup message ──
+                    from app.services.log_service import log_message
+                    log_message(
+                        phone=job.phone,
+                        direction="outbound",
+                        message_type="followup",
+                        message_text=job.message,
+                        meta_json=f'{{"day": {job.day}}}',
+                    )
                     job.done = True
                     db.session.commit()
-                    print(f"📤 Follow-up Day {job.day} → {job.name}")
+                    print(f"\U0001f4e4 Follow-up Day {job.day} \u2192 {job.name}")
+
 
         except Exception as e:
             print(f"⚠️  Follow-up worker error: {e}")

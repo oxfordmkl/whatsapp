@@ -151,15 +151,25 @@ def crm_lead_detail(phone):
     if request.args.get("key", "") != ADMIN_KEY:
         return _deny()
 
-    from app.models import ConversationState
+    from app.models import ConversationState, MessageLog
 
     lead = ConversationState.query.filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
 
+    # ── Fetch message timeline (newest first, capped at 100) ──
+    logs = (
+        MessageLog.query
+        .filter_by(phone=phone)
+        .order_by(MessageLog.created_at.desc())
+        .limit(100)
+        .all()
+    )
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
+        logs=logs,
         key=request.args.get("key", ""),
         msg=request.args.get("msg", ""),
         err=request.args.get("err", ""),
@@ -217,6 +227,14 @@ def crm_lead_send(phone):
     try:
         r = send_text(phone, message)
         if r.status_code == 200:
+            # ── Log manual outbound message ──
+            from app.services.log_service import log_message
+            log_message(
+                phone=phone,
+                direction="outbound",
+                message_type="manual",
+                message_text=message,
+            )
             return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully")
         else:
             return redirect(f"/crm/lead/{phone}?key={key}&err=WhatsApp+API+returned+an+error")

@@ -287,13 +287,72 @@
       background: var(--border);
     }
 
-    /* ── Responsive ─────────────────────────────────────────── */
+    /* ── Responsive ────────────────────────────────────────────────── */
     @media (max-width: 767px) {
       .crm-nav { padding: 0.6rem 1rem; }
       .meta-grid { grid-template-columns: repeat(2, 1fr); }
     }
     @media (max-width: 400px) {
       .meta-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Timeline ──────────────────────────────────────────────── */
+    .timeline { position: relative; }
+    .tl-item {
+      display: flex;
+      gap: 0.85rem;
+      padding-bottom: 1.1rem;
+      position: relative;
+    }
+    .tl-item:not(:last-child)::before {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 32px;
+      bottom: 0;
+      width: 1px;
+      background: var(--border);
+    }
+    .tl-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .tl-dot-user     { background: rgba(37,211,102,0.15);  color: var(--green); }
+    .tl-dot-ai       { background: rgba(88,166,255,0.15);  color: var(--blue); }
+    .tl-dot-followup { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .tl-dot-manual   { background: rgba(188,140,255,0.15); color: var(--purple); }
+    .tl-bubble {
+      flex: 1;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.65rem 0.9rem;
+    }
+    .tl-meta {
+      display: flex; align-items: center; gap: 0.5rem;
+      margin-bottom: 0.35rem; flex-wrap: wrap;
+    }
+    .tl-label {
+      font-size: 0.67rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 0.15em 0.5em; border-radius: 4px;
+    }
+    .tl-label-user     { background: rgba(37,211,102,0.15);  color: var(--green); }
+    .tl-label-ai       { background: rgba(88,166,255,0.15);  color: var(--blue); }
+    .tl-label-followup { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .tl-label-manual   { background: rgba(188,140,255,0.15); color: var(--purple); }
+    .tl-time { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+    .tl-text {
+      font-size: 0.82rem; color: var(--text-main);
+      white-space: pre-wrap; word-break: break-word; margin: 0;
+    }
+    .tl-empty {
+      color: var(--text-muted); font-size: 0.83rem;
+      text-align: center; padding: 2.5rem 0;
     }
   </style>
 </head>
@@ -577,9 +636,76 @@
 
     </div><!-- /row -->
 
+    <!-- ── Conversation Timeline ──────────────────── -->
+    <div class="crm-card mt-3">
+      <div class="crm-card-header">
+        <i class="bi bi-clock-history"></i>Conversation Timeline
+        <span style="margin-left: auto; font-size: 0.7rem; font-weight: 400; color: var(--text-muted);">
+          newest first &middot; max 100 entries
+        </span>
+      </div>
+      <div class="crm-card-body">
+        {% if logs %}
+        <div class="timeline">
+          {% for log in logs %}
+
+          {# resolve per-type display config #}
+          {% if log.message_type == 'user' %}
+            {% set dot_cls = 'tl-dot-user' %}
+            {% set lbl_cls = 'tl-label-user' %}
+            {% set icon    = 'bi-person-fill' %}
+            {% set label   = 'User' %}
+          {% elif log.message_type == 'ai' %}
+            {% set dot_cls = 'tl-dot-ai' %}
+            {% set lbl_cls = 'tl-label-ai' %}
+            {% set icon    = 'bi-robot' %}
+            {% set label   = 'AI Reply' %}
+          {% elif log.message_type == 'followup' %}
+            {% set dot_cls = 'tl-dot-followup' %}
+            {% set lbl_cls = 'tl-label-followup' %}
+            {% set icon    = 'bi-alarm' %}
+            {% set label   = 'Follow-up' %}
+          {% else %}
+            {% set dot_cls = 'tl-dot-manual' %}
+            {% set lbl_cls = 'tl-label-manual' %}
+            {% set icon    = 'bi-person-badge' %}
+            {% set label   = 'Manual' %}
+          {% endif %}
+
+          <div class="tl-item">
+            <div class="tl-dot {{ dot_cls }}">
+              <i class="bi {{ icon }}"></i>
+            </div>
+            <div class="tl-bubble">
+              <div class="tl-meta">
+                <span class="tl-label {{ lbl_cls }}">{{ label }}</span>
+                <span style="font-size: 0.7rem; color: var(--text-muted);">
+                  {{ log.direction }}
+                </span>
+                <span class="tl-time">
+                  {% if log.created_at %}
+                  {{ log.created_at.strftime('%d %b %Y, %H:%M:%S') }}
+                  {% endif %}
+                </span>
+              </div>
+              <p class="tl-text">{{ log.message_text or '\u2014' }}</p>
+            </div>
+          </div>
+
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="tl-empty">
+          <i class="bi bi-chat-square-dots" style="font-size: 1.8rem; display:block; margin-bottom: 0.5rem; color: var(--border);"></i>
+          No messages logged yet for this lead.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Footer -->
     <p class="text-center mt-4" style="color: var(--text-muted); font-size: 0.72rem;">
-      Oxford Computers CRM &nbsp;·&nbsp; WhatsApp AI System v3.0
+      Oxford Computers CRM &nbsp;&middot;&nbsp; WhatsApp AI System v3.0
     </p>
 
   </div><!-- /container -->
