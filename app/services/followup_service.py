@@ -6,6 +6,7 @@ from app.services.crm_service import update_lead_status
 
 # Populated by init_followup_service() called from create_app()
 _app = None
+scheduler_started = False
 
 FOLLOWUP_TEMPLATES = [
     {
@@ -69,6 +70,7 @@ def _followup_worker():
     Polls DB every 5 minutes for pending follow-up jobs.
     Runs in a daemon thread with its own Flask app context per cycle.
     """
+    global scheduler_started
     while True:
         try:
             with _app.app_context():
@@ -82,6 +84,8 @@ def _followup_worker():
                     .filter(FollowUpJob.send_at <= now)
                     .all()
                 )
+
+                scheduler_started = True
 
                 for job in pending:
                     # Skip if lead was active in the last 6 hours

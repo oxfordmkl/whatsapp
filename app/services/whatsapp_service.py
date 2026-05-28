@@ -3,6 +3,8 @@ import threading
 from app.config import ACCESS_TOKEN, PHONE_NUMBER_ID, WHATSAPP_API_URL
 from app.bot.constants import BUTTON_PRESETS
 
+token_status = "unknown"
+
 def _wa_headers() -> dict:
     return {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -10,13 +12,16 @@ def _wa_headers() -> dict:
     }
 
 def validate_token():
+    global token_status
     r = requests.get(
         f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}",
         headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}
     )
     if r.status_code == 200:
+        token_status = "valid"
         print("✅ WhatsApp token valid")
     else:
+        token_status = "invalid"
         print(f"❌ Token invalid: {r.status_code} — {r.text}")
 
 threading.Thread(target=validate_token, daemon=True).start()
