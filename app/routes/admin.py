@@ -1,4 +1,5 @@
 import logging
+from sqlalchemy import or_
 from flask import Blueprint, request, jsonify, render_template, redirect
 from app.config import ADMIN_KEY
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
@@ -84,11 +85,11 @@ def crm_leads():
 
     if search:
         q = q.filter(
-            db.or_(
-                ConversationState.phone.ilike(f"%{search}%"),
-                ConversationState.name.ilike(f"%{search}%"),
-            )
-        )
+        or_(
+            ConversationState.phone.ilike(f"%{search}%"),
+            ConversationState.name.ilike(f"%{search}%"),
+    )
+)
     if stage_filter:
         q = q.filter(ConversationState.stage == stage_filter)
     if admitted_filter == "yes":
