@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead — {{ lead.name or lead.phone }} · Oxford CRM</title>
+  <meta name="description" content="CRM lead detail panel for Oxford Computers WhatsApp AI system.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ─────────────────────────────────────────────── */
+    .crm-nav {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+    }
+    .crm-nav .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--green);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .crm-nav .brand span { color: var(--text-muted); font-weight: 400; }
+    .btn-nav-back {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      border-radius: 8px;
+      padding: 0.35rem 0.85rem;
+      text-decoration: none;
+      transition: border-color 0.2s, color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .btn-nav-back:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── Cards ──────────────────────────────────────────────── */
+    .crm-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .crm-card-header {
+      background: var(--bg-card2);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .crm-card-body { padding: 1.25rem; }
+
+    /* ── Header profile ─────────────────────────────────────── */
+    .lead-avatar {
+      width: 54px; height: 54px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--green-dim), var(--green));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #0d1117;
+      flex-shrink: 0;
+    }
+    .lead-name { font-size: 1.15rem; font-weight: 700; line-height: 1.2; }
+    .lead-phone {
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      color: var(--blue);
+    }
+
+    /* ── Meta grid ──────────────────────────────────────────── */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.85rem;
+      margin-top: 1.1rem;
+    }
+    .meta-item .meta-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.2rem;
+    }
+    .meta-item .meta-value {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-main);
+    }
+
+    /* ── Badges ─────────────────────────────────────────────── */
+    .badge-stage {
+      font-size: 0.72rem; font-weight: 500;
+      padding: 0.28em 0.65em; border-radius: 6px;
+      background: rgba(88,166,255,0.15); color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.25);
+    }
+    .badge-status {
+      font-size: 0.72rem; font-weight: 500;
+      padding: 0.28em 0.65em; border-radius: 6px;
+      background: rgba(37,211,102,0.12); color: var(--green);
+      border: 1px solid rgba(37,211,102,0.2);
+    }
+    .badge-admitted {
+      font-size: 0.72rem; font-weight: 600;
+      padding: 0.28em 0.7em; border-radius: 6px;
+      background: rgba(37,211,102,0.18); color: var(--green);
+    }
+    .badge-not-admitted {
+      font-size: 0.72rem; font-weight: 500;
+      padding: 0.28em 0.7em; border-radius: 6px;
+      background: rgba(139,148,158,0.12); color: var(--text-muted);
+    }
+
+    /* ── Score bar ──────────────────────────────────────────── */
+    .score-wrap { display: flex; align-items: center; gap: 0.5rem; }
+    .score-bar {
+      flex: 1; height: 6px; border-radius: 3px;
+      background: var(--border); overflow: hidden; max-width: 100px;
+    }
+    .score-bar-fill {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--green-dim), var(--green));
+      transition: width 0.4s ease;
+    }
+
+    /* ── WA button ──────────────────────────────────────────── */
+    .btn-wa {
+      background: var(--green);
+      border: none;
+      color: #0d1117;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.8rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: background 0.2s;
+    }
+    .btn-wa:hover { background: #1db954; color: #0d1117; }
+
+    /* ── Form elements ──────────────────────────────────────── */
+    .form-label-crm {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+    .crm-input {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      padding: 0.5rem 0.85rem;
+      width: 100%;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .crm-input:focus {
+      outline: none;
+      border-color: var(--green-dim);
+      box-shadow: 0 0 0 3px rgba(37,211,102,0.08);
+      background: var(--bg-card2);
+      color: var(--text-main);
+    }
+    .crm-input::placeholder { color: var(--text-muted); }
+    select.crm-input option { background: var(--bg-card2); }
+    textarea.crm-input { resize: vertical; min-height: 100px; }
+
+    /* ── Checkbox toggle ────────────────────────────────────── */
+    .form-check-input {
+      background-color: var(--bg-card2);
+      border-color: var(--border);
+      width: 1.2em; height: 1.2em;
+    }
+    .form-check-input:checked {
+      background-color: var(--green);
+      border-color: var(--green);
+    }
+    .form-check-label { color: var(--text-main); font-size: 0.85rem; }
+
+    /* ── Buttons ────────────────────────────────────────────── */
+    .btn-save {
+      background: var(--green);
+      border: none;
+      color: #0d1117;
+      font-weight: 700;
+      border-radius: 8px;
+      padding: 0.55rem 1.4rem;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+      cursor: pointer;
+    }
+    .btn-save:hover { background: #1db954; }
+    .btn-send {
+      background: rgba(88,166,255,0.15);
+      border: 1px solid rgba(88,166,255,0.3);
+      color: var(--blue);
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 0.55rem 1.4rem;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+      cursor: pointer;
+    }
+    .btn-send:hover { background: rgba(88,166,255,0.25); }
+
+    /* ── Alert banners ──────────────────────────────────────── */
+    .alert-crm-success {
+      background: rgba(37,211,102,0.1);
+      border: 1px solid rgba(37,211,102,0.25);
+      color: var(--green);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.83rem;
+      font-weight: 500;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .alert-crm-error {
+      background: rgba(248,81,73,0.1);
+      border: 1px solid rgba(248,81,73,0.25);
+      color: var(--red);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.83rem;
+      font-weight: 500;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    /* ── Section divider ────────────────────────────────────── */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 767px) {
+      .crm-nav { padding: 0.6rem 1rem; }
+      .meta-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 400px) {
+      .meta-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="crm-nav d-flex align-items-center justify-content-between">
+    <a class="brand" href="/crm/leads?key={{ key }}">
+      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
+      <span class="ms-2">/ Leads / {{ lead.name or lead.phone }}</span>
+    </a>
+    <a href="/crm/leads?key={{ key }}" class="btn-nav-back">
+      <i class="bi bi-arrow-left"></i>Back to Leads
+    </a>
+  </nav>
+
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 960px;">
+
+    <!-- ── Flash Messages ──────────────────────────────────── -->
+    {% if msg %}
+    <div class="alert-crm-success mb-3">
+      <i class="bi bi-check-circle-fill"></i>{{ msg | replace('+', ' ') }}
+    </div>
+    {% endif %}
+    {% if err %}
+    <div class="alert-crm-error mb-3">
+      <i class="bi bi-exclamation-triangle-fill"></i>{{ err | replace('+', ' ') }}
+    </div>
+    {% endif %}
+
+    <!-- ── Header Card ────────────────────────────────────── -->
+    <div class="crm-card mb-3">
+      <div class="crm-card-header">
+        <i class="bi bi-person-circle"></i>Lead Profile
+      </div>
+      <div class="crm-card-body">
+
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <!-- Avatar -->
+          <div class="lead-avatar">
+            {{ (lead.name or lead.phone)[0] | upper }}
+          </div>
+
+          <!-- Name + Phone -->
+          <div class="flex-grow-1">
+            <div class="lead-name">{{ lead.name or '—' }}</div>
+            <div class="lead-phone mt-1">{{ lead.phone }}</div>
+          </div>
+
+          <!-- WA Button — digits-only normalized link -->
+          {% set wa_phone = lead.phone | string | replace(' ', '') | replace('+', '') | replace('-', '') %}
+          <a href="https://wa.me/{{ wa_phone }}" target="_blank" rel="noopener" class="btn-wa">
+            <i class="bi bi-whatsapp"></i>Open Chat
+          </a>
+        </div>
+
+        <!-- Meta Grid -->
+        <div class="meta-grid">
+
+          <div class="meta-item">
+            <div class="meta-label">Stage</div>
+            <div class="meta-value">
+              {% if lead.stage %}
+              <span class="badge-stage">{{ lead.stage }}</span>
+              {% else %}—{% endif %}
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Lead Status</div>
+            <div class="meta-value">
+              {% if lead.lead_status %}
+              <span class="badge-status">{{ lead.lead_status }}</span>
+              {% else %}—{% endif %}
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Assigned Staff</div>
+            <div class="meta-value">{{ lead.assigned_staff or '—' }}</div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Lead Score</div>
+            <div class="meta-value">
+              {% set score = lead.lead_score or 0 %}
+              <div class="score-wrap">
+                <div class="score-bar">
+                  <div class="score-bar-fill" style="width: {{ [score, 100] | min }}%;"></div>
+                </div>
+                <span>{{ score }} / 100</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Admission</div>
+            <div class="meta-value">
+              {% if lead.is_admitted %}
+              <span class="badge-admitted"><i class="bi bi-check-circle-fill me-1"></i>Admitted</span>
+              {% else %}
+              <span class="badge-not-admitted">Not Admitted</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Course Interest</div>
+            <div class="meta-value">{{ lead.course or '—' }}</div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Last Active</div>
+            <div class="meta-value" style="color: var(--text-muted); font-size: 0.8rem;">
+              {% if lead.updated_at %}
+              {{ lead.updated_at.strftime('%d %b %Y, %H:%M') }}
+              {% else %}—{% endif %}
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <div class="meta-label">Created</div>
+            <div class="meta-value" style="color: var(--text-muted); font-size: 0.8rem;">
+              {% if lead.created_at %}
+              {{ lead.created_at.strftime('%d %b %Y, %H:%M') }}
+              {% else %}—{% endif %}
+            </div>
+          </div>
+
+        </div><!-- /meta-grid -->
+
+        {% if lead.notes %}
+        <div class="mt-3 p-3" style="background: var(--bg-card2); border-radius: 8px; border: 1px solid var(--border);">
+          <div class="meta-label mb-1">Notes</div>
+          <p style="margin:0; color: var(--text-main); font-size: 0.85rem; white-space: pre-wrap;">{{ lead.notes }}</p>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+    <!-- ── Two-column layout on desktop ───────────────────── -->
+    <div class="row g-3">
+
+      <!-- ── CRM Update Form ─────────────────────────────── -->
+      <div class="col-12 col-lg-6">
+        <div class="crm-card h-100">
+          <div class="crm-card-header">
+            <i class="bi bi-pencil-square"></i>CRM Updates
+          </div>
+          <div class="crm-card-body">
+            <form method="POST" action="/crm/lead/{{ lead.phone }}/update?key={{ key }}">
+
+              <!-- Lead Status -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="lead_status">Lead Status</label>
+                <select class="crm-input" name="lead_status" id="lead_status">
+                  {% set statuses = ['Lead', 'Contacted', 'Interested', 'Demo Scheduled',
+                                     'Demo Done', 'Proposal Sent', 'Negotiation',
+                                     'Enrolled', 'Lost', 'Not Interested'] %}
+                  {% for s in statuses %}
+                  <option value="{{ s }}" {% if lead.lead_status == s %}selected{% endif %}>{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Assigned Staff -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="assigned_staff">Assigned Staff</label>
+                <input type="text" class="crm-input" name="assigned_staff" id="assigned_staff"
+                       placeholder="Staff name…"
+                       value="{{ lead.assigned_staff or '' }}">
+              </div>
+
+              <!-- Lead Score -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="lead_score">
+                  Lead Score
+                  <span style="color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0;">(0 – 100)</span>
+                </label>
+                <input type="number" class="crm-input" name="lead_score" id="lead_score"
+                       min="0" max="100" step="1"
+                       value="{{ lead.lead_score or 0 }}">
+              </div>
+
+              <!-- Is Admitted -->
+              <div class="mb-3">
+                <label class="form-label-crm d-block">Admission</label>
+                <div class="d-flex align-items-center gap-3 mt-1">
+                  <div class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="radio" name="is_admitted"
+                           id="admitted_yes" value="1"
+                           {% if lead.is_admitted %}checked{% endif %}>
+                    <label class="form-check-label" for="admitted_yes">
+                      <i class="bi bi-check-circle-fill me-1" style="color: var(--green);"></i>Admitted
+                    </label>
+                  </div>
+                  <div class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="radio" name="is_admitted"
+                           id="admitted_no" value="0"
+                           {% if not lead.is_admitted %}checked{% endif %}>
+                    <label class="form-check-label" for="admitted_no">
+                      <i class="bi bi-x-circle me-1" style="color: var(--text-muted);"></i>Not Admitted
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Notes -->
+              <div class="mb-4">
+                <label class="form-label-crm" for="notes">Notes</label>
+                <textarea class="crm-input" name="notes" id="notes"
+                          placeholder="Internal CRM notes…">{{ lead.notes or '' }}</textarea>
+              </div>
+
+              <button type="submit" class="btn-save">
+                <i class="bi bi-floppy me-1"></i>Save CRM Updates
+              </button>
+
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Manual WhatsApp Reply ───────────────────────── -->
+      <div class="col-12 col-lg-6">
+        <div class="crm-card h-100">
+          <div class="crm-card-header">
+            <i class="bi bi-chat-dots"></i>Manual WhatsApp Reply
+          </div>
+          <div class="crm-card-body">
+
+            <div class="mb-3 p-3" style="background: var(--bg-card2); border-radius: 8px; border: 1px solid var(--border);">
+              <div class="d-flex gap-2 align-items-start">
+                <i class="bi bi-info-circle" style="color: var(--blue); margin-top: 2px; flex-shrink: 0;"></i>
+                <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">
+                  This sends a real WhatsApp message to <strong style="color: var(--text-main);">{{ lead.phone }}</strong>
+                  via the production WhatsApp Business API.
+                </div>
+              </div>
+            </div>
+
+            <form method="POST" action="/crm/lead/{{ lead.phone }}/send?key={{ key }}">
+
+              <div class="mb-4">
+                <label class="form-label-crm" for="manual_message">Message</label>
+                <textarea class="crm-input" name="manual_message" id="manual_message"
+                          placeholder="Type your message here…"
+                          style="min-height: 140px;"></textarea>
+              </div>
+
+              <div class="d-flex align-items-center gap-3 flex-wrap">
+                <button type="submit" class="btn-send">
+                  <i class="bi bi-send me-1"></i>Send WhatsApp Reply
+                </button>
+                {% set wa_phone = lead.phone | string | replace(' ', '') | replace('+', '') | replace('-', '') %}
+                <a href="https://wa.me/{{ wa_phone }}" target="_blank" rel="noopener"
+                   style="color: var(--text-muted); font-size: 0.78rem; text-decoration: none;">
+                  <i class="bi bi-box-arrow-up-right me-1"></i>Open in WhatsApp Web
+                </a>
+              </div>
+
+            </form>
+
+            <!-- Conversation history snippet -->
+            {% if lead.last_text %}
+            <div class="mt-4">
+              <div class="section-title"><i class="bi bi-chat-left-text"></i>Last Message</div>
+              <div class="p-3" style="background: var(--bg-card2); border-radius: 8px; border: 1px solid var(--border);">
+                <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); white-space: pre-wrap;">{{ lead.last_text }}</p>
+                {% if lead.last_msg %}
+                <div class="mt-2" style="font-size: 0.72rem; color: var(--border);">{{ lead.last_msg }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% endif %}
+
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /row -->
+
+    <!-- Footer -->
+    <p class="text-center mt-4" style="color: var(--text-muted); font-size: 0.72rem;">
+      Oxford Computers CRM &nbsp;·&nbsp; WhatsApp AI System v3.0
+    </p>
+
+  </div><!-- /container -->
+
+</body>
+</html>

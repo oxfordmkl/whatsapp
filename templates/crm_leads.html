@@ -439,11 +439,16 @@
 
               <!-- Phone -->
               <td class="phone-cell">
-                <a href="https://wa.me/{{ lead.phone }}" target="_blank" rel="noopener"
-                   style="color:var(--blue);text-decoration:none;"
-                   title="Open WhatsApp chat">
+                {% set wa_phone = lead.phone | string | replace(' ', '') | replace('+', '') | replace('-', '') %}
+                <a href="/crm/lead/{{ lead.phone }}?key={{ key }}"
+                   style="color:var(--text-main);text-decoration:none;font-weight:500;"
+                   title="Open lead detail">
                   {{ lead.phone }}
-                  <i class="bi bi-box-arrow-up-right ms-1" style="font-size:0.65rem;opacity:0.6;"></i>
+                </a>
+                <a href="https://wa.me/{{ wa_phone }}" target="_blank" rel="noopener"
+                   style="color:var(--blue);text-decoration:none;margin-left:0.4rem;"
+                   title="Open WhatsApp chat">
+                  <i class="bi bi-whatsapp" style="font-size:0.75rem;"></i>
                 </a>
               </td>
 

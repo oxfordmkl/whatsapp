@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify, render_template
+import logging
+from flask import Blueprint, request, jsonify, render_template, redirect
 from app.config import ADMIN_KEY
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
@@ -120,3 +121,105 @@ def crm_leads():
         key=key,
         page=page,
     )
+
+
+# ── Phase 4C: Lead Detail helpers ─────────────────────────────────────────
+
+def _deny():
+    return (
+        "<html><body style='font-family:sans-serif;text-align:center;"
+        "padding:50px;background:#0a0f0d;color:#25D366'>"
+        "<h2>\U0001f512 Access Denied</h2>"
+        "<p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>"
+        "</body></html>"
+    ), 403
+
+
+def _not_found(phone):
+    return (
+        "<html><body style='font-family:sans-serif;text-align:center;"
+        "padding:50px;background:#0a0f0d;color:#f85149'>"
+        f"<h2>Lead not found</h2><p style='color:#888'>Phone: {phone}</p>"
+        "</body></html>"
+    ), 404
+
+
+# ── GET /crm/lead/<phone> ──────────────────────────────────────────────────
+
+@admin_bp.route("/crm/lead/<phone>", methods=["GET"])
+def crm_lead_detail(phone):
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    from app.models import ConversationState
+
+    lead = ConversationState.query.filter_by(phone=phone).first()
+    if lead is None:
+        return _not_found(phone)
+
+    return render_template(
+        "crm_lead_detail.html",
+        lead=lead,
+        key=request.args.get("key", ""),
+        msg=request.args.get("msg", ""),
+        err=request.args.get("err", ""),
+    )
+
+
+# ── POST /crm/lead/<phone>/update ──────────────────────────────────────────
+
+@admin_bp.route("/crm/lead/<phone>/update", methods=["POST"])
+def crm_lead_update(phone):
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    from app.models import ConversationState
+    from app.extensions import db
+
+    key  = request.args.get("key", "")
+    lead = ConversationState.query.filter_by(phone=phone).first()
+    if lead is None:
+        return _not_found(phone)
+
+    try:
+        lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
+        lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
+        lead.notes          = request.form.get("notes",          "").strip() or None
+
+        score_raw = request.form.get("lead_score", "").strip()
+        if score_raw.isdigit():
+            lead.lead_score = max(0, min(100, int(score_raw)))
+
+        lead.is_admitted = request.form.get("is_admitted") == "1"
+
+        db.session.commit()
+        return redirect(f"/crm/lead/{phone}?key={key}&msg=CRM+updated+successfully")
+
+    except Exception:
+        db.session.rollback()
+        logging.exception(f"CRM update failed for {phone}")
+        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error")
+
+
+# ── POST /crm/lead/<phone>/send ────────────────────────────────────────────
+
+@admin_bp.route("/crm/lead/<phone>/send", methods=["POST"])
+def crm_lead_send(phone):
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    key     = request.args.get("key", "")
+    message = request.form.get("manual_message", "").strip()
+
+    if not message:
+        return redirect(f"/crm/lead/{phone}?key={key}&err=Message+cannot+be+empty")
+
+    try:
+        r = send_text(phone, message)
+        if r.status_code == 200:
+            return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully")
+        else:
+            return redirect(f"/crm/lead/{phone}?key={key}&err=WhatsApp+API+returned+an+error")
+    except Exception:
+        logging.exception(f"Manual WhatsApp send failed for {phone}")
+        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error")
