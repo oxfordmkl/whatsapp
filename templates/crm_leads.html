@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Leads — Oxford Computers</title>
+  <meta name="description" content="Internal CRM leads dashboard for Oxford Computers WhatsApp AI system.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ─────────────────────────────────────────────────── */
+    .crm-nav {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+    }
+    .crm-nav .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--green);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .crm-nav .brand span { color: var(--text-muted); font-weight: 400; }
+
+    /* ── Metric Cards ───────────────────────────────────────────── */
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      transition: border-color 0.2s;
+    }
+    .metric-card:hover { border-color: var(--green-dim); }
+    .metric-card .metric-label {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.4rem;
+    }
+    .metric-card .metric-value {
+      font-size: 1.875rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .metric-card .metric-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+    }
+    .icon-green  { background: rgba(37,211,102,0.12); color: var(--green); }
+    .icon-blue   { background: rgba(88,166,255,0.12); color: var(--blue); }
+    .icon-yellow { background: rgba(210,153,34,0.12); color: var(--yellow); }
+
+    /* ── Filter Card ────────────────────────────────────────────── */
+    .filter-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+    .filter-card .form-control,
+    .filter-card .form-select {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      padding: 0.45rem 0.75rem;
+    }
+    .filter-card .form-control:focus,
+    .filter-card .form-select:focus {
+      background: var(--bg-card2);
+      border-color: var(--green-dim);
+      color: var(--text-main);
+      box-shadow: 0 0 0 3px rgba(37,211,102,0.08);
+    }
+    .filter-card .form-control::placeholder { color: var(--text-muted); }
+    .filter-card .form-select option { background: var(--bg-card2); }
+    .btn-crm-primary {
+      background: var(--green);
+      border: none;
+      color: #0d1117;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 0.45rem 1rem;
+      font-size: 0.8rem;
+      transition: background 0.2s;
+    }
+    .btn-crm-primary:hover { background: #1db954; color: #0d1117; }
+    .btn-crm-reset {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-weight: 500;
+      border-radius: 8px;
+      padding: 0.45rem 0.9rem;
+      font-size: 0.8rem;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-crm-reset:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Table ──────────────────────────────────────────────────── */
+    .table-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .table-card table {
+      margin: 0;
+      border-color: var(--border);
+    }
+    .table-card thead th {
+      background: var(--bg-card2);
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+      border-top: none;
+      padding: 0.75rem 1rem;
+      white-space: nowrap;
+    }
+    .table-card tbody td {
+      color: var(--text-main);
+      border-color: var(--border);
+      padding: 0.7rem 1rem;
+      vertical-align: middle;
+    }
+    .table-card tbody tr:hover td { background: rgba(255,255,255,0.025); }
+    .table-card tbody tr:last-child td { border-bottom: none; }
+
+    .phone-cell {
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      color: var(--blue);
+    }
+
+    /* ── Badges ─────────────────────────────────────────────────── */
+    .badge-stage {
+      font-size: 0.68rem;
+      font-weight: 500;
+      padding: 0.25em 0.6em;
+      border-radius: 6px;
+      background: rgba(88,166,255,0.15);
+      color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.25);
+    }
+    .badge-status {
+      font-size: 0.68rem;
+      font-weight: 500;
+      padding: 0.25em 0.6em;
+      border-radius: 6px;
+      background: rgba(37,211,102,0.12);
+      color: var(--green);
+      border: 1px solid rgba(37,211,102,0.2);
+    }
+    .badge-admitted {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.25em 0.65em;
+      border-radius: 6px;
+      background: rgba(37,211,102,0.18);
+      color: var(--green);
+    }
+    .badge-not-admitted {
+      font-size: 0.68rem;
+      font-weight: 500;
+      padding: 0.25em 0.65em;
+      border-radius: 6px;
+      background: rgba(139,148,158,0.12);
+      color: var(--text-muted);
+    }
+
+    /* ── Score bar ──────────────────────────────────────────────── */
+    .score-wrap { display: flex; align-items: center; gap: 0.4rem; min-width: 90px; }
+    .score-bar {
+      flex: 1;
+      height: 5px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--green-dim), var(--green));
+    }
+    .score-num { font-size: 0.75rem; color: var(--text-muted); min-width: 22px; text-align: right; }
+
+    /* ── Empty state ────────────────────────────────────────────── */
+    .empty-state {
+      padding: 3.5rem 1rem;
+      text-align: center;
+    }
+    .empty-state .empty-icon {
+      font-size: 2.5rem;
+      color: var(--border);
+      margin-bottom: 0.75rem;
+    }
+    .empty-state p { color: var(--text-muted); margin: 0; font-size: 0.85rem; }
+
+    /* ── Pagination ─────────────────────────────────────────────── */
+    .pagination .page-link {
+      background: var(--bg-card2);
+      border-color: var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px !important;
+      margin: 0 2px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .pagination .page-link:hover {
+      background: var(--border);
+      color: var(--text-main);
+    }
+    .pagination .page-item.active .page-link {
+      background: var(--green);
+      border-color: var(--green);
+      color: #0d1117;
+      font-weight: 600;
+    }
+    .pagination .page-item.disabled .page-link { opacity: 0.35; }
+
+    /* ── Result count ───────────────────────────────────────────── */
+    .result-count { color: var(--text-muted); font-size: 0.78rem; }
+
+    /* ── Active filters ─────────────────────────────────────────── */
+    .active-filter-pill {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      background: rgba(37,211,102,0.1);
+      border: 1px solid rgba(37,211,102,0.2);
+      color: var(--green);
+      font-size: 0.72rem;
+      font-weight: 500;
+      padding: 0.2em 0.6em;
+      border-radius: 20px;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 767px) {
+      .metric-card .metric-value { font-size: 1.4rem; }
+      .table-responsive { font-size: 0.78rem; }
+      .crm-nav { padding: 0.6rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="crm-nav d-flex align-items-center justify-content-between">
+    <a class="brand" href="/crm/leads?key={{ key }}">
+      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
+      <span class="ms-2">/ Leads</span>
+    </a>
+    <a href="/panel?key={{ key }}" class="btn-crm-reset" style="text-decoration:none; padding: 0.35rem 0.85rem;">
+      <i class="bi bi-grid-3x3-gap me-1"></i>Admin Panel
+    </a>
+  </nav>
+
+  <div class="container-fluid px-3 px-md-4 py-4">
+
+    <!-- ── Metric Cards ────────────────────────────────────────── -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-4">
+        <div class="metric-card d-flex align-items-center gap-3">
+          <div class="metric-icon icon-green"><i class="bi bi-people-fill"></i></div>
+          <div>
+            <div class="metric-label">Total Leads</div>
+            <div class="metric-value" style="color: var(--green);">{{ total_leads }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="metric-card d-flex align-items-center gap-3">
+          <div class="metric-icon icon-blue"><i class="bi bi-patch-check-fill"></i></div>
+          <div>
+            <div class="metric-label">Admitted</div>
+            <div class="metric-value" style="color: var(--blue);">{{ admitted_count }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="metric-card d-flex align-items-center gap-3">
+          <div class="metric-icon icon-yellow"><i class="bi bi-clock-history"></i></div>
+          <div>
+            <div class="metric-label">Pending Follow-ups</div>
+            <div class="metric-value" style="color: var(--yellow);">{{ pending_fu }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Filters ─────────────────────────────────────────────── -->
+    <div class="filter-card mb-3">
+      <form method="GET" action="/crm/leads" id="filter-form">
+        <input type="hidden" name="key" value="{{ key }}">
+        <div class="row g-2 align-items-end">
+          <!-- Search -->
+          <div class="col-12 col-sm-6 col-lg-4">
+            <label class="form-label mb-1" style="color:var(--text-muted);font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">
+              Search
+            </label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text" style="background:var(--bg-card2);border-color:var(--border);color:var(--text-muted);">
+                <i class="bi bi-search"></i>
+              </span>
+              <input type="text" class="form-control" name="search" id="search-input"
+                     placeholder="Phone or name…" value="{{ search }}">
+            </div>
+          </div>
+
+          <!-- Stage filter -->
+          <div class="col-6 col-sm-3 col-lg-2">
+            <label class="form-label mb-1" style="color:var(--text-muted);font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">
+              Stage
+            </label>
+            <select class="form-select form-select-sm" name="stage" id="stage-select">
+              <option value="">All Stages</option>
+              {% for s in stages %}
+              <option value="{{ s }}" {% if s == stage_filter %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Admitted filter -->
+          <div class="col-6 col-sm-3 col-lg-2">
+            <label class="form-label mb-1" style="color:var(--text-muted);font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">
+              Admitted
+            </label>
+            <select class="form-select form-select-sm" name="admitted" id="admitted-select">
+              <option value="">All</option>
+              <option value="yes" {% if admitted_filter == "yes" %}selected{% endif %}>Yes</option>
+              <option value="no"  {% if admitted_filter == "no"  %}selected{% endif %}>No</option>
+            </select>
+          </div>
+
+          <!-- Buttons -->
+          <div class="col-12 col-lg-4 d-flex gap-2">
+            <button type="submit" class="btn-crm-primary" id="filter-btn">
+              <i class="bi bi-funnel me-1"></i>Filter
+            </button>
+            <a href="/crm/leads?key={{ key }}" class="btn-crm-reset" style="text-decoration:none;display:inline-flex;align-items:center;">
+              <i class="bi bi-x-circle me-1"></i>Reset
+            </a>
+          </div>
+        </div>
+      </form>
+
+      <!-- Active filter pills -->
+      {% if search or stage_filter or admitted_filter %}
+      <div class="mt-2 d-flex flex-wrap gap-2">
+        {% if search %}
+        <span class="active-filter-pill"><i class="bi bi-search"></i>{{ search }}</span>
+        {% endif %}
+        {% if stage_filter %}
+        <span class="active-filter-pill"><i class="bi bi-layers"></i>{{ stage_filter }}</span>
+        {% endif %}
+        {% if admitted_filter %}
+        <span class="active-filter-pill"><i class="bi bi-patch-check"></i>Admitted: {{ admitted_filter }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── Result count ────────────────────────────────────────── -->
+    <div class="d-flex align-items-center justify-content-between mb-2 px-1">
+      <span class="result-count">
+        {% if pagination.total == 0 %}
+          No results found
+        {% elif pagination.total == 1 %}
+          1 lead
+        {% else %}
+          {{ pagination.total }} leads
+          &nbsp;·&nbsp; page {{ pagination.page }} of {{ pagination.pages }}
+        {% endif %}
+      </span>
+    </div>
+
+    <!-- ── Leads Table ─────────────────────────────────────────── -->
+    <div class="table-card mb-3">
+      {% if leads %}
+      <div class="table-responsive">
+        <table class="table table-borderless mb-0">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Phone</th>
+              <th>Name</th>
+              <th>Stage</th>
+              <th>Lead Status</th>
+              <th>Score</th>
+              <th>Assigned Staff</th>
+              <th>Admitted</th>
+              <th>Last Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for lead in leads %}
+            <tr>
+              <!-- Row index -->
+              <td style="color:var(--text-muted);font-size:0.75rem;">
+                {{ (pagination.page - 1) * 25 + loop.index }}
+              </td>
+
+              <!-- Phone -->
+              <td class="phone-cell">
+                <a href="https://wa.me/{{ lead.phone }}" target="_blank" rel="noopener"
+                   style="color:var(--blue);text-decoration:none;"
+                   title="Open WhatsApp chat">
+                  {{ lead.phone }}
+                  <i class="bi bi-box-arrow-up-right ms-1" style="font-size:0.65rem;opacity:0.6;"></i>
+                </a>
+              </td>
+
+              <!-- Name -->
+              <td style="font-weight:500;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                {{ lead.name or '—' }}
+              </td>
+
+              <!-- Stage -->
+              <td>
+                {% if lead.stage %}
+                <span class="badge-stage">{{ lead.stage }}</span>
+                {% else %}
+                <span style="color:var(--text-muted);">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Lead Status -->
+              <td>
+                {% if lead.lead_status %}
+                <span class="badge-status">{{ lead.lead_status }}</span>
+                {% else %}
+                <span style="color:var(--text-muted);">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Lead Score -->
+              <td>
+                {% set score = lead.lead_score or 0 %}
+                <div class="score-wrap">
+                  <div class="score-bar">
+                    <div class="score-bar-fill" style="width: {{ [score, 100] | min }}%;"></div>
+                  </div>
+                  <span class="score-num">{{ score }}</span>
+                </div>
+              </td>
+
+              <!-- Assigned Staff -->
+              <td style="color:var(--text-muted);">
+                {{ lead.assigned_staff or '—' }}
+              </td>
+
+              <!-- Admitted -->
+              <td>
+                {% if lead.is_admitted %}
+                <span class="badge-admitted"><i class="bi bi-check-circle-fill me-1"></i>Yes</span>
+                {% else %}
+                <span class="badge-not-admitted">No</span>
+                {% endif %}
+              </td>
+
+              <!-- Updated At -->
+              <td style="color:var(--text-muted);white-space:nowrap;font-size:0.78rem;">
+                {% if lead.updated_at %}
+                {{ lead.updated_at.strftime('%d %b %Y, %H:%M') }}
+                {% else %}
+                —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% else %}
+      <!-- Empty state -->
+      <div class="empty-state">
+        <div class="empty-icon"><i class="bi bi-inbox"></i></div>
+        {% if search or stage_filter or admitted_filter %}
+        <p>No leads match your current filters.<br>
+           <a href="/crm/leads?key={{ key }}" style="color:var(--green);">Clear all filters</a>
+        </p>
+        {% else %}
+        <p>No leads in the database yet.<br>
+           They will appear here once the first WhatsApp message is received.
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── Pagination ──────────────────────────────────────────── -->
+    {% if pagination.pages > 1 %}
+    <nav aria-label="Leads pagination">
+      <ul class="pagination justify-content-center flex-wrap gap-1">
+
+        <!-- Previous -->
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+          <a class="page-link"
+             href="/crm/leads?key={{ key }}&page={{ pagination.prev_num }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}"
+             aria-label="Previous">
+            <i class="bi bi-chevron-left"></i>
+          </a>
+        </li>
+
+        <!-- Page numbers (smart windowing) -->
+        {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+          {% if p %}
+            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+              <a class="page-link"
+                 href="/crm/leads?key={{ key }}&page={{ p }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}">
+                {{ p }}
+              </a>
+            </li>
+          {% else %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+          {% endif %}
+        {% endfor %}
+
+        <!-- Next -->
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+          <a class="page-link"
+             href="/crm/leads?key={{ key }}&page={{ pagination.next_num }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}"
+             aria-label="Next">
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </li>
+
+      </ul>
+    </nav>
+    {% endif %}
+
+    <!-- Footer -->
+    <p class="text-center mt-2" style="color:var(--text-muted);font-size:0.72rem;">
+      Oxford Computers CRM &nbsp;·&nbsp; WhatsApp AI System v3.0
+      &nbsp;·&nbsp; <span id="ts"></span>
+    </p>
+
+  </div><!-- /container -->
+
+  <script>
+    // Live timestamp in footer
+    (function() {
+      var el = document.getElementById('ts');
+      if (el) {
+        var now = new Date();
+        el.textContent = now.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+      }
+    })();
+  </script>
+</body>
+</html>
