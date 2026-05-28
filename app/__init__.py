@@ -1,10 +1,10 @@
 from flask import Flask
 from app.config import DATABASE_URL
 from app.extensions import db, migrate
-
+from pathlib import Path
 
 def create_app():
-    from pathlib import Path
+    
 
     BASE_DIR = Path(__file__).resolve().parent.parent
 
