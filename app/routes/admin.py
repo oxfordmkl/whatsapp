@@ -277,6 +277,89 @@ def crm_leads():
     )
 
 
+# ── Phase 6G: Audience Calculation Helper ──
+def _calculate_audiences():
+    from app.extensions import db
+    from app.models import ConversationState, LeadEvent, ConversationMessage
+    from sqlalchemy.sql import func
+    
+    all_states = db.session.query(
+        ConversationState.phone, 
+        ConversationState.lead_score,
+        ConversationState.updated_at,
+        ConversationState.created_at
+    ).all()
+    all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at).all()
+    
+    events_by_phone = {}
+    latest_event_time = {}
+    for e in all_events:
+        events_by_phone.setdefault(e.phone, []).append(e)
+        if e.phone not in latest_event_time or (e.created_at and e.created_at > latest_event_time[e.phone]):
+            latest_event_time[e.phone] = e.created_at
+            
+    subq = db.session.query(
+        ConversationMessage.phone,
+        func.max(ConversationMessage.id).label('max_id'),
+        func.max(ConversationMessage.created_at).label('max_created')
+    ).group_by(ConversationMessage.phone).subquery()
+    
+    latest_msgs = db.session.query(
+        ConversationMessage.phone, 
+        ConversationMessage.direction,
+        subq.c.max_created
+    ).join(
+        subq, ConversationMessage.id == subq.c.max_id
+    ).all()
+    
+    needs_reply_phones = {r.phone for r in latest_msgs if r.direction == 'incoming'}
+    latest_msg_time = {r.phone: r.max_created for r in latest_msgs}
+    
+    audiences = {
+        "HOT Leads": set(),
+        "WARM Leads": set(),
+        "Demo Requested": set(),
+        "Fees Requested": set(),
+        "Placement Interested": set(),
+        "Needs Reply": set(),
+        "Critical Leads": set(),
+        "All Leads": set()
+    }
+    
+    for state in all_states:
+        phone = state.phone
+        events = events_by_phone.get(phone, [])
+        intel = calculate_lead_intelligence(state.lead_score, events)
+        health = calculate_lead_health(
+            state.updated_at, state.created_at, 
+            latest_msg_time.get(phone), latest_event_time.get(phone), 
+            intel, phone in needs_reply_phones
+        )
+        
+        audiences["All Leads"].add(phone)
+        
+        if intel["temperature"] == "HOT":
+            audiences["HOT Leads"].add(phone)
+        elif intel["temperature"] == "WARM":
+            audiences["WARM Leads"].add(phone)
+            
+        events_set = intel.get("_events", [])
+        if "DEMO_REQUESTED" in events_set:
+            audiences["Demo Requested"].add(phone)
+        if "FEES_REQUESTED" in events_set:
+            audiences["Fees Requested"].add(phone)
+        if "PLACEMENT_ASKED" in events_set:
+            audiences["Placement Interested"].add(phone)
+            
+        if phone in needs_reply_phones:
+            audiences["Needs Reply"].add(phone)
+            
+        if health["aging_status"] == "Critical":
+            audiences["Critical Leads"].add(phone)
+            
+    return audiences
+
+
 # ── Phase 4C: Lead Detail helpers ─────────────────────────────────────────
 
 def _deny():
@@ -456,12 +539,101 @@ def crm_lead_update(phone):
         lead.is_admitted = request.form.get("is_admitted") == "1"
 
         db.session.commit()
-        return redirect(f"/crm/lead/{phone}?key={key}&msg=CRM+updated+successfully{qs}")
-
-    except Exception:
+    except Exception as e:
         db.session.rollback()
-        logging.exception(f"CRM update failed for {phone}")
-        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error{qs}")
+        flash(f"Error resetting intelligence: {str(e)}", "danger")
+        
+    flash(f"Recalculated intelligence for lead {phone}.", "success")
+    return redirect(url_for("admin.crm_lead_detail", phone=phone, key=ADMIN_KEY))
+
+# ── Phase 6G: Campaigns ──
+@admin_bp.route("/crm/campaigns", methods=["GET"])
+def campaigns():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+    
+    from datetime import date
+    from app.models import ConversationMessage
+    
+    today = date.today()
+    campaign_msgs = ConversationMessage.query.filter(
+        ConversationMessage.source == 'campaign',
+        db.func.date(ConversationMessage.created_at) == today
+    ).all()
+    
+    messages_sent_today = len(campaign_msgs)
+    campaign_names = set()
+    last_campaign_name = "None"
+    last_campaign_time = None
+    
+    for m in campaign_msgs:
+        import re
+        match = re.search(r"\[CAMPAIGN:\s*(.*?)\]", m.message or "")
+        if match:
+            cname = match.group(1).strip()
+            campaign_names.add(cname)
+            if last_campaign_time is None or (m.created_at and m.created_at > last_campaign_time):
+                last_campaign_time = m.created_at
+                last_campaign_name = cname
+                
+    dashboard = {
+        "campaigns_today": len(campaign_names),
+        "messages_today": messages_sent_today,
+        "last_campaign_name": last_campaign_name,
+        "last_campaign_time": last_campaign_time.strftime("%H:%M") if last_campaign_time else "—"
+    }
+    
+    return render_template("campaigns.html", dashboard=dashboard, key=ADMIN_KEY)
+
+@admin_bp.route("/crm/campaigns/preview", methods=["POST"])
+def campaign_preview():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    data = request.get_json()
+    audience_type = data.get("audience", "")
+    
+    audiences = _calculate_audiences()
+    phones = list(audiences.get(audience_type, set()))
+    
+    return jsonify({
+        "count": len(phones),
+        "examples": phones[:3],
+        "estimated_duration_seconds": int(len(phones) * 1.5)
+    })
+
+@admin_bp.route("/crm/campaigns/send", methods=["POST"])
+def campaign_send():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    name = request.form.get("campaign_name", "").strip()
+    audience_type = request.form.get("audience", "").strip()
+    message = request.form.get("message", "").strip()
+    
+    if not name or not message:
+        flash("Campaign name and message are required.", "danger")
+        return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+        
+    audiences = _calculate_audiences()
+    phones = list(audiences.get(audience_type, set()))
+    
+    if len(phones) == 0:
+        flash(f"Audience '{audience_type}' has 0 leads. Campaign aborted.", "warning")
+        return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+        
+    if len(phones) > 100:
+        flash("Campaigns are limited to 100 recipients max. Please split large batches.", "danger")
+        return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+        
+    from app.services.campaign_service import start_campaign
+    try:
+        start_campaign(phones, message, name)
+        flash(f"Campaign '{name}' started successfully. Sending to {len(phones)} leads. Check dashboard later for results.", "success")
+    except Exception as e:
+        flash(f"Failed to start campaign: {str(e)}", "danger")
+        
+    return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
 
 
 # ── POST /crm/lead/<phone>/send ────────────────────────────────────────────
