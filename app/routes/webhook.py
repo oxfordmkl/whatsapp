@@ -1,12 +1,12 @@
 import threading
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.config import VERIFY_TOKEN
 from app.state import phone_exists
 from app.bot.router import smart_reply
 from app.services.whatsapp_service import send_reply
 from app.services.crm_service import save_lead_to_sheets
 from app.services.followup_service import schedule_followups
-from app.services.log_service import log_message
+from app.services.log_service import log_message_in_thread, save_conversation_message_in_thread
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -64,10 +64,33 @@ def receive_message():
 
         is_new_lead = not phone_exists(from_number)
 
-        # ── Log inbound user message (daemon thread — non-blocking) ──
+        # Capture app ref once in request context — safe to pass to daemon threads
+        _app = current_app._get_current_object()
+
+        # ── Log inbound user message (MessageLog daemon thread) ──
         threading.Thread(
-            target=log_message,
-            args=(from_number, "inbound", "user", msg_text),
+            target=log_message_in_thread,
+            kwargs=dict(
+                app=_app,
+                phone=from_number,
+                direction="inbound",
+                message_type="user",
+                message_text=msg_text,
+            ),
+            daemon=True,
+        ).start()
+
+        # ── Persist inbound to ConversationMessage (daemon thread, app-context-safe) ──
+        threading.Thread(
+            target=save_conversation_message_in_thread,
+            kwargs=dict(
+                app=_app,
+                phone=from_number,
+                direction="incoming",
+                message=msg_text,
+                message_type=msg_type,
+                source="user",
+            ),
             daemon=True,
         ).start()
 
@@ -81,10 +104,30 @@ def receive_message():
         reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead)
         send_reply(from_number, reply_text, preset)
 
-        # ── Log outbound AI reply (daemon thread — non-blocking) ──
+        # ── Log outbound AI reply (MessageLog daemon thread) ──
         threading.Thread(
-            target=log_message,
-            args=(from_number, "outbound", "ai", reply_text),
+            target=log_message_in_thread,
+            kwargs=dict(
+                app=_app,
+                phone=from_number,
+                direction="outbound",
+                message_type="ai",
+                message_text=reply_text,
+            ),
+            daemon=True,
+        ).start()
+
+        # ── Persist AI reply to ConversationMessage (daemon thread, app-context-safe) ──
+        threading.Thread(
+            target=save_conversation_message_in_thread,
+            kwargs=dict(
+                app=_app,
+                phone=from_number,
+                direction="outgoing",
+                message=reply_text,
+                message_type="text",
+                source="ai",
+            ),
             daemon=True,
         ).start()
 

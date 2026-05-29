@@ -152,7 +152,8 @@ def crm_lead_detail(phone):
     if request.args.get("key", "") != ADMIN_KEY:
         return _deny()
 
-    from app.models import ConversationState, MessageLog
+    from app.models import ConversationState, MessageLog, ConversationMessage
+    from datetime import datetime, timedelta
 
     lead = ConversationState.query.filter_by(phone=phone).first()
     if lead is None:
@@ -167,10 +168,60 @@ def crm_lead_detail(phone):
         .all()
     )
 
+    # ── Phase 5C: CRM Conversation Search & Filters ──
+    search_q = request.args.get("search", "").strip()[:100]
+    source_q = request.args.get("source", "all").strip().lower()
+    range_q  = request.args.get("range", "all").strip().lower()
+
+    # Note: For future scaling on large datasets, consider PostgreSQL full-text
+    # search (tsvector) or pg_trgm (trigram indexing) for ConversationMessage.message
+    query = ConversationMessage.query.filter_by(phone=phone)
+
+    if search_q:
+        query = query.filter(ConversationMessage.message.ilike(f"%{search_q}%"))
+
+    if source_q and source_q != "all":
+        query = query.filter_by(source=source_q)
+
+    if range_q and range_q != "all":
+        now = datetime.utcnow()
+        if range_q == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(ConversationMessage.created_at >= start_date)
+        elif range_q == "7days":
+            start_date = now - timedelta(days=7)
+            query = query.filter(ConversationMessage.created_at >= start_date)
+        elif range_q == "30days":
+            start_date = now - timedelta(days=30)
+            query = query.filter(ConversationMessage.created_at >= start_date)
+
+    # ── Calculate Metrics (Accurate regardless of limit) ──
+    total_msgs = query.count()
+    metrics = {
+        "total": total_msgs,
+        "user": query.filter_by(source="user").count() if source_q == "all" else (total_msgs if source_q == "user" else 0),
+        "ai": query.filter_by(source="ai").count() if source_q == "all" else (total_msgs if source_q == "ai" else 0),
+        "manual": query.filter_by(source="manual").count() if source_q == "all" else (total_msgs if source_q == "manual" else 0)
+    }
+
+    # Query newest 100 DESC, then reverse() in Python so oldest renders first.
+    # This guarantees latest messages are never dropped on large histories.
+    timeline = list(reversed(
+        query
+        .order_by(ConversationMessage.created_at.desc())
+        .limit(100)
+        .all()
+    ))
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
         logs=logs,
+        timeline=timeline,
+        metrics=metrics,
+        search_q=search_q,
+        source_q=source_q,
+        range_q=range_q,
         key=request.args.get("key", ""),
         msg=request.args.get("msg", ""),
         err=request.args.get("err", ""),
@@ -192,6 +243,12 @@ def crm_lead_update(phone):
     if lead is None:
         return _not_found(phone)
 
+    import urllib.parse
+    qs = ""
+    if request.args.get("search"): qs += f"&search={urllib.parse.quote(request.args.get('search'))}"
+    if request.args.get("source"): qs += f"&source={urllib.parse.quote(request.args.get('source'))}"
+    if request.args.get("range"):  qs += f"&range={urllib.parse.quote(request.args.get('range'))}"
+
     try:
         lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
         lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
@@ -204,12 +261,12 @@ def crm_lead_update(phone):
         lead.is_admitted = request.form.get("is_admitted") == "1"
 
         db.session.commit()
-        return redirect(f"/crm/lead/{phone}?key={key}&msg=CRM+updated+successfully")
+        return redirect(f"/crm/lead/{phone}?key={key}&msg=CRM+updated+successfully{qs}")
 
     except Exception:
         db.session.rollback()
         logging.exception(f"CRM update failed for {phone}")
-        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error")
+        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error{qs}")
 
 
 # ── POST /crm/lead/<phone>/send ────────────────────────────────────────────
@@ -225,10 +282,16 @@ def crm_lead_send(phone):
     if not message:
         return redirect(f"/crm/lead/{phone}?key={key}&err=Message+cannot+be+empty")
 
+    import urllib.parse
+    qs = ""
+    if request.args.get("search"): qs += f"&search={urllib.parse.quote(request.args.get('search'))}"
+    if request.args.get("source"): qs += f"&source={urllib.parse.quote(request.args.get('source'))}"
+    if request.args.get("range"):  qs += f"&range={urllib.parse.quote(request.args.get('range'))}"
+
     try:
         r = send_text(phone, message)
         if r.status_code == 200:
-            # ── Log manual outbound message ──
+            # ── Log manual outbound message (MessageLog — raw technical log) ──
             from app.services.log_service import log_message
             log_message(
                 phone=phone,
@@ -236,9 +299,21 @@ def crm_lead_send(phone):
                 message_type="manual",
                 message_text=message,
             )
-            return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully")
+            # ── Persist manual send to ConversationMessage (CRM timeline) ──
+            from app.services.log_service import save_conversation_message
+            save_conversation_message(
+                phone=phone,
+                direction="outgoing",
+                message=message,
+                message_type="text",
+                source="manual",
+                staff_name=None,    # extend when staff auth added (Phase 6+)
+                wa_message_id=None, # extend when WA API response parsed (Phase 6+)
+            )
+            return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully{qs}")
+
         else:
-            return redirect(f"/crm/lead/{phone}?key={key}&err=WhatsApp+API+returned+an+error")
+            return redirect(f"/crm/lead/{phone}?key={key}&err=WhatsApp+API+returned+an+error{qs}")
     except Exception:
         logging.exception(f"Manual WhatsApp send failed for {phone}")
-        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error")
+        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error{qs}")

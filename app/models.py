@@ -84,3 +84,40 @@ class MessageLog(db.Model):
     __table_args__ = (
         db.Index("idx_msg_phone_created", "phone", "created_at"),
     )
+
+
+class ConversationMessage(db.Model):
+    """
+    Structured per-message CRM timeline.
+    Intentionally separate from MessageLog:
+      - MessageLog          → lightweight raw technical event log (Phase 4D)
+      - ConversationMessage → structured, CRM-renderable history  (Phase 5A)
+    Richer fields: wa_message_id (deduplication), staff_name (audit trail).
+    No foreign key constraints. UTC timestamps. All nullable except core fields.
+    """
+    __tablename__ = "conversation_message"
+
+    id            = db.Column(db.Integer,     primary_key=True)
+    phone         = db.Column(db.String(20),  nullable=False)
+    direction     = db.Column(db.String(10),  nullable=False)
+    # direction:    "incoming" | "outgoing"
+
+    message       = db.Column(db.Text,        nullable=True)
+    message_type  = db.Column(db.String(20),  nullable=True)
+    # message_type: "text" | "interactive" | "button" | "template" | "system"
+
+    source        = db.Column(db.String(20),  nullable=True)
+    # source:       "user" | "ai" | "manual" | "followup" | "system"
+
+    staff_name    = db.Column(db.String(100), nullable=True)
+    # Populated only for manual CRM sends — identifies sender for audit trail
+
+    wa_message_id = db.Column(db.String(100), nullable=True)
+    # WhatsApp message ID from API — for future deduplication
+
+    created_at    = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index("idx_conv_msg_phone_created", "phone", "created_at"),
+        db.Index("idx_conv_msg_wa_id",         "wa_message_id"),
+    )
