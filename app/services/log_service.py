@@ -136,3 +136,59 @@ def save_conversation_message_in_thread(app, **kwargs) -> None:
     """
     with app.app_context():
         save_conversation_message(**kwargs)
+
+
+# ── Phase 6A: Lead event tracking ──────────────────────────────────────────
+
+def log_lead_event(
+    phone: str,
+    event_type: str,
+    event_data: str = None,
+) -> None:
+    """
+    Append one named business event to the lead_event table.
+    Requires an active Flask app context.
+    For daemon threads use log_lead_event_in_thread() instead.
+    Never raises — all errors are caught and logged internally.
+
+    Args:
+        phone:      WhatsApp phone number
+        event_type: e.g. "COURSE_VIEWED", "FEES_REQUESTED",
+                    "DEMO_REQUESTED", "PLACEMENT_ASKED"
+        event_data: optional context string (e.g. course name)
+    """
+    try:
+        from app.models import LeadEvent
+        from app.extensions import db
+
+        entry = LeadEvent(
+            phone=phone,
+            event_type=event_type,
+            event_data=event_data,
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(entry)
+        db.session.commit()
+    except Exception:
+        logging.exception(
+            f"[log_service] Failed to log LeadEvent {event_type} for {phone}"
+        )
+
+
+def log_lead_event_in_thread(app, **kwargs) -> None:
+    """
+    Thread-safe wrapper for log_lead_event().
+    Opens its own Flask app context — safe to call from daemon threads
+    that have no active request context.
+
+    Usage (from within a request handler before spawning a thread):
+        _app = current_app._get_current_object()
+        threading.Thread(
+            target=log_lead_event_in_thread,
+            kwargs=dict(app=_app, phone=..., event_type=..., event_data=...),
+            daemon=True,
+        ).start()
+    """
+    with app.app_context():
+        log_lead_event(**kwargs)
+

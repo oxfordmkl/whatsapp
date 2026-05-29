@@ -1,5 +1,6 @@
 import threading
 from datetime import datetime
+from flask import current_app
 from app.state import get_or_create_state
 from app.bot.constants import (
     ALL_COURSES, COURSE_FEES, KEYWORD_TO_COURSE, GOAL_COURSES,
@@ -9,6 +10,7 @@ from app.bot.constants import (
 from app.bot.objections import detect_objection, handle_objection
 from app.services.ai_service import gemini_reply, smart_fallback
 from app.services.crm_service import update_lead_status
+from app.services.log_service import log_lead_event_in_thread
 
 VISIT_WORDS   = {"visit", "office", "varam", "neritt", "address", "location",
                  "map", "route", "varanam", "edukkam"}
@@ -231,6 +233,13 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
 
     if low in {"demo", "free demo", "free class", "book demo"}:
         st["stage"] = "demo_time_ask"
+        # ── Phase 6A: DEMO_REQUESTED event ──
+        _app = current_app._get_current_object()
+        threading.Thread(
+            target=log_lead_event_in_thread,
+            kwargs=dict(app=_app, phone=phone, event_type="DEMO_REQUESTED"),
+            daemon=True,
+        ).start()
         return msg_demo_time_ask()
 
     if low in {"enroll_now", "enrol_now", "pay_now"}:
@@ -268,6 +277,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
         return msg_offer_menu()
 
     if low in {"fees", "fee", "price", "cost", "ethra", "how much"}:
+        # ── Phase 6A: FEES_REQUESTED event ──
+        _app = current_app._get_current_object()
+        threading.Thread(
+            target=log_lead_event_in_thread,
+            kwargs=dict(app=_app, phone=phone, event_type="FEES_REQUESTED",
+                        event_data=course or None),
+            daemon=True,
+        ).start()
         if course and course in COURSE_FEES:
             f, d = COURSE_FEES[course]
             text = (
@@ -320,6 +337,13 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
             "(Note: We provide placement *assistance*,\n"
             "not a job guarantee — but our track record is strong! 💪)"
         )
+        # ── Phase 6A: PLACEMENT_ASKED event ──
+        _app = current_app._get_current_object()
+        threading.Thread(
+            target=log_lead_event_in_thread,
+            kwargs=dict(app=_app, phone=phone, event_type="PLACEMENT_ASKED"),
+            daemon=True,
+        ).start()
         return text, "COURSE"
 
     if low in {"timing", "batch", "time", "schedule", "class time"}:
@@ -368,6 +392,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
                 st["course"] = c_name
                 st["stage"]  = "course_viewed"
                 threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}")).start()
+                # ── Phase 6A: COURSE_VIEWED event (goal menu path) ──
+                _app = current_app._get_current_object()
+                threading.Thread(
+                    target=log_lead_event_in_thread,
+                    kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
+                                event_data=c_name),
+                    daemon=True,
+                ).start()
                 return msg_course_detail(c_idx)
 
     if stage == "demo_time_ask":
@@ -406,6 +438,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
             c_name = ALL_COURSES[idx][0]
             st["course"] = c_name
             st["stage"]  = "course_viewed"
+            # ── Phase 6A: COURSE_VIEWED event (keyword path) ──
+            _app = current_app._get_current_object()
+            threading.Thread(
+                target=log_lead_event_in_thread,
+                kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
+                            event_data=c_name),
+                daemon=True,
+            ).start()
             return msg_course_detail(idx)
 
     if low in ALL_COURSES:
@@ -413,6 +453,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
         st["course"] = c_name
         st["stage"]  = "course_viewed"
         threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}")).start()
+        # ── Phase 6A: COURSE_VIEWED event (direct match path) ──
+        _app = current_app._get_current_object()
+        threading.Thread(
+            target=log_lead_event_in_thread,
+            kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
+                        event_data=c_name),
+            daemon=True,
+        ).start()
         return msg_course_detail(low)
 
     ai = gemini_reply(raw, name)

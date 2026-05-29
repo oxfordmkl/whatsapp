@@ -731,7 +731,74 @@
 
     </div><!-- /row -->
 
-    <!-- â”€â”€ WhatsApp Conversation Timeline (Phase 5B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── Phase 6A: Lead Journey ──────────────────────────────────────────── -->
+    <div class="crm-card mt-3">
+      <div class="crm-card-header">
+        <i class="bi bi-map"></i>Lead Journey
+        <span style="margin-left: auto; font-size: 0.7rem; font-weight: 400; color: var(--text-muted);">
+          {{ events|length }} event{% if events|length != 1 %}s{% endif %}
+        </span>
+      </div>
+      <div class="crm-card-body">
+        {% if events %}
+        <div class="timeline">
+          {% for ev in events %}
+
+            {# ── Resolve display config from event_type ── #}
+            {% if ev.event_type == 'COURSE_VIEWED' %}
+              {% set dot_cls = 'tl-dot-ai'       %}
+              {% set lbl_cls = 'tl-label-ai'     %}
+              {% set eicon   = 'bi-eye'           %}
+              {% set elabel  = 'Course Viewed'    %}
+            {% elif ev.event_type == 'FEES_REQUESTED' %}
+              {% set dot_cls = 'tl-dot-followup'   %}
+              {% set lbl_cls = 'tl-label-followup' %}
+              {% set eicon   = 'bi-currency-rupee' %}
+              {% set elabel  = 'Fees Requested'    %}
+            {% elif ev.event_type == 'DEMO_REQUESTED' %}
+              {% set dot_cls = 'tl-dot-user'     %}
+              {% set lbl_cls = 'tl-label-user'   %}
+              {% set eicon   = 'bi-calendar-check' %}
+              {% set elabel  = 'Demo Requested'  %}
+            {% elif ev.event_type == 'PLACEMENT_ASKED' %}
+              {% set dot_cls = 'tl-dot-manual'   %}
+              {% set lbl_cls = 'tl-label-manual' %}
+              {% set eicon   = 'bi-briefcase'    %}
+              {% set elabel  = 'Placement Asked' %}
+            {% else %}
+              {% set dot_cls = 'tl-dot-manual'   %}
+              {% set lbl_cls = 'tl-label-manual' %}
+              {% set eicon   = 'bi-circle'       %}
+              {% set elabel  = ev.event_type     %}
+            {% endif %}
+
+          <div class="tl-item">
+            <div class="tl-dot {{ dot_cls }}"><i class="bi {{ eicon }}"></i></div>
+            <div class="tl-bubble">
+              <div class="tl-meta">
+                <span class="tl-label {{ lbl_cls }}">{{ elabel }}</span>
+                {% if ev.event_data %}
+                <span style="font-size: 0.75rem; color: var(--text-muted);">{{ ev.event_data }}</span>
+                {% endif %}
+                <span class="tl-time">
+                  {% if ev.created_at %}{{ ev.created_at.strftime('%d %b %Y, %H:%M') }}{% endif %}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="tl-empty">
+          <i class="bi bi-map" style="font-size:2rem;display:block;margin-bottom:0.6rem;color:var(--border);"></i>
+          No events recorded yet for this lead.
+        </div>
+        {% endif %}
+      </div>
+    </div><!-- /lead journey -->
+
+    <!-- ── WhatsApp Conversation Timeline (Phase 5B) ──────────────────────── -->
     <div class="crm-card mt-3">
       <div class="crm-card-header">
         <i class="bi bi-chat-left-dots-fill"></i>Conversation History

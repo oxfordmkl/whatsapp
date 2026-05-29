@@ -152,7 +152,7 @@ def crm_lead_detail(phone):
     if request.args.get("key", "") != ADMIN_KEY:
         return _deny()
 
-    from app.models import ConversationState, MessageLog, ConversationMessage
+    from app.models import ConversationState, MessageLog, ConversationMessage, LeadEvent
     from datetime import datetime, timedelta
 
     lead = ConversationState.query.filter_by(phone=phone).first()
@@ -213,6 +213,17 @@ def crm_lead_detail(phone):
         .all()
     ))
 
+    # ── Phase 6A: Lead events (guarded — safe if migration not yet applied) ──
+    try:
+        events = (
+            LeadEvent.query
+            .filter_by(phone=phone)
+            .order_by(LeadEvent.created_at.asc())
+            .all()
+        )
+    except Exception:
+        events = []
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
@@ -225,6 +236,7 @@ def crm_lead_detail(phone):
         key=request.args.get("key", ""),
         msg=request.args.get("msg", ""),
         err=request.args.get("err", ""),
+        events=events,
     )
 
 

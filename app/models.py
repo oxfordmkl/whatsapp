@@ -121,3 +121,23 @@ class ConversationMessage(db.Model):
         db.Index("idx_conv_msg_phone_created", "phone", "created_at"),
         db.Index("idx_conv_msg_wa_id",         "wa_message_id"),
     )
+
+
+class LeadEvent(db.Model):
+    """
+    Phase 6A: Named business events per lead.
+    Append-only — rows are never updated after insert.
+    Tracks high-signal sales-funnel moments:
+      COURSE_VIEWED, FEES_REQUESTED, DEMO_REQUESTED, PLACEMENT_ASKED
+    """
+    __tablename__ = "lead_event"
+
+    id         = db.Column(db.Integer,    primary_key=True)
+    phone      = db.Column(db.String(20), nullable=False, index=True)
+    event_type = db.Column(db.String(50), nullable=False)
+    event_data = db.Column(db.Text,       nullable=True)   # optional context (e.g. course name)
+    created_at = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index("idx_lead_event_phone_created", "phone", "created_at"),
+    )
