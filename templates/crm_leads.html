@@ -310,9 +310,9 @@
 
   <div class="container-fluid px-3 px-md-4 py-4">
 
-    <!-- ── Action Queue Metrics (Phase 6C) ─────────────────────── -->
+    <!-- ── Action Queue Metrics (Phase 6C & 6F) ─────────────────────── -->
     <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-xl">
         <div class="metric-card d-flex align-items-center gap-3">
           <div class="metric-icon icon-red"><i class="bi bi-fire"></i></div>
           <div>
@@ -321,7 +321,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-xl">
         <div class="metric-card d-flex align-items-center gap-3">
           <div class="metric-icon icon-green"><i class="bi bi-telephone-fill"></i></div>
           <div>
@@ -330,7 +330,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-xl">
         <div class="metric-card d-flex align-items-center gap-3">
           <div class="metric-icon icon-yellow"><i class="bi bi-clock-history"></i></div>
           <div>
@@ -339,12 +339,21 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-xl">
         <div class="metric-card d-flex align-items-center gap-3">
           <div class="metric-icon icon-blue"><i class="bi bi-chat-dots-fill"></i></div>
           <div>
             <div class="metric-label">Needs Reply</div>
             <div class="metric-value" style="color: var(--blue);">{{ needs_reply_count }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-xl">
+        <div class="metric-card d-flex align-items-center gap-3" style="border-left: 3px solid var(--red);">
+          <div class="metric-icon" style="background: rgba(248,81,73,0.1); color: var(--red);"><i class="bi bi-exclamation-triangle-fill"></i></div>
+          <div>
+            <div class="metric-label">Critical Leads</div>
+            <div class="metric-value" style="color: var(--red);">{{ critical_count }}</div>
           </div>
         </div>
       </div>
@@ -441,19 +450,20 @@
       {% if leads %}
       <div class="table-responsive">
         <table class="table table-borderless mb-0">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Phone</th>
-              <th>Name</th>
-              <th>Stage</th>
-              <th>Lead Status</th>
-              <th>Score</th>
-              <th>Assigned Staff</th>
-              <th>Admitted</th>
-              <th>Last Updated</th>
-            </tr>
-          </thead>
+            <thead class="table-light">
+              <tr>
+                <th scope="col" style="width: 40px;">#</th>
+                <th scope="col" style="width: 140px;">Phone</th>
+                <th scope="col" style="width: 160px;">Name</th>
+                <th scope="col" style="width: 150px;">Stage</th>
+                <th scope="col" style="width: 110px;">Aging</th>
+                <th scope="col" style="width: 130px;">Lead Status</th>
+                <th scope="col" style="width: 120px;">Score</th>
+                <th scope="col" style="width: 140px;">Staff</th>
+                <th scope="col" style="width: 70px;">Admitted</th>
+                <th scope="col" style="width: 140px;">Updated</th>
+              </tr>
+            </thead>
           <tbody>
             {% for lead in leads %}
             <tr>
@@ -499,7 +509,23 @@
                 {% if lead.stage %}
                 <span class="badge-stage">{{ lead.stage }}</span>
                 {% else %}
-                <span style="color:var(--text-muted);">—</span>
+                <span class="badge-stage" style="background:#eef1f4;color:#6c757d;">New</span>
+                {% endif %}
+              </td>
+              
+              <!-- Aging (Phase 6F) -->
+              <td>
+                {% if lead.intelligence and lead.intelligence._health %}
+                  {% set health = lead.intelligence._health %}
+                  {% if health.aging_status == 'Fresh' %}
+                    <span style="font-size: 0.72rem; font-weight: 500;"><i class="bi bi-circle-fill me-1" style="color: var(--green);"></i>Fresh</span>
+                  {% elif health.aging_status == 'Attention' %}
+                    <span style="font-size: 0.72rem; font-weight: 500;"><i class="bi bi-circle-fill me-1" style="color: var(--yellow);"></i>Attention</span>
+                  {% elif health.aging_status == 'Aging' %}
+                    <span style="font-size: 0.72rem; font-weight: 500;"><i class="bi bi-circle-fill me-1" style="color: var(--orange);"></i>Aging</span>
+                  {% elif health.aging_status == 'Critical' %}
+                    <span style="font-size: 0.72rem; font-weight: 500;"><i class="bi bi-circle-fill me-1" style="color: var(--red);"></i>Critical</span>
+                  {% endif %}
                 {% endif %}
               </td>
 

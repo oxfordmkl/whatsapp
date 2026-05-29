@@ -41,7 +41,45 @@ def calculate_lead_intelligence(manual_score, events):
     return {
         "final_score": final_score,
         "temperature": temperature,
-        "recommended_action": action
+        "recommended_action": action,
+        "_events": list(unique_event_types)
+    }
+
+def calculate_lead_health(state_updated_at, state_created_at, latest_msg_time, latest_event_time, intelligence, needs_reply):
+    latest_activity = latest_msg_time or latest_event_time or state_updated_at or state_created_at
+    if not latest_activity:
+        from datetime import datetime
+        latest_activity = datetime.now()
+        
+    from datetime import datetime
+    days_inactive = (datetime.now() - latest_activity).days
+    if days_inactive < 0:
+        days_inactive = 0
+        
+    if days_inactive <= 2:
+        aging_status = "Fresh"
+    elif days_inactive <= 6:
+        aging_status = "Attention"
+    elif days_inactive <= 13:
+        aging_status = "Aging"
+    else:
+        aging_status = "Critical"
+        
+    escalation = None
+    events_set = intelligence.get("_events", [])
+    if intelligence.get("temperature") == "HOT" and aging_status == "Critical":
+        escalation = "🚨 HOT Lead Ignored"
+    elif needs_reply and days_inactive >= 1:
+        escalation = "💬 Waiting For Reply"
+    elif "FEES_REQUESTED" in events_set and days_inactive >= 7:
+        escalation = "💰 Fees Follow-up Needed"
+    elif "DEMO_REQUESTED" in events_set and days_inactive >= 7:
+        escalation = "🎓 Demo Follow-up Needed"
+
+    return {
+        "aging_status": aging_status,
+        "days_inactive": days_inactive,
+        "escalation": escalation
     }
 
 admin_bp = Blueprint("admin", __name__)
@@ -147,37 +185,66 @@ def crm_leads():
     pending_fu = count_pending_followups()
     
     # 1. Fetch all states and events for intelligence caching
-    all_states = db.session.query(ConversationState.phone, ConversationState.lead_score).all()
-    all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type).all()
+    all_states = db.session.query(
+        ConversationState.phone, 
+        ConversationState.lead_score,
+        ConversationState.updated_at,
+        ConversationState.created_at
+    ).all()
+    all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at).all()
     
     events_by_phone = {}
+    latest_event_time = {}
     for e in all_events:
         events_by_phone.setdefault(e.phone, []).append(e)
+        if e.phone not in latest_event_time or (e.created_at and e.created_at > latest_event_time[e.phone]):
+            latest_event_time[e.phone] = e.created_at
         
     hot_count = 0
     call_today_count = 0
+    critical_count = 0
     intelligence_cache = {}
 
-    for phone, lead_score in all_states:
-        intel = calculate_lead_intelligence(lead_score, events_by_phone.get(phone, []))
-        intelligence_cache[phone] = intel
-        if intel["temperature"] == "HOT":
-            hot_count += 1
-        if intel["recommended_action"] == "Call Today":
-            call_today_count += 1
-
-    # 2. Needs Reply logic
+    # 2. Needs Reply logic & Latest Msg
     subq = db.session.query(
         ConversationMessage.phone,
-        func.max(ConversationMessage.id).label('max_id')
+        func.max(ConversationMessage.id).label('max_id'),
+        func.max(ConversationMessage.created_at).label('max_created')
     ).group_by(ConversationMessage.phone).subquery()
     
-    latest_msgs = db.session.query(ConversationMessage.phone, ConversationMessage.direction).join(
+    latest_msgs = db.session.query(
+        ConversationMessage.phone, 
+        ConversationMessage.direction,
+        subq.c.max_created
+    ).join(
         subq, ConversationMessage.id == subq.c.max_id
     ).all()
     
     needs_reply_phones = {r.phone for r in latest_msgs if r.direction == 'incoming'}
     needs_reply_count = len(needs_reply_phones)
+    latest_msg_time = {r.phone: r.max_created for r in latest_msgs}
+
+    for state in all_states:
+        phone = state.phone
+        intel = calculate_lead_intelligence(state.lead_score, events_by_phone.get(phone, []))
+        
+        health = calculate_lead_health(
+            state.updated_at,
+            state.created_at,
+            latest_msg_time.get(phone),
+            latest_event_time.get(phone),
+            intel,
+            phone in needs_reply_phones
+        )
+        intel["_health"] = health
+        intelligence_cache[phone] = intel
+        
+        if intel["temperature"] == "HOT":
+            hot_count += 1
+        if intel["recommended_action"] == "Call Today":
+            call_today_count += 1
+        if health["aging_status"] == "Critical":
+            critical_count += 1
 
     # 3. Follow-up Due phones for badging
     pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
@@ -200,6 +267,7 @@ def crm_leads():
         call_today_count=call_today_count,
         pending_fu=pending_fu,
         needs_reply_count=needs_reply_count,
+        critical_count=critical_count,
         stages=stages,
         search=search,
         stage_filter=stage_filter,
@@ -309,8 +377,23 @@ def crm_lead_detail(phone):
     except Exception:
         events = []
 
-    # ── Phase 6B: Intelligence ──
+    # ── Phase 6B & 6F: Intelligence and Health ──
     intelligence = calculate_lead_intelligence(lead.lead_score, events)
+    
+    latest_msg = ConversationMessage.query.filter_by(phone=phone).order_by(ConversationMessage.created_at.desc()).first()
+    latest_msg_time = latest_msg.created_at if latest_msg else None
+    latest_event_time = events[-1].created_at if events else None
+    needs_reply = (latest_msg.direction == 'incoming') if latest_msg else False
+    
+    health = calculate_lead_health(
+        lead.updated_at,
+        lead.created_at,
+        latest_msg_time,
+        latest_event_time,
+        intelligence,
+        needs_reply
+    )
+    intelligence["_health"] = health
 
     # ── Phase 6E: Unified Timeline ──
     unified_timeline = []
