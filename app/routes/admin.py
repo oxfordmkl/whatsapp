@@ -554,6 +554,7 @@ def campaigns():
     
     from datetime import date
     from app.models import ConversationMessage
+    from app.extensions import db
     
     today = date.today()
     campaign_msgs = ConversationMessage.query.filter(
