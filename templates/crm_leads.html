@@ -82,6 +82,7 @@
     .icon-green  { background: rgba(37,211,102,0.12); color: var(--green); }
     .icon-blue   { background: rgba(88,166,255,0.12); color: var(--blue); }
     .icon-yellow { background: rgba(210,153,34,0.12); color: var(--yellow); }
+    .icon-red    { background: rgba(248,81,73,0.12); color: var(--red); }
 
     /* ── Filter Card ────────────────────────────────────────────── */
     .filter-card {
@@ -205,6 +206,21 @@
       color: var(--text-muted);
     }
 
+    /* ── Temperature Badges (Phase 6B) ── */
+    .temp-hot { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); font-size: 0.62rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; }
+    .temp-warm { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); font-size: 0.62rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; }
+    .temp-cold { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); font-size: 0.62rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; }
+
+    /* ── Action Badges (Phase 6C) ── */
+    .badge-action {
+      display: inline-flex; align-items: center; gap: 0.2rem;
+      font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+      padding: 0.15rem 0.4rem; border-radius: 4px; margin-top: 0.35rem; margin-right: 0.25rem;
+    }
+    .action-reply { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); }
+    .action-call  { background: rgba(37,211,102,0.15); color: var(--green); border: 1px solid rgba(37,211,102,0.3); }
+    .action-fu    { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+
     /* ── Score bar ──────────────────────────────────────────────── */
     .score-wrap { display: flex; align-items: center; gap: 0.4rem; min-width: 90px; }
     .score-bar {
@@ -294,32 +310,41 @@
 
   <div class="container-fluid px-3 px-md-4 py-4">
 
-    <!-- ── Metric Cards ────────────────────────────────────────── -->
+    <!-- ── Action Queue Metrics (Phase 6C) ─────────────────────── -->
     <div class="row g-3 mb-4">
-      <div class="col-6 col-md-4">
+      <div class="col-6 col-md-3">
         <div class="metric-card d-flex align-items-center gap-3">
-          <div class="metric-icon icon-green"><i class="bi bi-people-fill"></i></div>
+          <div class="metric-icon icon-red"><i class="bi bi-fire"></i></div>
           <div>
-            <div class="metric-label">Total Leads</div>
-            <div class="metric-value" style="color: var(--green);">{{ total_leads }}</div>
+            <div class="metric-label">HOT Leads</div>
+            <div class="metric-value" style="color: var(--red);">{{ hot_count }}</div>
           </div>
         </div>
       </div>
-      <div class="col-6 col-md-4">
+      <div class="col-6 col-md-3">
         <div class="metric-card d-flex align-items-center gap-3">
-          <div class="metric-icon icon-blue"><i class="bi bi-patch-check-fill"></i></div>
+          <div class="metric-icon icon-green"><i class="bi bi-telephone-fill"></i></div>
           <div>
-            <div class="metric-label">Admitted</div>
-            <div class="metric-value" style="color: var(--blue);">{{ admitted_count }}</div>
+            <div class="metric-label">Call Today</div>
+            <div class="metric-value" style="color: var(--green);">{{ call_today_count }}</div>
           </div>
         </div>
       </div>
-      <div class="col-12 col-md-4">
+      <div class="col-6 col-md-3">
         <div class="metric-card d-flex align-items-center gap-3">
           <div class="metric-icon icon-yellow"><i class="bi bi-clock-history"></i></div>
           <div>
-            <div class="metric-label">Pending Follow-ups</div>
+            <div class="metric-label">Follow-up Due</div>
             <div class="metric-value" style="color: var(--yellow);">{{ pending_fu }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="metric-card d-flex align-items-center gap-3">
+          <div class="metric-icon icon-blue"><i class="bi bi-chat-dots-fill"></i></div>
+          <div>
+            <div class="metric-label">Needs Reply</div>
+            <div class="metric-value" style="color: var(--blue);">{{ needs_reply_count }}</div>
           </div>
         </div>
       </div>
@@ -452,9 +477,21 @@
                 </a>
               </td>
 
-              <!-- Name -->
-              <td style="font-weight:500;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                {{ lead.name or '—' }}
+              <!-- Name and Badges -->
+              <td style="max-width:160px;">
+                <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  {{ lead.name or '—' }}
+                </div>
+                <!-- Priority Badges (Phase 6C) -->
+                <div>
+                  {% if lead.needs_reply %}
+                    <span class="badge-action action-reply"><i class="bi bi-chat-dots-fill"></i> Needs Reply</span>
+                  {% elif lead.intelligence and lead.intelligence.recommended_action == 'Call Today' %}
+                    <span class="badge-action action-call"><i class="bi bi-telephone-fill"></i> Call Today</span>
+                  {% elif lead.has_pending_fu %}
+                    <span class="badge-action action-fu"><i class="bi bi-clock-history"></i> Follow-up Due</span>
+                  {% endif %}
+                </div>
               </td>
 
               <!-- Stage -->
@@ -477,13 +514,24 @@
 
               <!-- Lead Score -->
               <td>
-                {% set score = lead.lead_score or 0 %}
+                {% set score = lead.intelligence.final_score if lead.intelligence else (lead.lead_score or 0) %}
                 <div class="score-wrap">
                   <div class="score-bar">
                     <div class="score-bar-fill" style="width: {{ [score, 100] | min }}%;"></div>
                   </div>
                   <span class="score-num">{{ score }}</span>
                 </div>
+                {% if lead.intelligence %}
+                  <div style="margin-top: 4px;">
+                  {% if lead.intelligence.temperature == 'HOT' %}
+                    <span class="temp-hot"><i class="bi bi-fire"></i> HOT</span>
+                  {% elif lead.intelligence.temperature == 'WARM' %}
+                    <span class="temp-warm">WARM</span>
+                  {% else %}
+                    <span class="temp-cold">COLD</span>
+                  {% endif %}
+                  </div>
+                {% endif %}
               </td>
 
               <!-- Assigned Staff -->

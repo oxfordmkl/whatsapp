@@ -5,6 +5,45 @@ from app.config import ADMIN_KEY
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
 
+EVENT_SCORE_MAP = {
+    "COURSE_VIEWED": 10,
+    "PLACEMENT_ASKED": 15,
+    "FEES_REQUESTED": 20,
+    "DEMO_REQUESTED": 25,
+    "PAYMENT_PENDING": 30
+}
+
+def calculate_lead_intelligence(manual_score, events):
+    unique_event_types = set(e.event_type for e in events)
+    auto_score = sum(EVENT_SCORE_MAP.get(et, 0) for et in unique_event_types)
+    final_score = min((manual_score or 0) + auto_score, 100)
+    
+    if final_score >= 80:
+        temperature = "HOT"
+    elif final_score >= 50:
+        temperature = "WARM"
+    else:
+        temperature = "COLD"
+        
+    if "PAYMENT_PENDING" in unique_event_types:
+        action = "Payment Follow-up"
+    elif "DEMO_REQUESTED" in unique_event_types:
+        action = "Send Demo"
+    elif "FEES_REQUESTED" in unique_event_types:
+        action = "Send Fees"
+    elif "PLACEMENT_ASKED" in unique_event_types:
+        action = "Discuss Placement"
+    elif final_score >= 80:
+        action = "Call Today"
+    else:
+        action = "Admission Follow-up"
+        
+    return {
+        "final_score": final_score,
+        "temperature": temperature,
+        "recommended_action": action
+    }
+
 admin_bp = Blueprint("admin", __name__)
 
 
@@ -100,12 +139,56 @@ def crm_leads():
     q = q.order_by(ConversationState.updated_at.desc())
     pagination = q.paginate(page=page, per_page=PAGE_SIZE, error_out=False)
 
-    # \u2500\u2500 Dashboard metrics \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    total_leads    = ConversationState.query.count()
-    admitted_count = ConversationState.query.filter_by(is_admitted=True).count()
-    pending_fu     = count_pending_followups()
+    # ── Dashboard metrics & Intelligence Cache (Phase 6C) ──────────────────
+    from app.models import LeadEvent, ConversationMessage, FollowUpJob
+    from sqlalchemy.sql import func
+    
+    total_leads = ConversationState.query.count()
+    pending_fu = count_pending_followups()
+    
+    # 1. Fetch all states and events for intelligence caching
+    all_states = db.session.query(ConversationState.phone, ConversationState.lead_score).all()
+    all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type).all()
+    
+    events_by_phone = {}
+    for e in all_events:
+        events_by_phone.setdefault(e.phone, []).append(e)
+        
+    hot_count = 0
+    call_today_count = 0
+    intelligence_cache = {}
 
-    # \u2500\u2500 All distinct stages for filter dropdown \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    for phone, lead_score in all_states:
+        intel = calculate_lead_intelligence(lead_score, events_by_phone.get(phone, []))
+        intelligence_cache[phone] = intel
+        if intel["temperature"] == "HOT":
+            hot_count += 1
+        if intel["recommended_action"] == "Call Today":
+            call_today_count += 1
+
+    # 2. Needs Reply logic
+    subq = db.session.query(
+        ConversationMessage.phone,
+        func.max(ConversationMessage.id).label('max_id')
+    ).group_by(ConversationMessage.phone).subquery()
+    
+    latest_msgs = db.session.query(ConversationMessage.phone, ConversationMessage.direction).join(
+        subq, ConversationMessage.id == subq.c.max_id
+    ).all()
+    
+    needs_reply_phones = {r.phone for r in latest_msgs if r.direction == 'incoming'}
+    needs_reply_count = len(needs_reply_phones)
+
+    # 3. Follow-up Due phones for badging
+    pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
+    pending_fu_phones = {j.phone for j in pending_jobs}
+
+    for lead in pagination.items:
+        lead.intelligence = intelligence_cache.get(lead.phone)
+        lead.needs_reply = lead.phone in needs_reply_phones
+        lead.has_pending_fu = lead.phone in pending_fu_phones
+
+    # ── All distinct stages for filter dropdown ──────────────────────────────────
     stages = [r[0] for r in db.session.query(ConversationState.stage).distinct().all() if r[0]]
 
     return render_template(
@@ -113,8 +196,10 @@ def crm_leads():
         pagination=pagination,
         leads=pagination.items,
         total_leads=total_leads,
-        admitted_count=admitted_count,
+        hot_count=hot_count,
+        call_today_count=call_today_count,
         pending_fu=pending_fu,
+        needs_reply_count=needs_reply_count,
         stages=stages,
         search=search,
         stage_filter=stage_filter,
@@ -224,6 +309,9 @@ def crm_lead_detail(phone):
     except Exception:
         events = []
 
+    # ── Phase 6B: Intelligence ──
+    intelligence = calculate_lead_intelligence(lead.lead_score, events)
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
@@ -237,6 +325,7 @@ def crm_lead_detail(phone):
         msg=request.args.get("msg", ""),
         err=request.args.get("err", ""),
         events=events,
+        intelligence=intelligence,
     )
 
 

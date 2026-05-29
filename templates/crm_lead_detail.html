@@ -151,6 +151,11 @@
       background: rgba(139,148,158,0.12); color: var(--text-muted);
     }
 
+    /* â”€â”€ Temperature Badges (Phase 6B) â”€â”€ */
+    .temp-hot { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; margin-left: 5px; }
+    .temp-warm { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; margin-left: 5px; }
+    .temp-cold { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; margin-left: 5px; }
+
     /* â”€â”€ Score bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .score-wrap { display: flex; align-items: center; gap: 0.5rem; }
     .score-bar {
@@ -519,15 +524,33 @@
           <div class="meta-item">
             <div class="meta-label">Lead Score</div>
             <div class="meta-value">
-              {% set score = lead.lead_score or 0 %}
+              {% set score = intelligence.final_score if intelligence else (lead.lead_score or 0) %}
               <div class="score-wrap">
                 <div class="score-bar">
                   <div class="score-bar-fill" style="width: {{ [score, 100] | min }}%;"></div>
                 </div>
-                <span>{{ score }} / 100</span>
+                <span>{{ score }}</span>
+                {% if intelligence %}
+                  {% if intelligence.temperature == 'HOT' %}
+                    <span class="temp-hot"><i class="bi bi-fire"></i> HOT</span>
+                  {% elif intelligence.temperature == 'WARM' %}
+                    <span class="temp-warm">WARM</span>
+                  {% else %}
+                    <span class="temp-cold">COLD</span>
+                  {% endif %}
+                {% endif %}
               </div>
             </div>
           </div>
+
+          {% if intelligence %}
+          <div class="meta-item">
+            <div class="meta-label">Next Action</div>
+            <div class="meta-value" style="color: var(--blue); font-weight: 600;">
+              <i class="bi bi-lightning-charge-fill me-1"></i>{{ intelligence.recommended_action }}
+            </div>
+          </div>
+          {% endif %}
 
           <div class="meta-item">
             <div class="meta-label">Admission</div>
