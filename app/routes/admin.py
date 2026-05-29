@@ -312,11 +312,22 @@ def crm_lead_detail(phone):
     # ── Phase 6B: Intelligence ──
     intelligence = calculate_lead_intelligence(lead.lead_score, events)
 
+    # ── Phase 6E: Unified Timeline ──
+    unified_timeline = []
+    for e in events:
+        unified_timeline.append({"type": "event", "created_at": e.created_at, "data": e})
+    for m in timeline:
+        unified_timeline.append({"type": "message", "created_at": m.created_at, "data": m})
+    
+    # Sort strictly by created_at ASC
+    unified_timeline.sort(key=lambda x: x["created_at"])
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
         logs=logs,
         timeline=timeline,
+        unified_timeline=unified_timeline,
         metrics=metrics,
         search_q=search_q,
         source_q=source_q,
