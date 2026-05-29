@@ -253,6 +253,24 @@
     }
     .btn-send:hover { background: rgba(88,166,255,0.25); }
 
+    /* ── Quick Reply Buttons (Phase 6D) ── */
+    .btn-qr {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      font-size: 0.72rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .btn-qr:hover {
+      background: rgba(88,166,255,0.1);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
     /* â”€â”€ Alert banners â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .alert-crm-success {
       background: rgba(37,211,102,0.1);
@@ -700,8 +718,20 @@
             </div>
 
             <form method="POST" action="/crm/lead/{{ lead.phone }}/send?key={{ key }}">
+              <!-- Quick Replies -->
+              <div class="mb-2">
+                <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Replies</div>
+                <div class="d-flex gap-2 flex-wrap mb-2" id="quick-replies">
+                  <button type="button" class="btn-qr" data-text="Hi {% if lead.name %}{{ lead.name }}{% else %}there{% endif %}, thank you for contacting Oxford Computers! How can we help you today?">Greeting</button>
+                  <button type="button" class="btn-qr" data-text="Our course fees vary based on the duration and subject. Could you let me know which specific course you are interested in?">Fees</button>
+                  <button type="button" class="btn-qr" data-text="You can attend a free demo class to see how we teach. Would you prefer a morning or evening batch?">Demo</button>
+                  <button type="button" class="btn-qr" data-text="Our office is located at Varam. Let me know when you plan to visit!">Location</button>
+                  <button type="button" class="btn-qr" data-text="Hi! Just following up to see if you have any questions regarding the admission process.">Follow-up</button>
+                </div>
+              </div>
+
               <textarea class="crm-input" name="manual_message" id="manual_message"
-                        placeholder="Type your message here…"
+                        placeholder="Type your message here..."
                         style="min-height: 140px;"></textarea>
 
               <div class="d-flex align-items-center gap-3 flex-wrap mt-3">
@@ -1002,5 +1032,19 @@
     if (waBox) {
       waBox.scrollTop = waBox.scrollHeight;
     }
+
+    // Quick Replies Logic
+    document.querySelectorAll('.btn-qr').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const textarea = document.getElementById('manual_message');
+        const text = this.getAttribute('data-text');
+        if (textarea.value) {
+          textarea.value += '\n\n' + text;
+        } else {
+          textarea.value = text;
+        }
+        textarea.focus();
+      });
+    });
   });
 </script>
