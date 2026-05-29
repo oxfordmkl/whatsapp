@@ -359,7 +359,7 @@
     .wa-timeline {
       display: flex;
       flex-direction: column;
-      gap: 0.6rem;
+      gap: 5px;
       padding: 0.75rem 0;
       max-height: 540px;
       overflow-y: auto;
@@ -367,82 +367,62 @@
     }
     .wa-row {
       display: flex;
-      align-items: flex-end;
-      gap: 0.5rem;
+      width: 100%;
     }
     .wa-row.incoming { justify-content: flex-start; }
     .wa-row.outgoing { justify-content: flex-end; }
     .wa-bubble {
-      max-width: 72%;
-      padding: 0.5rem 0.8rem 0.4rem;
+      width: fit-content;
+      max-width: 75%;
+      padding: 7px 10px;
+      font-size: 13px;
+      line-height: 1.45;
       border-radius: 14px;
-      font-size: 0.83rem;
-      line-height: 1.5;
+      box-shadow: none;
       word-break: break-word;
+      overflow-wrap: anywhere;
       white-space: pre-wrap;
       position: relative;
     }
     /* incoming — user — dark gray */
     .wa-bubble.bubble-user {
-      background: #2d333b;
-      border: 1px solid #444c56;
-      color: var(--text-main);
+      background: #444441;
+      color: #D3D1C7;
       border-bottom-left-radius: 4px;
     }
     /* outgoing — ai — green tint */
     .wa-bubble.bubble-ai {
-      background: rgba(37,211,102,0.11);
-      border: 1px solid rgba(37,211,102,0.2);
-      color: var(--text-main);
+      background: #639922;
+      color: #FFFFFF;
       border-bottom-right-radius: 4px;
     }
     /* outgoing — manual — blue tint */
     .wa-bubble.bubble-manual {
-      background: rgba(88,166,255,0.11);
-      border: 1px solid rgba(88,166,255,0.2);
-      color: var(--text-main);
+      background: #185FA5;
+      color: #FFFFFF;
       border-bottom-right-radius: 4px;
     }
     /* outgoing — followup — amber tint */
     .wa-bubble.bubble-followup {
-      background: rgba(210,153,34,0.11);
-      border: 1px solid rgba(210,153,34,0.2);
-      color: var(--text-main);
+      background: #BA7517;
+      color: #FFFFFF;
       border-bottom-right-radius: 4px;
     }
     /* outgoing — system — purple tint */
     .wa-bubble.bubble-system {
-      background: rgba(188,140,255,0.11);
-      border: 1px solid rgba(188,140,255,0.2);
-      color: var(--text-main);
+      background: #534AB7;
+      color: #FFFFFF;
       border-bottom-right-radius: 4px;
     }
     .wa-meta {
-      display: flex; align-items: center; gap: 0.4rem;
-      margin-bottom: 0.2rem; flex-wrap: wrap;
+      display: flex; 
+      justify-content: flex-end; 
+      align-items: center; 
+      gap: 5px;
+      margin-top: 3px;
+      font-size: 10px; 
+      opacity: 0.65;
     }
-    .wa-badge {
-      font-size: 0.62rem; font-weight: 700;
-      text-transform: uppercase; letter-spacing: 0.05em;
-      padding: 0.1em 0.45em; border-radius: 4px;
-    }
-    .badge-user     { background: rgba(139,148,158,0.2);  color: var(--text-muted); }
-    .badge-ai       { background: rgba(37,211,102,0.18);  color: var(--green); }
-    .badge-manual   { background: rgba(88,166,255,0.18);  color: var(--blue); }
-    .badge-followup { background: rgba(210,153,34,0.18);  color: var(--yellow); }
-    .badge-system   { background: rgba(188,140,255,0.18); color: var(--purple); }
-    .wa-time {
-      font-size: 0.65rem; color: var(--text-muted);
-      display: block; margin-top: 0.22rem;
-      text-align: right;
-    }
-    .wa-avatar {
-      width: 26px; height: 26px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.7rem; flex-shrink: 0;
-    }
-    .avatar-user { background: rgba(139,148,158,0.18); color: var(--text-muted); }
-    .avatar-out  { background: rgba(37,211,102,0.13);  color: var(--green); }
     /* debug details block */
     details.debug-tl summary {
       cursor: pointer;
@@ -453,7 +433,8 @@
     }
     details.debug-tl summary:hover { color: var(--text-main); }
     details.debug-tl[open] { border-top: 1px solid var(--border); }
-    @media (max-width: 600px) { .wa-bubble { max-width: 88%; } }
+    @media (max-width: 768px) { .wa-bubble { max-width: 85%; } }
+    @media (max-width: 480px) { .wa-bubble { max-width: 92%; } }
   </style>
 </head>
 <body>
@@ -809,16 +790,14 @@
 
       <!-- â”€â”€ Phase 5C: Search & Filter Toolbar â”€â”€ -->
       <div class="crm-card-body p-3" style="border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.1);">
-        <form method="GET" action="/crm/lead/{{ lead.phone }}" class="row g-2 align-items-end">
+        <form method="GET" action="/crm/lead/{{ lead.phone }}" class="row g-2 align-items-center">
           <input type="hidden" name="key" value="{{ key }}">
           
-          <div class="col-12 col-md-4">
-            <label class="form-label-crm">Search Messages</label>
+          <div class="col-12 col-md-5">
             <input type="text" name="search" class="crm-input" placeholder="Keyword..." value="{{ search_q }}">
           </div>
           
           <div class="col-6 col-md-3">
-            <label class="form-label-crm">Source</label>
             <select name="source" class="crm-input">
               <option value="all" {% if source_q == 'all' %}selected{% endif %}>All Sources</option>
               <option value="user" {% if source_q == 'user' %}selected{% endif %}>User</option>
@@ -829,8 +808,7 @@
             </select>
           </div>
           
-          <div class="col-6 col-md-3">
-            <label class="form-label-crm">Date Range</label>
+          <div class="col-6 col-md-2">
             <select name="range" class="crm-input">
               <option value="all" {% if range_q == 'all' %}selected{% endif %}>All Time</option>
               <option value="today" {% if range_q == 'today' %}selected{% endif %}>Today</option>
@@ -900,18 +878,7 @@
           {% endif %}
 
           <div class="wa-row {{ row_cls }}">
-            {% if row_cls == 'incoming' %}
-            <div class="wa-avatar {{ av_cls }}"><i class="bi {{ av_icon }}"></i></div>
-            {% endif %}
-
             <div class="wa-bubble {{ bubble_cls }}">
-              <div class="wa-meta">
-                <span class="wa-badge {{ badge_cls }}">{{ label }}</span>
-                {% if msg.staff_name %}
-                <span style="font-size:0.68rem;color:var(--text-muted);">{{ msg.staff_name }}</span>
-                {% endif %}
-              </div>
-              
               {# Safely highlight search terms in Jinja only #}
               {% set safe_msg = ((msg.message or '').strip() or '&mdash;') | e %}
               {% if search_q %}
@@ -921,14 +888,12 @@
                 {{ safe_msg | safe }}
               {% endif %}
 
-              <span class="wa-time">
-                {% if msg.created_at %}{{ msg.created_at.strftime('%d %b, %H:%M') }}{% endif %}
-              </span>
+              <div class="wa-meta">
+                <span>{{ label }}{% if msg.staff_name %} ({{ msg.staff_name }}){% endif %}</span>
+                <span>&bull;</span>
+                <span>{% if msg.created_at %}{{ msg.created_at.strftime('%H:%M') }}{% endif %}</span>
+              </div>
             </div>
-
-            {% if row_cls == 'outgoing' %}
-            <div class="wa-avatar {{ av_cls }}"><i class="bi {{ av_icon }}"></i></div>
-            {% endif %}
           </div>
 
           {% endfor %}
@@ -1006,3 +971,13 @@
 
 </body>
 </html>
+
+<!-- Auto-scroll JS for Timeline -->
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const waBox = document.getElementById('wa-timeline-box');
+    if (waBox) {
+      waBox.scrollTop = waBox.scrollHeight;
+    }
+  });
+</script>
