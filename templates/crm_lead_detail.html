@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lead â€” {{ lead.name or lead.phone }} Â· Oxford CRM</title>
+  <title>Lead — {{ lead.name or lead.phone }} · Oxford CRM</title>
   <meta name="description" content="CRM lead detail panel for Oxford Computers WhatsApp AI system.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -382,35 +382,35 @@
       white-space: pre-wrap;
       position: relative;
     }
-    /* incoming â€” user â€” dark gray */
+    /* incoming — user — dark gray */
     .wa-bubble.bubble-user {
       background: #2d333b;
       border: 1px solid #444c56;
       color: var(--text-main);
       border-bottom-left-radius: 4px;
     }
-    /* outgoing â€” ai â€” green tint */
+    /* outgoing — ai — green tint */
     .wa-bubble.bubble-ai {
       background: rgba(37,211,102,0.11);
       border: 1px solid rgba(37,211,102,0.2);
       color: var(--text-main);
       border-bottom-right-radius: 4px;
     }
-    /* outgoing â€” manual â€” blue tint */
+    /* outgoing — manual — blue tint */
     .wa-bubble.bubble-manual {
       background: rgba(88,166,255,0.11);
       border: 1px solid rgba(88,166,255,0.2);
       color: var(--text-main);
       border-bottom-right-radius: 4px;
     }
-    /* outgoing â€” followup â€” amber tint */
+    /* outgoing — followup — amber tint */
     .wa-bubble.bubble-followup {
       background: rgba(210,153,34,0.11);
       border: 1px solid rgba(210,153,34,0.2);
       color: var(--text-main);
       border-bottom-right-radius: 4px;
     }
-    /* outgoing â€” system â€” purple tint */
+    /* outgoing — system — purple tint */
     .wa-bubble.bubble-system {
       background: rgba(188,140,255,0.11);
       border: 1px solid rgba(188,140,255,0.2);
@@ -498,11 +498,11 @@
 
           <!-- Name + Phone -->
           <div class="flex-grow-1">
-            <div class="lead-name">{{ lead.name or 'â€”' }}</div>
+            <div class="lead-name">{{ lead.name or '—' }}</div>
             <div class="lead-phone mt-1">{{ lead.phone }}</div>
           </div>
 
-          <!-- WA Button â€” digits-only normalized link -->
+          <!-- WA Button — digits-only normalized link -->
           {% set wa_phone = lead.phone | string | replace(' ', '') | replace('+', '') | replace('-', '') %}
           <a href="https://wa.me/{{ wa_phone }}" target="_blank" rel="noopener" class="btn-wa">
             <i class="bi bi-whatsapp"></i>Open Chat
@@ -517,7 +517,7 @@
             <div class="meta-value">
               {% if lead.stage %}
               <span class="badge-stage">{{ lead.stage }}</span>
-              {% else %}â€”{% endif %}
+              {% else %}—{% endif %}
             </div>
           </div>
 
@@ -526,13 +526,13 @@
             <div class="meta-value">
               {% if lead.lead_status %}
               <span class="badge-status">{{ lead.lead_status }}</span>
-              {% else %}â€”{% endif %}
+              {% else %}—{% endif %}
             </div>
           </div>
 
           <div class="meta-item">
             <div class="meta-label">Assigned Staff</div>
-            <div class="meta-value">{{ lead.assigned_staff or 'â€”' }}</div>
+            <div class="meta-value">{{ lead.assigned_staff or '—' }}</div>
           </div>
 
           <div class="meta-item">
@@ -561,7 +561,7 @@
 
           <div class="meta-item">
             <div class="meta-label">Course Interest</div>
-            <div class="meta-value">{{ lead.course or 'â€”' }}</div>
+            <div class="meta-value">{{ lead.course or '—' }}</div>
           </div>
 
           <div class="meta-item">
@@ -569,7 +569,7 @@
             <div class="meta-value" style="color: var(--text-muted); font-size: 0.8rem;">
               {% if lead.updated_at %}
               {{ lead.updated_at.strftime('%d %b %Y, %H:%M') }}
-              {% else %}â€”{% endif %}
+              {% else %}—{% endif %}
             </div>
           </div>
 
@@ -578,7 +578,7 @@
             <div class="meta-value" style="color: var(--text-muted); font-size: 0.8rem;">
               {% if lead.created_at %}
               {{ lead.created_at.strftime('%d %b %Y, %H:%M') }}
-              {% else %}â€”{% endif %}
+              {% else %}—{% endif %}
             </div>
           </div>
 
@@ -623,7 +623,7 @@
               <div class="mb-3">
                 <label class="form-label-crm" for="assigned_staff">Assigned Staff</label>
                 <input type="text" class="crm-input" name="assigned_staff" id="assigned_staff"
-                       placeholder="Staff nameâ€¦"
+                       placeholder="Staff name…"
                        value="{{ lead.assigned_staff or '' }}">
               </div>
 
@@ -631,7 +631,7 @@
               <div class="mb-3">
                 <label class="form-label-crm" for="lead_score">
                   Lead Score
-                  <span style="color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0;">(0 â€“ 100)</span>
+                  <span style="color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0;">(0 – 100)</span>
                 </label>
                 <input type="number" class="crm-input" name="lead_score" id="lead_score"
                        min="0" max="100" step="1"
@@ -665,7 +665,7 @@
               <div class="mb-4">
                 <label class="form-label-crm" for="notes">Notes</label>
                 <textarea class="crm-input" name="notes" id="notes"
-                          placeholder="Internal CRM notesâ€¦">{{ lead.notes or '' }}</textarea>
+                          placeholder="Internal CRM notes…">{{ lead.notes or '' }}</textarea>
               </div>
 
               <button type="submit" class="btn-save">
@@ -697,7 +697,7 @@
 
             <form method="POST" action="/crm/lead/{{ lead.phone }}/send?key={{ key }}">
               <textarea class="crm-input" name="manual_message" id="manual_message"
-                        placeholder="Type your message hereâ€¦"
+                        placeholder="Type your message here…"
                         style="min-height: 140px;"></textarea>
 
               <div class="d-flex align-items-center gap-3 flex-wrap mt-3">
