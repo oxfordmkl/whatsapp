@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -879,6 +879,62 @@
         {% endif %}
       </div>
     </div><!-- /lead journey -->
+
+
+    <!-- ── Phase 7E: Course Journey ── -->
+    {% if course_journey and (course_journey.enquiries or course_journey.admissions) %}
+    <div class="crm-card mt-3">
+      <div class="crm-card-header">
+        <i class="bi bi-mortarboard-fill"></i>Course Journey
+        <span style="margin-left: auto; font-size: 0.7rem; font-weight: 400; color: var(--text-muted);">
+          Derived from event history &middot; read-only
+        </span>
+      </div>
+      <div class="crm-card-body p-3">
+        <div class="row g-3">
+
+          <!-- Course Enquiries -->
+          <div class="col-12 col-md-6">
+            <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.6rem;">
+              <i class="bi bi-search me-1"></i>Course Enquiries
+            </div>
+            {% if course_journey.enquiries %}
+              <div class="d-flex flex-column gap-2">
+                {% for course in course_journey.enquiries %}
+                <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(88,166,255,0.06); border: 1px solid rgba(88,166,255,0.15); border-radius: 8px; padding: 0.4rem 0.75rem;">
+                  <i class="bi bi-check-circle-fill" style="color: var(--blue); font-size: 0.8rem; flex-shrink: 0;"></i>
+                  <span style="font-size: 0.83rem; font-weight: 500; color: var(--text-main);">{{ course }}</span>
+                </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">No course enquiries recorded yet.</div>
+            {% endif %}
+          </div>
+
+          <!-- Course Admissions -->
+          <div class="col-12 col-md-6">
+            <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.6rem;">
+              <i class="bi bi-patch-check-fill me-1"></i>Course Admissions
+            </div>
+            {% if course_journey.admissions %}
+              <div class="d-flex flex-column gap-2">
+                {% for course in course_journey.admissions %}
+                <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(37,211,102,0.07); border: 1px solid rgba(37,211,102,0.2); border-radius: 8px; padding: 0.4rem 0.75rem;">
+                  <i class="bi bi-patch-check-fill" style="color: var(--green); font-size: 0.8rem; flex-shrink: 0;"></i>
+                  <span style="font-size: 0.83rem; font-weight: 600; color: var(--green);">{{ course }}</span>
+                </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">No course admissions recorded yet.</div>
+            {% endif %}
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /course journey -->
+    {% endif %}
 
 
     <!-- â”€â”€ WhatsApp Conversation History (Legacy Phase 5B) â”€â”€ -->

@@ -16,6 +16,73 @@ EVENT_SCORE_MAP = {
     "PAYMENT_PENDING": 30
 }
 
+
+# ── Phase 7E: Course Journey helpers ───────────────────────────────────────
+
+def get_course_enquiries(phone: str) -> list:
+    """
+    Return deduplicated list of course names for which a COURSE_ENQUIRY
+    event exists for this phone. Returns [] on any error or empty table.
+
+    event_data is a JSON string: '{"course": "Python Programming"}'
+    """
+    import json
+    try:
+        from app.models import LeadEvent
+        events = (
+            LeadEvent.query
+            .filter_by(phone=phone, event_type="COURSE_ENQUIRY")
+            .order_by(LeadEvent.created_at.asc())
+            .all()
+        )
+        seen = set()
+        result = []
+        for e in events:
+            try:
+                data = json.loads(e.event_data or "{}")
+                course = (data.get("course") or "").strip()
+            except (ValueError, TypeError):
+                continue
+            if course and course.lower() not in seen:
+                seen.add(course.lower())
+                result.append(course)
+        return result
+    except Exception:
+        return []
+
+
+def get_course_admissions(phone: str) -> list:
+    """
+    Return deduplicated list of course names for which a COURSE_ADMISSION
+    event exists for this phone. Returns [] on any error or empty table.
+
+    event_data is a JSON string: '{"course": "Python Programming"}'
+    """
+    import json
+    try:
+        from app.models import LeadEvent
+        events = (
+            LeadEvent.query
+            .filter_by(phone=phone, event_type="COURSE_ADMISSION")
+            .order_by(LeadEvent.created_at.asc())
+            .all()
+        )
+        seen = set()
+        result = []
+        for e in events:
+            try:
+                data = json.loads(e.event_data or "{}")
+                course = (data.get("course") or "").strip()
+            except (ValueError, TypeError):
+                continue
+            if course and course.lower() not in seen:
+                seen.add(course.lower())
+                result.append(course)
+        return result
+    except Exception:
+        return []
+
+
 def calculate_lead_intelligence(manual_score, events):
     unique_event_types = set(e.event_type for e in events)
     auto_score = sum(EVENT_SCORE_MAP.get(et, 0) for et in unique_event_types)
@@ -493,6 +560,12 @@ def crm_lead_detail(phone):
     # Sort strictly by created_at ASC
     unified_timeline.sort(key=lambda x: x["created_at"])
 
+    # ── Phase 7E: Course Journey (derived from event history) ───────────────
+    course_journey = {
+        "enquiries":  get_course_enquiries(phone),
+        "admissions": get_course_admissions(phone),
+    }
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
@@ -508,6 +581,7 @@ def crm_lead_detail(phone):
         err=request.args.get("err", ""),
         events=events,
         intelligence=intelligence,
+        course_journey=course_journey,
     )
 
 
@@ -541,12 +615,56 @@ def crm_lead_update(phone):
         if score_raw.isdigit():
             lead.lead_score = max(0, min(100, int(score_raw)))
 
-        lead.is_admitted = request.form.get("is_admitted") == "1"
+        # ── Snapshot values before commit for post-commit event firing ──
+        new_course    = (lead.course or "").strip()
+        new_admitted  = request.form.get("is_admitted") == "1"
+        lead.is_admitted = new_admitted
 
         db.session.commit()
+
+        # ── Phase 7E: Fire course events AFTER successful commit ──────────
+        # Uses existing log_lead_event() which is already safe / never-raises.
+        import json
+        from app.services.log_service import log_lead_event
+        from app.models import LeadEvent
+
+        # COURSE_ENQUIRY — fire once per unique course name.
+        if new_course:
+            existing_enquiry = LeadEvent.query.filter_by(
+                phone=phone, event_type="COURSE_ENQUIRY"
+            ).all()
+            already_logged = {
+                (json.loads(e.event_data or "{}").get("course") or "").strip().lower()
+                for e in existing_enquiry
+                if e.event_data
+            }
+            if new_course.lower() not in already_logged:
+                log_lead_event(
+                    phone=phone,
+                    event_type="COURSE_ENQUIRY",
+                    event_data=json.dumps({"course": new_course}),
+                )
+
+        # COURSE_ADMISSION — fire once per unique admitted course name.
+        if new_admitted and new_course:
+            existing_admission = LeadEvent.query.filter_by(
+                phone=phone, event_type="COURSE_ADMISSION"
+            ).all()
+            already_admitted = {
+                (json.loads(e.event_data or "{}").get("course") or "").strip().lower()
+                for e in existing_admission
+                if e.event_data
+            }
+            if new_course.lower() not in already_admitted:
+                log_lead_event(
+                    phone=phone,
+                    event_type="COURSE_ADMISSION",
+                    event_data=json.dumps({"course": new_course}),
+                )
+
     except Exception as e:
         db.session.rollback()
-        
+
     return redirect(url_for("admin.crm_lead_detail", phone=phone, key=ADMIN_KEY))
 
 # ── Phase 6G: Campaigns ──
