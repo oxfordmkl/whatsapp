@@ -546,9 +546,7 @@ def crm_lead_update(phone):
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        flash(f"Error resetting intelligence: {str(e)}", "danger")
         
-    flash(f"Recalculated intelligence for lead {phone}.", "success")
     return redirect(url_for("admin.crm_lead_detail", phone=phone, key=ADMIN_KEY))
 
 # ── Phase 6G: Campaigns ──
