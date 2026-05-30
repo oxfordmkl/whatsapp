@@ -6,7 +6,7 @@ from app.bot.router import smart_reply
 from app.services.whatsapp_service import send_reply
 from app.services.crm_service import save_lead_to_sheets
 from app.services.followup_service import schedule_followups
-from app.services.log_service import log_message_in_thread, save_conversation_message_in_thread
+from app.services.log_service import log_message_in_thread, save_conversation_message_in_thread, log_lead_event_in_thread
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -66,6 +66,18 @@ def receive_message():
 
         # Capture app ref once in request context — safe to pass to daemon threads
         _app = current_app._get_current_object()
+
+        if is_new_lead:
+            threading.Thread(
+                target=log_lead_event_in_thread,
+                kwargs=dict(app=_app, phone=from_number, event_type="LEAD_CREATED"),
+                daemon=True,
+            ).start()
+            threading.Thread(
+                target=log_lead_event_in_thread,
+                kwargs=dict(app=_app, phone=from_number, event_type="FIRST_MESSAGE_RECEIVED"),
+                daemon=True,
+            ).start()
 
         # ── Log inbound user message (MessageLog daemon thread) ──
         threading.Thread(
@@ -130,6 +142,13 @@ def receive_message():
             ),
             daemon=True,
         ).start()
+
+        if is_new_lead:
+            threading.Thread(
+                target=log_lead_event_in_thread,
+                kwargs=dict(app=_app, phone=from_number, event_type="AI_RESPONSE_SENT"),
+                daemon=True,
+            ).start()
 
         # ── Schedule follow-ups for new leads ──
         if is_new_lead:

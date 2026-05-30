@@ -6,6 +6,9 @@ from app.state import count_states, count_pending_followups, get_all_states, get
 from app.services.whatsapp_service import send_text
 
 EVENT_SCORE_MAP = {
+    "LEAD_CREATED": 2,
+    "FIRST_MESSAGE_RECEIVED": 3,
+    "AI_RESPONSE_SENT": 5,
     "COURSE_VIEWED": 10,
     "PLACEMENT_ASKED": 15,
     "FEES_REQUESTED": 20,
@@ -35,6 +38,8 @@ def calculate_lead_intelligence(manual_score, events):
         action = "Discuss Placement"
     elif final_score >= 80:
         action = "Call Today"
+    elif "LEAD_CREATED" in unique_event_types and final_score <= 15:
+        action = "Qualify Lead"
     else:
         action = "Admission Follow-up"
         
@@ -685,3 +690,386 @@ def crm_lead_send(phone):
     except Exception:
         logging.exception(f"Manual WhatsApp send failed for {phone}")
         return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error{qs}")
+
+
+
+# ── Phase 7A: Funnel Analytics ──
+
+def calculate_funnel_metrics():
+    from app.models import LeadEvent, ConversationState
+    from app.extensions import db
+
+    # Bulk queries (Max 1 LeadEvent, 1 ConversationState)
+    events = db.session.query(LeadEvent.phone, LeadEvent.event_type).all()
+    states = db.session.query(ConversationState.phone, ConversationState.is_admitted).all()
+
+    stages = {
+        "LEAD_CREATED": set(),
+        "COURSE_VIEWED": set(),
+        "FEES_REQUESTED": set(),
+        "DEMO_REQUESTED": set(),
+        "PAYMENT_PENDING": set()
+    }
+
+    # Deduplicate events per phone
+    for phone, event_type in events:
+        if event_type in stages:
+            stages[event_type].add(phone)
+
+    admitted_phones = set()
+    total_leads_phones = set()
+
+    for phone, is_admitted in states:
+        total_leads_phones.add(phone)
+        if is_admitted:
+            admitted_phones.add(phone)
+
+    # Some leads might have LEAD_CREATED event but not be in ConversationState if DB is out of sync,
+    # but the prompt states "Stage 1: LEAD_CREATED" and "100 Leads". We will use ConversationState for Total Leads
+    # to be completely accurate for "Admissions" vs "Total Leads".
+    # Wait, the rule says "A lead contributes only once per stage."
+    
+    # Calculate counts
+    total_leads = len(total_leads_phones)
+    c_created = len(stages["LEAD_CREATED"]) 
+    # For safety, if LEAD_CREATED event wasn't fired historically, total_leads is more reliable for Stage 1. 
+    # But prompt explicitly says: "Stage 1: LEAD_CREATED"
+    c_created = max(c_created, total_leads) # Fallback if events are missing but states exist
+
+    c_course = len(stages["COURSE_VIEWED"])
+    c_fees = len(stages["FEES_REQUESTED"])
+    c_demo = len(stages["DEMO_REQUESTED"])
+    c_payment = len(stages["PAYMENT_PENDING"])
+    c_admitted = len(admitted_phones)
+
+    metrics = {
+        "total_leads": total_leads,
+        "course_viewed": c_course,
+        "fees_requested": c_fees,
+        "demo_requested": c_demo,
+        "payment_pending": c_payment,
+        "admitted": c_admitted
+    }
+
+    # Funnel sequence
+    sequence = [
+        ("Lead Created", c_created),
+        ("Course Viewed", c_course),
+        ("Fees Requested", c_fees),
+        ("Demo Requested", c_demo),
+        ("Payment Pending", c_payment),
+        ("Admitted", c_admitted)
+    ]
+
+    funnel = []
+    prev_count = c_created
+    bottleneck = {"stage1": "", "stage2": "", "drop": -1, "drop_pct": 0}
+
+    for name, count in sequence:
+        pct = (count / prev_count * 100) if prev_count > 0 else 0
+        drop = prev_count - count
+        
+        if name != "Lead Created":
+            if drop > bottleneck["drop"]:
+                bottleneck = {
+                    "stage1": funnel[-1]["name"],
+                    "stage2": name,
+                    "drop": drop,
+                    "drop_pct": round((100 - pct), 1) if prev_count > 0 else 0
+                }
+                
+        funnel.append({
+            "name": name,
+            "count": count,
+            "percentage": round(pct, 1) if name != "Lead Created" else 100.0
+        })
+        prev_count = count
+
+    return {
+        "metrics": metrics,
+        "funnel": funnel,
+        "bottleneck": bottleneck,
+        "conversion_rate": round((c_admitted / total_leads * 100) if total_leads > 0 else 0, 1)
+    }
+
+@admin_bp.route("/crm/analytics", methods=["GET"])
+def crm_analytics():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    data = calculate_funnel_metrics()
+    
+    return render_template(
+        "crm_analytics.html",
+        key=request.args.get("key", ""),
+        data=data
+    )
+
+
+
+
+# ── Phase 7B: Staff Performance ──
+
+def calculate_staff_performance():
+    from app.models import ConversationState, LeadEvent, ConversationMessage
+    try:
+        from app.models import FollowUpJob
+    except ImportError:
+        FollowUpJob = None
+    from app.extensions import db
+
+    # Bulk queries (Max 1 each)
+    states = db.session.query(
+        ConversationState.phone,
+        ConversationState.assigned_staff,
+        ConversationState.is_admitted,
+        ConversationState.lead_score
+    ).all()
+    
+    events = db.session.query(
+        LeadEvent.phone, 
+        LeadEvent.event_type
+    ).all()
+    
+    msgs = db.session.query(
+        ConversationMessage.phone,
+        ConversationMessage.direction,
+        ConversationMessage.created_at
+    ).all()
+
+    # FollowUpJob query for "Follow-up due count"
+    pending_fu_phones = set()
+    if FollowUpJob:
+        pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
+        pending_fu_phones = {j.phone for j in pending_jobs}
+
+    events_by_phone = {}
+    for p, et in events:
+        events_by_phone.setdefault(p, set()).add(et)
+        
+    latest_msg = {}
+    for p, d, c in msgs:
+        if p not in latest_msg or c > latest_msg[p][1]:
+            latest_msg[p] = (d, c)
+            
+    needs_reply_phones = {p for p, (d, c) in latest_msg.items() if d == 'incoming'}
+
+    staff_stats = {}
+    total_staff = set()
+    total_assigned_leads = 0
+    total_admissions = 0
+    
+    for phone, assigned_staff, is_admitted, lead_score in states:
+        if not assigned_staff:
+            continue
+            
+        staff = assigned_staff
+        total_staff.add(staff)
+        
+        if staff not in staff_stats:
+            staff_stats[staff] = {
+                "assigned_leads": 0,
+                "admissions": 0,
+                "total_score": 0,
+                "hot_leads": 0,
+                "warm_leads": 0,
+                "cold_leads": 0,
+                "needs_reply": 0,
+                "follow_up_due": 0
+            }
+            
+        st = staff_stats[staff]
+        st["assigned_leads"] += 1
+        total_assigned_leads += 1
+        
+        if is_admitted:
+            st["admissions"] += 1
+            total_admissions += 1
+            
+        st["total_score"] += (lead_score or 0)
+        
+        unique_event_types = events_by_phone.get(phone, set())
+        auto_score = sum(EVENT_SCORE_MAP.get(et, 0) for et in unique_event_types)
+        final_score = min((lead_score or 0) + auto_score, 100)
+        
+        if final_score >= 80:
+            st["hot_leads"] += 1
+        elif final_score >= 50:
+            st["warm_leads"] += 1
+        else:
+            st["cold_leads"] += 1
+            
+        if phone in needs_reply_phones:
+            st["needs_reply"] += 1
+            
+        if phone in pending_fu_phones:
+            st["follow_up_due"] += 1
+
+    leaderboard = []
+    for staff, data in staff_stats.items():
+        assigned = data["assigned_leads"]
+        adm = data["admissions"]
+        conversion = round((adm / assigned * 100) if assigned > 0 else 0, 1)
+        
+        # Calculate Average Lead Score properly. 
+        # Lead score conceptually applies to the whole pipeline. 
+        # Wait, the total_score right now only aggregates manual score. Auto score needs to be included.
+        # Let's fix that below.
+        pass
+        
+    # Re-evaluating average score to include auto score
+    for staff, data in staff_stats.items():
+        pass
+        
+    leaderboard = []
+    for staff, data in staff_stats.items():
+        assigned = data["assigned_leads"]
+        adm = data["admissions"]
+        conversion = round((adm / assigned * 100) if assigned > 0 else 0, 1)
+        
+        # Avg Lead score needs to be derived. 
+        # But wait, final_score is per lead. I need to aggregate it.
+        # Let's keep a running sum of final_score in st["total_final_score"]
+        pass
+
+    return staff_stats, total_staff, total_assigned_leads, total_admissions
+
+def calculate_staff_performance_fixed():
+    from app.models import ConversationState, LeadEvent, ConversationMessage
+    try:
+        from app.models import FollowUpJob
+    except ImportError:
+        FollowUpJob = None
+    from app.extensions import db
+
+    # Bulk queries
+    states = db.session.query(
+        ConversationState.phone,
+        ConversationState.assigned_staff,
+        ConversationState.is_admitted,
+        ConversationState.lead_score
+    ).all()
+    
+    events = db.session.query(LeadEvent.phone, LeadEvent.event_type).all()
+    
+    msgs = db.session.query(
+        ConversationMessage.phone,
+        ConversationMessage.direction,
+        ConversationMessage.created_at
+    ).all()
+
+    pending_fu_phones = set()
+    if FollowUpJob:
+        pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
+        pending_fu_phones = {j.phone for j in pending_jobs}
+
+    events_by_phone = {}
+    for p, et in events:
+        events_by_phone.setdefault(p, set()).add(et)
+        
+    latest_msg = {}
+    for p, d, c in msgs:
+        if p not in latest_msg or c > latest_msg[p][1]:
+            latest_msg[p] = (d, c)
+            
+    needs_reply_phones = {p for p, (d, c) in latest_msg.items() if d == 'incoming'}
+
+    staff_stats = {}
+    total_staff = set()
+    total_assigned_leads = 0
+    total_admissions = 0
+    
+    for phone, assigned_staff, is_admitted, lead_score in states:
+        if not assigned_staff:
+            continue
+            
+        staff = assigned_staff
+        total_staff.add(staff)
+        
+        if staff not in staff_stats:
+            staff_stats[staff] = {
+                "assigned_leads": 0,
+                "admissions": 0,
+                "total_final_score": 0,
+                "hot_leads": 0,
+                "warm_leads": 0,
+                "cold_leads": 0,
+                "needs_reply": 0,
+                "follow_up_due": 0
+            }
+            
+        st = staff_stats[staff]
+        st["assigned_leads"] += 1
+        total_assigned_leads += 1
+        
+        if is_admitted:
+            st["admissions"] += 1
+            total_admissions += 1
+            
+        unique_event_types = events_by_phone.get(phone, set())
+        auto_score = sum(EVENT_SCORE_MAP.get(et, 0) for et in unique_event_types)
+        final_score = min((lead_score or 0) + auto_score, 100)
+        
+        st["total_final_score"] += final_score
+        
+        if final_score >= 80:
+            st["hot_leads"] += 1
+        elif final_score >= 50:
+            st["warm_leads"] += 1
+        else:
+            st["cold_leads"] += 1
+            
+        if phone in needs_reply_phones:
+            st["needs_reply"] += 1
+            
+        if phone in pending_fu_phones:
+            st["follow_up_due"] += 1
+
+    leaderboard = []
+    for staff, data in staff_stats.items():
+        assigned = data["assigned_leads"]
+        adm = data["admissions"]
+        conversion = round((adm / assigned * 100) if assigned > 0 else 0, 1)
+        avg_score = round((data["total_final_score"] / assigned) if assigned > 0 else 0, 1)
+        
+        leaderboard.append({
+            "name": staff,
+            "assigned_leads": assigned,
+            "admissions": adm,
+            "conversion": conversion,
+            "avg_score": avg_score,
+            "hot_leads": data["hot_leads"],
+            "warm_leads": data["warm_leads"],
+            "cold_leads": data["cold_leads"],
+            "needs_reply": data["needs_reply"],
+            "follow_up_due": data["follow_up_due"]
+        })
+        
+    leaderboard.sort(key=lambda x: (x["admissions"], x["conversion"]), reverse=True)
+    
+    overall_conversion = round((total_admissions / total_assigned_leads * 100) if total_assigned_leads > 0 else 0, 1)
+    
+    team_summary = {
+        "total_staff": len(total_staff),
+        "total_assigned_leads": total_assigned_leads,
+        "total_admissions": total_admissions,
+        "overall_conversion": overall_conversion
+    }
+    
+    return {
+        "leaderboard": leaderboard,
+        "team_summary": team_summary
+    }
+
+@admin_bp.route("/crm/staff-performance", methods=["GET"])
+def crm_staff_performance():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    data = calculate_staff_performance_fixed()
+    
+    return render_template(
+        "crm_staff_performance.html",
+        key=request.args.get("key", ""),
+        data=data
+    )
