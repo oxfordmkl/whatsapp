@@ -1071,3 +1071,129 @@ def crm_staff_performance():
         key=request.args.get("key", ""),
         data=data
     )
+
+
+# ── Phase 7C: Source Analytics ─────────────────────────────────────────────
+
+# Website-indicator keywords checked against the first message text.
+_WEBSITE_KEYWORDS = (
+    "utm_", "landing", "webform",
+    "course-details",
+    "theoxfordedu.com",
+)
+
+def calculate_source_analytics():
+    """
+    Read-only lead source attribution analytics.
+
+    Strategy:
+    - Bulk query 1: ConversationState  (phone, is_admitted)
+    - Bulk query 2: ConversationMessage (phone, source, message, created_at)
+    - All attribution and aggregation done in Python memory.
+    - Zero N+1 queries. Zero ORM loops.
+
+    Source Priority (evaluated against EARLIEST message per phone):
+        1. Campaign  — source == "campaign"
+        2. Manual CRM — source == "manual"
+        3. Website   — source == "user" AND message contains website keyword
+        4. WhatsApp Direct — source == "user" AND no website keyword
+        5. Unknown   — no messages found for phone
+    """
+    from app.models import ConversationState, ConversationMessage
+    from app.extensions import db
+
+    # ── Bulk Query 1: all leads ──────────────────────────────────────────
+    states = db.session.query(
+        ConversationState.phone,
+        ConversationState.is_admitted,
+    ).all()
+
+    # ── Bulk Query 2: all messages (phone, source, message, created_at) ──
+    messages = db.session.query(
+        ConversationMessage.phone,
+        ConversationMessage.source,
+        ConversationMessage.message,
+        ConversationMessage.created_at,
+    ).all()
+
+    # ── Build earliest-message index per phone (in memory) ───────────────
+    # earliest_msg[phone] = (source, message_text)
+    earliest_created: dict = {}   # phone -> created_at of earliest msg
+    earliest_msg: dict = {}       # phone -> (source, message_text)
+
+    for phone, source, message, created_at in messages:
+        if phone not in earliest_created or (created_at and created_at < earliest_created[phone]):
+            earliest_created[phone] = created_at
+            earliest_msg[phone] = (source or "", (message or "").lower())
+
+    # ── Attribution helper ────────────────────────────────────────────────
+    def _attribute(phone: str) -> str:
+        if phone not in earliest_msg:
+            return "Unknown"
+        src, text = earliest_msg[phone]
+        if src == "campaign":
+            return "Campaign"
+        if src == "manual":
+            return "Manual CRM"
+        if src == "user":
+            if any(kw in text for kw in _WEBSITE_KEYWORDS):
+                return "Website"
+            return "WhatsApp Direct"
+        return "Unknown"
+
+    # ── Aggregate per source ──────────────────────────────────────────────
+    SOURCE_ORDER = ["WhatsApp Direct", "Campaign", "Manual CRM", "Website", "Unknown"]
+    counts:     dict = {s: 0 for s in SOURCE_ORDER}
+    admissions: dict = {s: 0 for s in SOURCE_ORDER}
+    total_leads = 0
+    total_admissions = 0
+
+    for phone, is_admitted in states:
+        total_leads += 1
+        source = _attribute(phone)
+        counts[source] = counts.get(source, 0) + 1
+        if is_admitted:
+            total_admissions += 1
+            admissions[source] = admissions.get(source, 0) + 1
+
+    # ── Build per-source rows ─────────────────────────────────────────────
+    rows = []
+    for src in SOURCE_ORDER:
+        lead_count = counts[src]
+        adm_count  = admissions[src]
+        conversion = round((adm_count / lead_count * 100) if lead_count > 0 else 0.0, 1)
+        share      = round((lead_count / total_leads * 100) if total_leads > 0 else 0.0, 1)
+        rows.append({
+            "source":     src,
+            "leads":      lead_count,
+            "admissions": adm_count,
+            "conversion": conversion,
+            "share":      share,
+        })
+
+    # ── Best / worst source (ignore zero-lead sources) ────────────────────
+    active_rows = [r for r in rows if r["leads"] > 0]
+    best_source  = max(active_rows, key=lambda r: r["conversion"])["source"] if active_rows else "—"
+    worst_source = min(active_rows, key=lambda r: r["conversion"])["source"] if active_rows else "—"
+
+    return {
+        "total_leads":      total_leads,
+        "total_admissions": total_admissions,
+        "best_source":      best_source,
+        "worst_source":     worst_source,
+        "rows":             rows,
+    }
+
+
+@admin_bp.route("/crm/source-analytics", methods=["GET"])
+def crm_source_analytics():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    data = calculate_source_analytics()
+
+    return render_template(
+        "crm_source_analytics.html",
+        key=request.args.get("key", ""),
+        data=data,
+    )
