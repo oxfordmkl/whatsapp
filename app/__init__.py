@@ -1,5 +1,5 @@
 from flask import Flask
-from app.config import DATABASE_URL
+from app.config import DATABASE_URL, SECRET_KEY
 from app.extensions import db, migrate
 from pathlib import Path
 
@@ -12,6 +12,9 @@ def create_app():
         __name__,
         template_folder=str(BASE_DIR / "templates")
 )
+
+    # ── Session / flash support ──────────────────────────────────────────
+    app.config["SECRET_KEY"] = SECRET_KEY
 
     # ── SQLAlchemy / PostgreSQL config ────────────────────────────────────
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
