@@ -21,31 +21,63 @@ EVENT_SCORE_MAP = {
 
 def get_course_enquiries(phone: str) -> list:
     """
-    Return deduplicated list of course names for which a COURSE_ENQUIRY
-    event exists for this phone. Returns [] on any error or empty table.
+    Return chronologically-ordered, case-insensitively deduplicated list of
+    course names derived from any of the following events for this phone:
 
-    event_data is a JSON string: '{"course": "Python Programming"}'
+        COURSE_ENQUIRY   — event_data is JSON: '{"course": "Python Programming"}'
+        COURSE_VIEWED    — event_data is a plain string: "Python Programming"
+        FEES_REQUESTED   — event_data is a plain string or NULL
+        DEMO_REQUESTED   — event_data is usually NULL; skipped when absent
+
+    Returns [] on any error, missing table, or no matching events.
+    Zero writes. One DB query. Read-only.
+
+    Phase 7E.1: expanded from COURSE_ENQUIRY-only to full enquiry union.
     """
     import json
     try:
         from app.models import LeadEvent
         events = (
             LeadEvent.query
-            .filter_by(phone=phone, event_type="COURSE_ENQUIRY")
+            .filter(
+                LeadEvent.phone == phone,
+                LeadEvent.event_type.in_([
+                    "COURSE_ENQUIRY",
+                    "COURSE_VIEWED",
+                    "FEES_REQUESTED",
+                    "DEMO_REQUESTED",
+                ])
+            )
             .order_by(LeadEvent.created_at.asc())
             .all()
         )
-        seen = set()
-        result = []
+
+        seen   = set()   # lowercase course names already added
+        result = []      # preserves first-seen casing, chronological order
+
         for e in events:
-            try:
-                data = json.loads(e.event_data or "{}")
-                course = (data.get("course") or "").strip()
-            except (ValueError, TypeError):
-                continue
+            raw = e.event_data
+
+            # ── Extract course name using format appropriate to event type ──
+            if e.event_type == "COURSE_ENQUIRY":
+                # Written by crm_lead_update as JSON: {"course": "..."}
+                try:
+                    data   = json.loads(raw or "{}")
+                    course = (data.get("course") or "").strip()
+                except (ValueError, TypeError):
+                    # Defensive fallback: treat as plain string if JSON fails
+                    course = (raw or "").strip()
+            else:
+                # COURSE_VIEWED / FEES_REQUESTED written by router.py as plain string
+                # DEMO_REQUESTED is usually NULL — strip() on None would fail,
+                # so guard with (raw or "")
+                course = (raw or "").strip()
+
+            # ── Deduplicate case-insensitively, preserve first-seen casing ──
             if course and course.lower() not in seen:
                 seen.add(course.lower())
                 result.append(course)
+
         return result
     except Exception:
         return []
