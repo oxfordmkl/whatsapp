@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -687,13 +687,25 @@
 
               <!-- Lead Score -->
               <div class="mb-3">
+                <!-- Readonly: auto-calculated intelligence score -->
+                <div class="mb-2 p-2" style="background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: space-between;">
+                  <span class="form-label-crm mb-0" style="font-size: 0.7rem;">Calculated Score</span>
+                  <span style="font-size: 1.1rem; font-weight: 700; color: {% if intelligence and intelligence.temperature == 'HOT' %}var(--red){% elif intelligence and intelligence.temperature == 'WARM' %}var(--yellow){% else %}var(--blue){% endif %};">
+                    {{ intelligence.final_score if intelligence else (lead.lead_score or 0) }}
+                    {% if intelligence %}<span style="font-size: 0.65rem; font-weight: 600; margin-left: 4px; opacity: 0.8;">{{ intelligence.temperature }}</span>{% endif %}
+                  </span>
+                </div>
+                <!-- Editable: manual base score override -->
                 <label class="form-label-crm" for="lead_score">
-                  Lead Score
-                  <span style="color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0;">(0 "“ 100)</span>
+                  Lead Score Override
+                  <span style="color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0;">(0 &ndash; 100)</span>
                 </label>
                 <input type="number" class="crm-input" name="lead_score" id="lead_score"
                        min="0" max="100" step="1"
                        value="{{ lead.lead_score or 0 }}">
+                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.35rem;">
+                  <i class="bi bi-info-circle me-1"></i>Override adds to auto-calculated event score.
+                </div>
               </div>
 
               <!-- Is Admitted -->
@@ -868,72 +880,6 @@
       </div>
     </div><!-- /lead journey -->
 
-    <!-- â”€â”€ Phase 6E: Unified Timeline â”€â”€ -->
-    <div class="crm-card mt-3">
-      <div class="crm-card-header">
-        <i class="bi bi-stream"></i>Unified Timeline
-        <span style="margin-left: auto; font-size: 0.7rem; font-weight: 400; color: var(--text-muted);">
-          {{ unified_timeline|length }} items &middot; oldest first
-        </span>
-      </summary>
-      <div class="crm-card-body p-3" style="background: rgba(0,0,0,0.03);">
-        <div class="wa-timeline" id="unified-timeline-box" style="max-height: 600px; overflow-y: auto;">
-          {% if unified_timeline %}
-            {% for item in unified_timeline %}
-              {% if item.type == 'event' %}
-                {% set ev = item.data %}
-                <div class="d-flex justify-content-center my-3">
-                  <div style="font-size: 0.72rem; font-weight: 600; padding: 0.35rem 0.85rem; border-radius: 20px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    {% if ev.event_type == 'COURSE_VIEWED' %}
-                      <span style="color: var(--blue);"><i class="bi bi-eye-fill me-1"></i> Course Viewed</span>
-                    {% elif ev.event_type == 'PLACEMENT_ASKED' %}
-                      <span style="color: var(--purple);"><i class="bi bi-briefcase-fill me-1"></i> Placement Asked</span>
-                    {% elif ev.event_type == 'FEES_REQUESTED' %}
-                      <span style="color: var(--yellow);"><i class="bi bi-cash-stack me-1"></i> Fees Requested</span>
-                    {% elif ev.event_type == 'DEMO_REQUESTED' %}
-                      <span style="color: var(--green);"><i class="bi bi-mortarboard-fill me-1"></i> Demo Requested</span>
-                    {% elif ev.event_type == 'PAYMENT_PENDING' %}
-                      <span style="color: var(--orange);"><i class="bi bi-credit-card-fill me-1"></i> Payment Pending</span>
-                    {% else %}
-                      <i class="bi bi-record-circle me-1"></i> {{ ev.event_type }}
-                    {% endif %}
-                    <span style="opacity: 0.5; margin-left: 8px;">&bull; {{ ev.created_at.strftime('%H:%M') }}</span>
-                  </div>
-                </div>
-              {% elif item.type == 'message' %}
-                {% set msg = item.data %}
-                {% set row_cls = 'incoming' if msg.direction == 'incoming' else 'outgoing' %}
-                
-                {% set bubble_cls = 'bubble-user' %}
-                {% set label = 'User' %}
-                {% if msg.direction == 'outgoing' %}
-                  {% if msg.source == 'ai' %}{% set bubble_cls = 'bubble-ai' %}{% set label = 'AI' %}
-                  {% elif msg.source == 'manual' %}{% set bubble_cls = 'bubble-manual' %}{% set label = 'Staff' %}
-                  {% elif msg.source == 'followup' %}{% set bubble_cls = 'bubble-followup' %}{% set label = 'Follow-up' %}
-                  {% elif msg.source == 'system' %}{% set bubble_cls = 'bubble-system' %}{% set label = 'System' %}
-                  {% endif %}
-                {% endif %}
-
-                <div class="wa-row {{ row_cls }}">
-                  <div class="wa-bubble {{ bubble_cls }}">
-                    <div style="white-space: pre-wrap;">{{ (msg.message or '').strip() }}</div>
-                    <div class="wa-meta">
-                      <span>{{ label }}{% if msg.staff_name %} ({{ msg.staff_name }}){% endif %}</span>
-                      <span>&bull;</span>
-                      <span>{% if msg.created_at %}{{ msg.created_at.strftime('%H:%M') }}{% endif %}</span>
-                    </div>
-                  </div>
-                </div>
-              {% endif %}
-            {% endfor %}
-          {% else %}
-            <div class="text-center py-4" style="color: var(--text-muted); font-size: 0.85rem;">
-              No timeline items yet.
-            </div>
-          {% endif %}
-        </div>
-      </div>
-    </div><!-- /unified timeline -->
 
     <!-- â”€â”€ WhatsApp Conversation History (Legacy Phase 5B) â”€â”€ -->
     <details class="crm-card mt-3">

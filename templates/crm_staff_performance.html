@@ -229,8 +229,12 @@
               <th scope="col" style="text-align: right;">Admissions</th>
               <th scope="col" style="text-align: right; width: 120px;">Conversion %</th>
               <th scope="col" style="text-align: right;">Avg Lead Score</th>
-              <th scope="col" style="text-align: center;">Pipeline Health</th>
-              <th scope="col" style="text-align: center;">Action Queue</th>
+              <th scope="col" style="text-align: center;" title="Hot (score &ge;80) / Warm (score &ge;50) / Cold (score &lt;50)">Pipeline Health
+                <span style="font-size: 0.65rem; font-weight: 400; color: var(--text-muted); display: block; margin-top: 1px;">&#x1F534; Hot &nbsp; &#x1F7E1; Warm &nbsp; &#x1F535; Cold</span>
+              </th>
+              <th scope="col" style="text-align: center;" title="Needs Reply: last message was from the user. Follow-up Due: pending scheduled follow-up job.">Action Queue
+                <span style="font-size: 0.65rem; font-weight: 400; color: var(--text-muted); display: block; margin-top: 1px;">&#x1F4AC; Needs Reply &nbsp; &#x23F0; Follow-up Due</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -285,6 +289,35 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- KPI Legend -->
+    <div class="crm-card">
+      <div class="crm-card-header"><i class="bi bi-question-circle"></i>KPI Legend</div>
+      <div class="crm-card-body">
+        <div class="row g-3" style="font-size: 0.8rem;">
+          <div class="col-12 col-md-4">
+            <div style="font-weight: 600; margin-bottom: 0.4rem; color: var(--text-main);">Pipeline Health</div>
+            <div class="d-flex flex-column gap-1">
+              <span><span class="badge-count badge-hot" style="margin-right: 6px;">0</span> <strong>Hot</strong> — Calculated score &ge; 80</span>
+              <span><span class="badge-count badge-warm" style="margin-right: 6px;">0</span> <strong>Warm</strong> — Calculated score &ge; 50</span>
+              <span><span class="badge-count badge-cold" style="margin-right: 6px;">0</span> <strong>Cold</strong> — Calculated score &lt; 50</span>
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div style="font-weight: 600; margin-bottom: 0.4rem; color: var(--text-main);">Needs Reply <i class="bi bi-chat-dots-fill ms-1" style="color: var(--green);"></i></div>
+            <div style="color: var(--text-muted); line-height: 1.5;">
+              The lead&rsquo;s most recent message was sent by the <strong>user</strong>, meaning the conversation is awaiting a staff or AI response.
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div style="font-weight: 600; margin-bottom: 0.4rem; color: var(--text-main);">Follow-up Due <i class="bi bi-clock-history ms-1" style="color: var(--text-muted);"></i></div>
+            <div style="color: var(--text-muted); line-height: 1.5;">
+              Count of <strong>pending follow-up jobs</strong> assigned to leads under this staff member. Includes both scheduled and overdue jobs.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
