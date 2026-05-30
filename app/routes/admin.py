@@ -18,6 +18,7 @@ EVENT_SCORE_MAP = {
 
 
 # ── Phase 7E: Course Journey helpers ───────────────────────────────────────
+from app.bot.constants import normalize_course_name
 
 def get_course_enquiries(phone: str) -> list:
     """
@@ -73,7 +74,8 @@ def get_course_enquiries(phone: str) -> list:
                 # so guard with (raw or "")
                 course = (raw or "").strip()
 
-            # ── Deduplicate case-insensitively, preserve first-seen casing ──
+            # ── Normalize alias → canonical name, then deduplicate ────────
+            course = normalize_course_name(course)
             if course and course.lower() not in seen:
                 seen.add(course.lower())
                 result.append(course)
@@ -107,6 +109,8 @@ def get_course_admissions(phone: str) -> list:
                 course = (data.get("course") or "").strip()
             except (ValueError, TypeError):
                 continue
+            # ── Normalize alias → canonical name, then deduplicate ────────
+            course = normalize_course_name(course)
             if course and course.lower() not in seen:
                 seen.add(course.lower())
                 result.append(course)
@@ -1405,8 +1409,9 @@ def calculate_admission_analytics():
 
         # ── Course attribution (course → offer_course → Unknown) ───────
         course_key = (course or "").strip() or (offer_course or "").strip() or "Unknown"
-        # Normalise: collapse whitespace, title-case for display consistency
+        # Collapse internal whitespace, then apply alias normalization
         course_key = " ".join(course_key.split())
+        course_key = normalize_course_name(course_key)
         if not course_key:
             course_key = "Unknown"
         if course_key not in course_stats:

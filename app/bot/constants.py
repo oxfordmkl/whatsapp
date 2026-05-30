@@ -5,6 +5,59 @@ def pick(items: list) -> str:
     return random.choice(items)
 
 
+# ── Phase 7F.2: Course name normalization ──────────────────────────────────
+#
+# Maps every known alias (lowercase key) to the canonical course name that
+# appears in ALL_COURSES.  Applied at READ TIME only — no DB writes ever.
+#
+# Sources of aliases (from audit):
+#   • ConversationState.offer_course  — short codes from OFFER_MENU
+#   • GOAL_COURSES display labels     — longer variants used in bot text
+#   • FULL_FEE_TABLE display labels   — abbreviated WhatsApp message strings
+#
+COURSE_NAME_ALIASES: dict = {
+    # ── offer_course short codes (written by router.py from OFFER_MENU) ──
+    "aidm":  "AIDM Digital Marketing",
+    "dca":   "DCA Fast Track",
+    "cwpde": "Word Processing & Data Entry",
+    # "pgdca" already matches canonical — included for completeness
+    "pgdca": "PGDCA",
+
+    # ── GOAL_COURSES display label variants ───────────────────────────────
+    "ai-driven digital marketing": "AIDM Digital Marketing",
+    "web designing":               "Professional Web Designing",
+    "gst & payroll diploma":       "GST & Payroll",
+    "pgdca — post graduate diploma": "PGDCA",
+
+    # ── FULL_FEE_TABLE abbreviated display labels ─────────────────────────
+    "sap accounting":          "SAP Financial Accounting",
+    "computer teaching":       "Computer Teacher Training",
+    "business accounting":     "Corporate Business Accounting",
+    "word processing":         "Word Processing & Data Entry",
+}
+
+
+def normalize_course_name(raw: str) -> str:
+    """
+    Map any known course alias to its canonical ALL_COURSES name.
+
+    Rules:
+    - Case-insensitive lookup.
+    - Leading/trailing whitespace stripped before lookup.
+    - Returns the original value (stripped) if no alias mapping exists.
+    - Never raises — all errors return the original value unchanged.
+
+    Phase 7F.2: read-time normalization only.  Zero DB writes.
+    """
+    try:
+        if not raw:
+            return raw
+        stripped = raw.strip()
+        return COURSE_NAME_ALIASES.get(stripped.lower(), stripped)
+    except Exception:
+        return raw
+
+
 _PGDCA = (
     "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
     "⏱ 12 Months | 🎓 Rutronix + State Approved\n"
