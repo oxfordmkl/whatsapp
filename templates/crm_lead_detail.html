@@ -747,7 +747,7 @@
         </div>
       </div>
 
-      <!-- Ã¢"â‚¬Ã¢"â‚¬ Manual WhatsApp Reply Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬ -->
+      <!-- Manual WhatsApp Reply -->
       <div class="col-12 col-lg-6">
         <div class="crm-card h-100">
           <div class="crm-card-header">
@@ -847,6 +847,16 @@
               {% set lbl_cls = 'tl-label-manual' %}
               {% set eicon   = 'bi-briefcase'    %}
               {% set elabel  = 'Placement Asked' %}
+            {% elif ev.event_type == 'COURSE_ENQUIRY' %}
+              {% set dot_cls = 'tl-dot-ai'       %}
+              {% set lbl_cls = 'tl-label-ai'     %}
+              {% set eicon   = 'bi-search'        %}
+              {% set elabel  = 'Course Enquiry'   %}
+            {% elif ev.event_type == 'COURSE_ADMISSION' %}
+              {% set dot_cls = 'tl-dot-manual'       %}
+              {% set lbl_cls = 'tl-label-manual'     %}
+              {% set eicon   = 'bi-patch-check-fill' %}
+              {% set elabel  = 'Course Admission'    %}
             {% else %}
               {% set dot_cls = 'tl-dot-manual'   %}
               {% set lbl_cls = 'tl-label-manual' %}
@@ -859,7 +869,11 @@
             <div class="tl-bubble">
               <div class="tl-meta">
                 <span class="tl-label {{ lbl_cls }}">{{ elabel }}</span>
-                {% if ev.event_data %}
+                {% if ev.event_type in ('COURSE_ENQUIRY', 'COURSE_ADMISSION') %}
+                  {% if event_course_map.get(ev.id) %}
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">{{ event_course_map[ev.id] }}</span>
+                  {% endif %}
+                {% elif ev.event_data %}
                 <span style="font-size: 0.75rem; color: var(--text-muted);">{{ ev.event_data }}</span>
                 {% endif %}
                 <span class="tl-time">

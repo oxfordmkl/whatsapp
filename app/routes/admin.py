@@ -602,6 +602,23 @@ def crm_lead_detail(phone):
         "admissions": get_course_admissions(phone),
     }
 
+    # ── Phase 7F.3: Pre-parse JSON event_data for timeline display ───────────
+    # Builds {event_id: course_name} for COURSE_ENQUIRY and COURSE_ADMISSION
+    # events so the template never has to call json.loads.
+    # Any malformed record is silently skipped — the template falls back to
+    # ev.event_data (raw string) when an id is not in the map.
+    import json as _json
+    event_course_map: dict = {}
+    for ev in events:
+        if ev.event_type in ("COURSE_ENQUIRY", "COURSE_ADMISSION"):
+            try:
+                parsed = _json.loads(ev.event_data or "{}")
+                name   = (parsed.get("course") or "").strip()
+                if name:
+                    event_course_map[ev.id] = normalize_course_name(name)
+            except Exception:
+                pass
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
@@ -618,6 +635,7 @@ def crm_lead_detail(phone):
         events=events,
         intelligence=intelligence,
         course_journey=course_journey,
+        event_course_map=event_course_map,
     )
 
 
