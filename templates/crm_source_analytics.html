@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Source Analytics &middot; Oxford CRM</title>
+  <meta name="description" content="Lead source attribution analytics for Oxford Computers CRM.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+      --orange:     #e3813a;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ─────────────────────────────────────────────────── */
+    .crm-nav {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+    }
+    .crm-nav .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--green);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .crm-nav .brand span { color: var(--text-muted); font-weight: 400; }
+
+    .btn-nav-back {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      border-radius: 8px;
+      padding: 0.35rem 0.85rem;
+      text-decoration: none;
+      transition: border-color 0.2s, color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .btn-nav-back:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── KPI Cards ───────────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .kpi-icon {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .icon-green  { background: rgba(37,211,102,0.12); color: var(--green); }
+    .icon-blue   { background: rgba(88,166,255,0.12); color: var(--blue); }
+    .icon-yellow { background: rgba(210,153,34,0.12); color: var(--yellow); }
+    .icon-purple { background: rgba(188,140,255,0.12); color: var(--purple); }
+    .icon-red    { background: rgba(248,81,73,0.12); color: var(--red); }
+
+    .kpi-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.2rem;
+    }
+    .kpi-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1;
+    }
+    .kpi-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    /* ── Table Card ──────────────────────────────────────────────── */
+    .table-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .table-card-header {
+      background: var(--bg-card2);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .table-card table { margin: 0; border-color: var(--border); }
+    .table-card thead th {
+      background: var(--bg-card2);
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+      border-top: none;
+      padding: 0.75rem 1rem;
+      white-space: nowrap;
+    }
+    .table-card tbody td {
+      color: var(--text-main);
+      border-color: var(--border);
+      padding: 0.9rem 1rem;
+      vertical-align: middle;
+      font-size: 0.85rem;
+    }
+    .table-card tbody tr:hover td { background: rgba(255,255,255,0.025); }
+    .table-card tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Source Badges ───────────────────────────────────────────── */
+    .src-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.3em 0.75em;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .src-whatsapp  { background: rgba(37,211,102,0.12);  color: var(--green);  border: 1px solid rgba(37,211,102,0.25); }
+    .src-campaign  { background: rgba(88,166,255,0.12);  color: var(--blue);   border: 1px solid rgba(88,166,255,0.25); }
+    .src-manual    { background: rgba(188,140,255,0.12); color: var(--purple); border: 1px solid rgba(188,140,255,0.25); }
+    .src-website   { background: rgba(210,153,34,0.12);  color: var(--yellow); border: 1px solid rgba(210,153,34,0.25); }
+    .src-unknown   { background: rgba(139,148,158,0.10); color: var(--text-muted); border: 1px solid rgba(139,148,158,0.15); }
+
+    /* ── Conversion indicator bar ────────────────────────────────── */
+    .conv-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 130px;
+    }
+    .conv-bar-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .conv-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--green-dim), var(--green));
+      transition: width 0.4s ease;
+    }
+    .conv-bar-fill.zero { background: var(--border); }
+    .conv-pct {
+      font-size: 0.8rem;
+      font-weight: 600;
+      min-width: 38px;
+      text-align: right;
+      color: var(--text-main);
+    }
+
+    /* ── Share progress bar ──────────────────────────────────────── */
+    .share-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 120px;
+    }
+    .share-bar-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .share-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, rgba(88,166,255,0.6), var(--blue));
+    }
+    .share-pct {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      min-width: 38px;
+      text-align: right;
+    }
+
+    /* ── Best / Worst source card ────────────────────────────────── */
+    .insight-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .insight-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+    }
+    .insight-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+    .insight-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    /* ── Empty state ─────────────────────────────────────────────── */
+    .empty-state {
+      padding: 3.5rem 1rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Legend note ─────────────────────────────────────────────── */
+    .legend-note {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .legend-note strong { color: var(--text-main); }
+
+    @media (max-width: 600px) {
+      .insight-grid { grid-template-columns: 1fr; }
+      .kpi-value { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="crm-nav d-flex align-items-center justify-content-between">
+    <a class="brand" href="/crm/leads?key={{ key }}">
+      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
+      <span class="ms-2">/ Source Analytics</span>
+    </a>
+    <a href="/crm/leads?key={{ key }}" class="btn-nav-back">
+      <i class="bi bi-arrow-left"></i>Back to Leads
+    </a>
+  </nav>
+
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1200px;">
+
+    <!-- ── KPI Cards ──────────────────────────────────────────────── -->
+    <div class="kpi-grid">
+
+      <div class="kpi-card">
+        <div class="kpi-icon icon-blue"><i class="bi bi-people-fill"></i></div>
+        <div>
+          <div class="kpi-label">Total Leads</div>
+          <div class="kpi-value" style="color: var(--blue);">{{ data.total_leads }}</div>
+          <div class="kpi-sub">Across all sources</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-icon icon-green"><i class="bi bi-patch-check-fill"></i></div>
+        <div>
+          <div class="kpi-label">Total Admissions</div>
+          <div class="kpi-value" style="color: var(--green);">{{ data.total_admissions }}</div>
+          <div class="kpi-sub">
+            {% if data.total_leads > 0 %}
+              {{ "%.1f"|format(data.total_admissions / data.total_leads * 100) }}% overall conversion
+            {% else %}
+              —
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-card" style="border-left: 3px solid var(--green);">
+        <div class="kpi-icon icon-green"><i class="bi bi-trophy-fill"></i></div>
+        <div>
+          <div class="kpi-label">Best Performing Source</div>
+          <div class="kpi-value" style="font-size: 1.1rem; color: var(--green);">{{ data.best_source }}</div>
+          <div class="kpi-sub">Highest conversion rate</div>
+        </div>
+      </div>
+
+      <div class="kpi-card" style="border-left: 3px solid var(--red);">
+        <div class="kpi-icon icon-red"><i class="bi bi-arrow-down-circle-fill"></i></div>
+        <div>
+          <div class="kpi-label">Lowest Performing Source</div>
+          <div class="kpi-value" style="font-size: 1.1rem; color: var(--red);">{{ data.worst_source }}</div>
+          <div class="kpi-sub">Lowest conversion rate</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Source Performance Table ───────────────────────────────── -->
+    <div class="table-card">
+      <div class="table-card-header">
+        <i class="bi bi-diagram-3-fill"></i>Source Performance Breakdown
+        <span style="margin-left: auto; font-size: 0.68rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted);">
+          Attribution based on first recorded interaction per lead
+        </span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-borderless mb-0">
+          <thead>
+            <tr>
+              <th scope="col" style="width: 180px;">Source</th>
+              <th scope="col" style="text-align: right;">Leads</th>
+              <th scope="col" style="text-align: right;">Admissions</th>
+              <th scope="col" style="min-width: 160px;">Conversion</th>
+              <th scope="col" style="min-width: 150px;">Share of Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set active_rows = data.rows | selectattr("leads", "gt", 0) | list %}
+            {% if active_rows %}
+              {% for row in data.rows %}
+              {% if row.leads > 0 %}
+              <tr>
+                <!-- Source Badge -->
+                <td>
+                  {% if row.source == "WhatsApp Direct" %}
+                    <span class="src-badge src-whatsapp"><i class="bi bi-whatsapp"></i>WhatsApp Direct</span>
+                  {% elif row.source == "Campaign" %}
+                    <span class="src-badge src-campaign"><i class="bi bi-megaphone-fill"></i>Campaign</span>
+                  {% elif row.source == "Manual CRM" %}
+                    <span class="src-badge src-manual"><i class="bi bi-person-badge-fill"></i>Manual CRM</span>
+                  {% elif row.source == "Website" %}
+                    <span class="src-badge src-website"><i class="bi bi-globe"></i>Website</span>
+                  {% else %}
+                    <span class="src-badge src-unknown"><i class="bi bi-question-circle"></i>Unknown</span>
+                  {% endif %}
+                </td>
+
+                <!-- Lead Count -->
+                <td style="text-align: right;">
+                  <span style="font-family: monospace; font-size: 1rem; font-weight: 600;">{{ row.leads }}</span>
+                </td>
+
+                <!-- Admissions -->
+                <td style="text-align: right;">
+                  <span style="font-family: monospace; font-size: 1rem; font-weight: 600; color: {% if row.admissions > 0 %}var(--green){% else %}var(--text-muted){% endif %};">
+                    {{ row.admissions }}
+                  </span>
+                </td>
+
+                <!-- Conversion bar -->
+                <td>
+                  <div class="conv-bar-wrap">
+                    <div class="conv-bar-track">
+                      <div class="conv-bar-fill {% if row.conversion == 0 %}zero{% endif %}"
+                           style="width: {{ [row.conversion, 100] | min }}%;"></div>
+                    </div>
+                    <span class="conv-pct">
+                      {% if row.conversion > 0 %}
+                        <span style="color: {% if row.conversion >= 30 %}var(--green){% elif row.conversion >= 10 %}var(--yellow){% else %}var(--red){% endif %};">
+                          {{ row.conversion }}%
+                        </span>
+                      {% else %}
+                        <span style="color: var(--text-muted);">0%</span>
+                      {% endif %}
+                    </span>
+                  </div>
+                </td>
+
+                <!-- Share bar -->
+                <td>
+                  <div class="share-bar-wrap">
+                    <div class="share-bar-track">
+                      <div class="share-bar-fill" style="width: {{ [row.share, 100] | min }}%;"></div>
+                    </div>
+                    <span class="share-pct">{{ row.share }}%</span>
+                  </div>
+                </td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="5">
+                  <div class="empty-state">
+                    <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                    No leads found. Source analytics will populate once leads are recorded.
+                  </div>
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Attribution Legend ──────────────────────────────────────── -->
+    <div class="legend-note">
+      <div style="font-weight: 600; color: var(--text-main); margin-bottom: 0.5rem;">
+        <i class="bi bi-info-circle me-1"></i>Attribution Rules
+      </div>
+      <div class="row g-2" style="font-size: 0.76rem;">
+        <div class="col-12 col-md-6">
+          <span class="src-badge src-whatsapp me-1"><i class="bi bi-whatsapp"></i></span>
+          <strong>WhatsApp Direct</strong> &mdash; First message source is <code>user</code> with no website indicators.<br>
+          <span class="src-badge src-campaign me-1 mt-1"><i class="bi bi-megaphone-fill"></i></span>
+          <strong>Campaign</strong> &mdash; First message source is <code>campaign</code>.
+        </div>
+        <div class="col-12 col-md-6">
+          <span class="src-badge src-manual me-1"><i class="bi bi-person-badge-fill"></i></span>
+          <strong>Manual CRM</strong> &mdash; First message source is <code>manual</code>.<br>
+          <span class="src-badge src-website me-1 mt-1"><i class="bi bi-globe"></i></span>
+          <strong>Website</strong> &mdash; First message source is <code>user</code> and text contains UTM, landing, or domain keywords.<br>
+          <span class="src-badge src-unknown me-1 mt-1"><i class="bi bi-question-circle"></i></span>
+          <strong>Unknown</strong> &mdash; No messages recorded for this lead.
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /container -->
+
+</body>
+</html>
