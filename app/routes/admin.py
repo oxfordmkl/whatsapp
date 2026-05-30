@@ -1197,3 +1197,136 @@ def crm_source_analytics():
         key=request.args.get("key", ""),
         data=data,
     )
+
+
+# ── Phase 7D: Admission Analytics ──────────────────────────────────────────
+
+def calculate_admission_analytics():
+    """
+    Read-only admission analytics.
+
+    Query strategy:
+    - Bulk Query 1 (only query): SELECT phone, name, is_admitted,
+                                        assigned_staff, course, offer_course
+                                 FROM conversation_state
+
+    All aggregation is performed in Python memory.
+    Zero N+1 queries. Zero writes. Zero ORM loops with per-row queries.
+
+    Course resolution priority:
+        1. ConversationState.course       (AI-detected interest)
+        2. ConversationState.offer_course (staff override)
+        3. "Unknown" fallback
+    """
+    from app.models import ConversationState
+    from app.extensions import db
+
+    # ── Single bulk query ────────────────────────────────────────────────
+    rows = db.session.query(
+        ConversationState.phone,
+        ConversationState.is_admitted,
+        ConversationState.assigned_staff,
+        ConversationState.course,
+        ConversationState.offer_course,
+    ).all()
+
+    # ── In-memory aggregation ────────────────────────────────────────────
+    total_leads      = 0
+    total_admissions = 0
+
+    # staff → {leads, admissions}
+    staff_stats:  dict = {}
+    # course → {leads, admissions}
+    course_stats: dict = {}
+
+    for phone, is_admitted, staff, course, offer_course in rows:
+        total_leads += 1
+        admitted = bool(is_admitted)
+        if admitted:
+            total_admissions += 1
+
+        # ── Staff attribution ──────────────────────────────────────────
+        staff_key = (staff or "").strip() or "Unassigned"
+        if staff_key not in staff_stats:
+            staff_stats[staff_key] = {"leads": 0, "admissions": 0}
+        staff_stats[staff_key]["leads"] += 1
+        if admitted:
+            staff_stats[staff_key]["admissions"] += 1
+
+        # ── Course attribution (course → offer_course → Unknown) ───────
+        course_key = (course or "").strip() or (offer_course or "").strip() or "Unknown"
+        # Normalise: collapse whitespace, title-case for display consistency
+        course_key = " ".join(course_key.split())
+        if not course_key:
+            course_key = "Unknown"
+        if course_key not in course_stats:
+            course_stats[course_key] = {"leads": 0, "admissions": 0}
+        course_stats[course_key]["leads"] += 1
+        if admitted:
+            course_stats[course_key]["admissions"] += 1
+
+    # ── Build staff breakdown rows ───────────────────────────────────────
+    def _pct(adm, leads):
+        return round(adm / leads * 100, 1) if leads > 0 else 0.0
+
+    staff_rows = sorted(
+        [
+            {
+                "name":       name,
+                "leads":      s["leads"],
+                "admissions": s["admissions"],
+                "conversion": _pct(s["admissions"], s["leads"]),
+            }
+            for name, s in staff_stats.items()
+        ],
+        key=lambda r: (r["admissions"], r["conversion"]),
+        reverse=True,
+    )
+
+    # ── Build course breakdown rows ──────────────────────────────────────
+    course_rows = sorted(
+        [
+            {
+                "course":     name,
+                "leads":      s["leads"],
+                "admissions": s["admissions"],
+                "conversion": _pct(s["admissions"], s["leads"]),
+            }
+            for name, s in course_stats.items()
+        ],
+        key=lambda r: (r["admissions"], r["conversion"]),
+        reverse=True,
+    )
+
+    # ── Top performers (ignore zero-admission rows for headline KPI) ─────
+    admitted_staff   = [r for r in staff_rows  if r["admissions"] > 0]
+    admitted_courses = [r for r in course_rows if r["admissions"] > 0]
+
+    top_staff  = admitted_staff[0]["name"]   if admitted_staff   else "—"
+    top_course = admitted_courses[0]["course"] if admitted_courses else "—"
+
+    overall_conversion = _pct(total_admissions, total_leads)
+
+    return {
+        "total_leads":         total_leads,
+        "total_admissions":    total_admissions,
+        "overall_conversion":  overall_conversion,
+        "top_staff":           top_staff,
+        "top_course":          top_course,
+        "staff_rows":          staff_rows,
+        "course_rows":         course_rows,
+    }
+
+
+@admin_bp.route("/crm/admission-analytics", methods=["GET"])
+def crm_admission_analytics():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    data = calculate_admission_analytics()
+
+    return render_template(
+        "crm_admission_analytics.html",
+        key=request.args.get("key", ""),
+        data=data,
+    )
