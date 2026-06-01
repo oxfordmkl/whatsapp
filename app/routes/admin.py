@@ -710,6 +710,7 @@ def crm_lead_detail(phone):
     # ev.event_data (raw string) when an id is not in the map.
     import json as _json
     event_course_map: dict = {}
+    event_payload_map: dict = {}
     for ev in events:
         if ev.event_type in ("COURSE_ENQUIRY", "COURSE_ADMISSION"):
             try:
@@ -719,6 +720,11 @@ def crm_lead_detail(phone):
                     event_course_map[ev.id] = normalize_course_name(name)
             except Exception:
                 pass
+        elif ev.event_type in ("LEAD_REASSIGNED", "MANUAL_MESSAGE"):
+            try:
+                event_payload_map[ev.id] = _json.loads(ev.event_data or "{}")
+            except Exception:
+                event_payload_map[ev.id] = {}
 
     # ── Phase 8.4: Lead Portfolio — zero new queries ─────────────────────────
     # Passes already-loaded lead ORM row, events list, and course_journey dict.
@@ -769,6 +775,8 @@ def crm_lead_update(phone):
     if request.args.get("range"):  qs += f"&range={urllib.parse.quote(request.args.get('range'))}"
 
     try:
+        old_staff = lead.assigned_staff
+        
         lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
         lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
         lead.notes          = request.form.get("notes",          "").strip() or None
@@ -780,11 +788,9 @@ def crm_lead_update(phone):
         # ── Snapshot values before commit for post-commit event firing ──
         new_course    = (lead.course or "").strip()
         new_admitted  = request.form.get("is_admitted") == "1"
+        new_staff     = lead.assigned_staff
 
         # ── Phase 8.2 Gap 2: Hard block — admission requires assigned staff ──────
-        # lead.assigned_staff was already written from the form at L665 above.
-        # If marking as admitted and no staff is assigned, abort before any commit.
-        # Uses the same err= redirect pattern as crm_lead_send().
         if new_admitted and not (lead.assigned_staff or "").strip():
             db.session.rollback()
             return redirect(url_for(
@@ -793,10 +799,6 @@ def crm_lead_update(phone):
             ))
 
         # ── Phase 8.2 Gap 3: Auto-promote lead_status → Enrolled on admission ────
-        # If the lead is being admitted and their status is still at an early
-        # pipeline stage, silently promote to Enrolled.
-        # Mirrors the JS auto-promote in crm_lead_detail.html.
-        # No change if lead_status is already Enrolled/Lost/etc.
         _PROMOTE_STATUSES = {"Lead", "Contacted", "Interested"}
         if new_admitted and (lead.lead_status or "").strip() in _PROMOTE_STATUSES:
             lead.lead_status = "Enrolled"
@@ -805,11 +807,22 @@ def crm_lead_update(phone):
 
         db.session.commit()
 
-        # ── Phase 7E: Fire course events AFTER successful commit ──────────
-        # Uses existing log_lead_event() which is already safe / never-raises.
+        # ── Phase 7E & 9.1: Fire events AFTER successful commit ──────────
         import json
         from app.services.log_service import log_lead_event
         from app.models import LeadEvent
+
+        # Phase 9.1: LEAD_REASSIGNED accountability audit
+        if old_staff != new_staff:
+            log_lead_event(
+                phone=phone,
+                event_type="LEAD_REASSIGNED",
+                event_data=json.dumps({
+                    "from": old_staff or "",
+                    "to": new_staff or "",
+                    "by": "Admin"
+                })
+            )
 
         # COURSE_ENQUIRY — fire once per unique course name.
         if new_course:
@@ -842,7 +855,10 @@ def crm_lead_update(phone):
                 log_lead_event(
                     phone=phone,
                     event_type="COURSE_ADMISSION",
-                    event_data=json.dumps({"course": new_course}),
+                    event_data=json.dumps({
+                        "course": new_course,
+                        "staff": new_staff or ""
+                    }),
                 )
 
     except Exception as e:
@@ -972,15 +988,27 @@ def crm_lead_send(phone):
                 message_text=message,
             )
             # ── Persist manual send to ConversationMessage (CRM timeline) ──
-            from app.services.log_service import save_conversation_message
+            from app.services.log_service import save_conversation_message, log_lead_event
+            import json
+            
+            lead = ConversationState.query.filter_by(phone=phone).first()
+            current_staff = lead.assigned_staff if lead else None
+            
             save_conversation_message(
                 phone=phone,
                 direction="outgoing",
                 message=message,
                 message_type="text",
                 source="manual",
-                staff_name=None,    # extend when staff auth added (Phase 6+)
-                wa_message_id=None, # extend when WA API response parsed (Phase 6+)
+                staff_name=current_staff or "Admin",
+                wa_message_id=None,
+            )
+            
+            # Phase 9.1: MESSAGE_OWNER audit using LeadEvent
+            log_lead_event(
+                phone=phone,
+                event_type="MANUAL_MESSAGE",
+                event_data=json.dumps({"staff": current_staff or "Admin"})
             )
             return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully{qs}")
 
@@ -1531,6 +1559,19 @@ def calculate_admission_analytics():
         ConversationState.offer_course,
     ).all()
 
+    # ── Bulk query 2: Fetch ADMISSION_OWNER locks (Phase 9.1) ───────────
+    from app.models import LeadEvent
+    import json
+    admission_events = db.session.query(LeadEvent.phone, LeadEvent.event_data).filter_by(event_type="COURSE_ADMISSION").all()
+    admission_staff_map = {}
+    for phone_num, ev_data in admission_events:
+        try:
+            js = json.loads(ev_data or "{}")
+            if "staff" in js and js["staff"]:
+                admission_staff_map[phone_num] = js["staff"]
+        except Exception:
+            pass
+
     # ── In-memory aggregation ────────────────────────────────────────────
     total_leads      = 0
     total_admissions = 0
@@ -1547,12 +1588,19 @@ def calculate_admission_analytics():
             total_admissions += 1
 
         # ── Staff attribution ──────────────────────────────────────────
-        staff_key = normalize_staff_name(staff)
-        if staff_key not in staff_stats:
-            staff_stats[staff_key] = {"leads": 0, "admissions": 0}
-        staff_stats[staff_key]["leads"] += 1
+        # 1. Lead ownership (Pipeline metric) belongs to current staff
+        current_staff_key = normalize_staff_name(staff)
+        if current_staff_key not in staff_stats:
+            staff_stats[current_staff_key] = {"leads": 0, "admissions": 0}
+        staff_stats[current_staff_key]["leads"] += 1
+        
+        # 2. Admission ownership (Performance metric) belongs to staff who closed it
         if admitted:
-            staff_stats[staff_key]["admissions"] += 1
+            admission_staff = admission_staff_map.get(phone, staff)
+            adm_staff_key = normalize_staff_name(admission_staff)
+            if adm_staff_key not in staff_stats:
+                staff_stats[adm_staff_key] = {"leads": 0, "admissions": 0}
+            staff_stats[adm_staff_key]["admissions"] += 1
 
         # ── Course attribution (course → offer_course → Unknown) ───────
         course_key = (course or "").strip() or (offer_course or "").strip() or "Unknown"
@@ -1909,7 +1957,10 @@ def crm_course_admissions(phone):
             log_lead_event(
                 phone=phone,
                 event_type="COURSE_ADMISSION",
-                event_data=json.dumps({"course": course}),
+                event_data=json.dumps({
+                    "course": course,
+                    "staff": lead.assigned_staff or ""
+                }),
             )
             newly_admitted.append(course)
 

@@ -914,6 +914,16 @@
               {% set lbl_cls = 'tl-label-manual'     %}
               {% set eicon   = 'bi-patch-check-fill' %}
               {% set elabel  = 'Course Admission'    %}
+            {% elif ev.event_type == 'LEAD_REASSIGNED' %}
+              {% set dot_cls = 'tl-dot-manual'       %}
+              {% set lbl_cls = 'tl-label-manual'     %}
+              {% set eicon   = 'bi-person-lines-fill' %}
+              {% set elabel  = 'Lead Reassigned'     %}
+            {% elif ev.event_type == 'MANUAL_MESSAGE' %}
+              {% set dot_cls = 'tl-dot-manual'       %}
+              {% set lbl_cls = 'tl-label-manual'     %}
+              {% set eicon   = 'bi-send-fill'        %}
+              {% set elabel  = 'Manual Reply'        %}
             {% else %}
               {% set dot_cls = 'tl-dot-manual'   %}
               {% set lbl_cls = 'tl-label-manual' %}
@@ -929,6 +939,18 @@
                 {% if ev.event_type in ('COURSE_ENQUIRY', 'COURSE_ADMISSION') %}
                   {% if event_course_map.get(ev.id) %}
                   <span style="font-size: 0.75rem; color: var(--text-muted);">{{ event_course_map[ev.id] }}</span>
+                  {% endif %}
+                {% elif ev.event_type == 'LEAD_REASSIGNED' %}
+                  {% if event_payload_map.get(ev.id) %}
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    {{ event_payload_map[ev.id].get('from') or 'Unassigned' }} &rarr; {{ event_payload_map[ev.id].get('to') or 'Unassigned' }}
+                  </span>
+                  {% endif %}
+                {% elif ev.event_type == 'MANUAL_MESSAGE' %}
+                  {% if event_payload_map.get(ev.id) %}
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    Sent by {{ event_payload_map[ev.id].get('staff') or 'Admin' }}
+                  </span>
                   {% endif %}
                 {% elif ev.event_data %}
                 <span style="font-size: 0.75rem; color: var(--text-muted);">{{ ev.event_data }}</span>
