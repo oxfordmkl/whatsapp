@@ -1092,6 +1092,341 @@
     {% endif %}
 
 
+    <!-- ── Phase 8.4: Lead Portfolio Dashboard ── -->
+    <!-- Read-only. Zero writes. All data from portfolio= template variable.  -->
+    <!-- Derived from: lead ORM row + events list + course_journey dict.      -->
+    <!-- No extra DB queries — calculate_lead_portfolio() uses in-memory data.-->
+    <div class="crm-card mt-3" id="lead-portfolio-card">
+      <div class="crm-card-header">
+        <i class="bi bi-person-lines-fill"></i>Lead Portfolio
+        <span style="margin-left: auto; font-size: 0.7rem; font-weight: 400; color: var(--text-muted);">
+          Read-only &middot; derived from event history
+        </span>
+      </div>
+      <div class="crm-card-body p-3">
+
+        <!-- ── Row 1: 4 KPI tiles ── -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+
+          <!-- KPI: Courses Enquired -->
+          <div id="kpi-courses-enquired"
+               style="background: rgba(88,166,255,0.07);
+                      border: 1px solid rgba(88,166,255,0.2);
+                      border-left: 3px solid var(--blue);
+                      border-radius: 10px; padding: 0.85rem 1rem;">
+            <div style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+                        letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem;">
+              Courses Enquired
+            </div>
+            <div style="font-size: 1.8rem; font-weight: 700; line-height: 1; color: var(--blue);">
+              {{ portfolio.total_course_enquiries }}
+            </div>
+          </div>
+
+          <!-- KPI: Courses Admitted -->
+          <div id="kpi-courses-admitted"
+               style="background: rgba(37,211,102,0.07);
+                      border: 1px solid rgba(37,211,102,0.2);
+                      border-left: 3px solid var(--green);
+                      border-radius: 10px; padding: 0.85rem 1rem;">
+            <div style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+                        letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem;">
+              Courses Admitted
+            </div>
+            <div style="font-size: 1.8rem; font-weight: 700; line-height: 1; color: var(--green);">
+              {{ portfolio.total_course_admissions }}
+            </div>
+          </div>
+
+          <!-- KPI: Total Events -->
+          <div id="kpi-total-events"
+               style="background: rgba(188,140,255,0.07);
+                      border: 1px solid rgba(188,140,255,0.2);
+                      border-left: 3px solid var(--purple);
+                      border-radius: 10px; padding: 0.85rem 1rem;">
+            <div style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+                        letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem;">
+              Total Events
+            </div>
+            <div style="font-size: 1.8rem; font-weight: 700; line-height: 1; color: var(--purple);">
+              {{ portfolio.total_events }}
+            </div>
+          </div>
+
+          <!-- KPI: Relationship Age -->
+          <div id="kpi-relationship-age"
+               style="background: rgba(210,153,34,0.07);
+                      border: 1px solid rgba(210,153,34,0.2);
+                      border-left: 3px solid var(--yellow);
+                      border-radius: 10px; padding: 0.85rem 1rem;">
+            <div style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+                        letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem;">
+              Relationship Age
+            </div>
+            <div style="font-size: 1.8rem; font-weight: 700; line-height: 1; color: var(--yellow);">
+              {{ portfolio.relationship_days }}<span style="font-size: 0.9rem; font-weight: 400;"> d</span>
+            </div>
+          </div>
+
+        </div><!-- /kpi row -->
+
+        <!-- ── Row 2: Lead Summary + Course Portfolio side-by-side ── -->
+        <div class="row g-3 mb-3">
+
+          <!-- Lead Summary -->
+          <div class="col-12 col-md-6">
+            <div style="background: var(--bg-card2); border: 1px solid var(--border);
+                        border-radius: 10px; padding: 1rem; height: 100%;">
+              <div style="font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+                          letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <i class="bi bi-person-fill me-1"></i>Lead Summary
+              </div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0; white-space: nowrap; width: 45%;">Phone</td>
+                  <td style="color: var(--text-main); font-family: 'Courier New', monospace; font-size: 0.78rem;">{{ lead.phone }}</td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Name</td>
+                  <td style="color: var(--text-main); font-weight: 500;">{{ lead.name or '—' }}</td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Assigned Staff</td>
+                  <td style="color: var(--text-main);">{{ lead.assigned_staff or '—' }}</td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Lead Status</td>
+                  <td>
+                    {% if lead.lead_status %}
+                    <span style="font-size: 0.72rem; font-weight: 600;
+                                 background: rgba(37,211,102,0.12); color: var(--green);
+                                 border: 1px solid rgba(37,211,102,0.2);
+                                 border-radius: 5px; padding: 0.1em 0.45em;">
+                      {{ lead.lead_status }}
+                    </span>
+                    {% else %}—{% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Stage</td>
+                  <td style="color: var(--text-main);">{{ lead.stage or '—' }}</td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Lead Score</td>
+                  <td style="color: var(--blue); font-weight: 700;">
+                    {{ intelligence.final_score if intelligence else (lead.lead_score or 0) }}
+                    {% if intelligence %}
+                    <span style="font-size: 0.65rem; font-weight: 600; margin-left: 4px;
+                                 color: {% if intelligence.temperature == 'HOT' %}var(--red){% elif intelligence.temperature == 'WARM' %}var(--yellow){% else %}var(--text-muted){% endif %};">
+                      {{ intelligence.temperature }}
+                    </span>
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Admission</td>
+                  <td>
+                    {% if lead.is_admitted %}
+                    <span style="font-size: 0.72rem; font-weight: 700;
+                                 background: rgba(37,211,102,0.18); color: var(--green);
+                                 border-radius: 5px; padding: 0.1em 0.45em;">
+                      <i class="bi bi-check-circle-fill me-1"></i>Admitted
+                    </span>
+                    {% else %}
+                    <span style="font-size: 0.72rem; color: var(--text-muted);">Not Admitted</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- Course Portfolio -->
+          <div class="col-12 col-md-6">
+            <div style="background: var(--bg-card2); border: 1px solid var(--border);
+                        border-radius: 10px; padding: 1rem; height: 100%;">
+              <div style="font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+                          letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <i class="bi bi-mortarboard-fill me-1"></i>Course Portfolio
+              </div>
+
+              <!-- Enquired courses -->
+              <div style="margin-bottom: 0.65rem;">
+                <div style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted);
+                            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem;">
+                  Enquired ({{ portfolio.total_course_enquiries }})
+                </div>
+                {% if portfolio.courses_enquired %}
+                <div class="d-flex flex-wrap gap-1">
+                  {% for c in portfolio.courses_enquired %}
+                  <span style="font-size: 0.72rem; font-weight: 500;
+                               background: rgba(88,166,255,0.1); color: var(--blue);
+                               border: 1px solid rgba(88,166,255,0.2);
+                               border-radius: 5px; padding: 0.15em 0.5em;">
+                    {{ c }}
+                  </span>
+                  {% endfor %}
+                </div>
+                {% else %}
+                <span style="font-size: 0.78rem; color: var(--text-muted); font-style: italic;">None recorded</span>
+                {% endif %}
+              </div>
+
+              <!-- Admitted courses -->
+              <div>
+                <div style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted);
+                            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem;">
+                  Admitted ({{ portfolio.total_course_admissions }})
+                </div>
+                {% if portfolio.courses_admitted %}
+                <div class="d-flex flex-wrap gap-1">
+                  {% for c in portfolio.courses_admitted %}
+                  <span style="font-size: 0.72rem; font-weight: 700;
+                               background: rgba(37,211,102,0.12); color: var(--green);
+                               border: 1px solid rgba(37,211,102,0.25);
+                               border-radius: 5px; padding: 0.15em 0.5em;">
+                    <i class="bi bi-patch-check-fill me-1" style="font-size: 0.65rem;"></i>{{ c }}
+                  </span>
+                  {% endfor %}
+                </div>
+                {% else %}
+                <span style="font-size: 0.78rem; color: var(--text-muted); font-style: italic;">None recorded</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /row 2 -->
+
+        <!-- ── Row 3: Engagement Portfolio + Timeline Portfolio side-by-side ── -->
+        <div class="row g-3">
+
+          <!-- Engagement Portfolio -->
+          <div class="col-12 col-md-6">
+            <div style="background: var(--bg-card2); border: 1px solid var(--border);
+                        border-radius: 10px; padding: 1rem;">
+              <div style="font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+                          letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <i class="bi bi-activity me-1"></i>Engagement Portfolio
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+
+                <div style="background: var(--bg-dark); border-radius: 7px; padding: 0.55rem 0.75rem;
+                            border: 1px solid var(--border);">
+                  <div style="font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase;
+                              font-weight: 600; letter-spacing: 0.05em;">Total Events</div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: var(--purple);">{{ portfolio.total_events }}</div>
+                </div>
+
+                <div style="background: var(--bg-dark); border-radius: 7px; padding: 0.55rem 0.75rem;
+                            border: 1px solid var(--border);">
+                  <div style="font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase;
+                              font-weight: 600; letter-spacing: 0.05em;">Course Views</div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: var(--blue);">{{ portfolio.course_views }}</div>
+                </div>
+
+                <div style="background: var(--bg-dark); border-radius: 7px; padding: 0.55rem 0.75rem;
+                            border: 1px solid var(--border);">
+                  <div style="font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase;
+                              font-weight: 600; letter-spacing: 0.05em;">Fees Requests</div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: var(--yellow);">{{ portfolio.fees_requests }}</div>
+                </div>
+
+                <div style="background: var(--bg-dark); border-radius: 7px; padding: 0.55rem 0.75rem;
+                            border: 1px solid var(--border);">
+                  <div style="font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase;
+                              font-weight: 600; letter-spacing: 0.05em;">Demo Requests</div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: var(--blue);">{{ portfolio.demo_requests }}</div>
+                </div>
+
+                <div style="background: var(--bg-dark); border-radius: 7px; padding: 0.55rem 0.75rem;
+                            border: 1px solid var(--border);">
+                  <div style="font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase;
+                              font-weight: 600; letter-spacing: 0.05em;">Admissions</div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: var(--green);">{{ portfolio.admissions_count }}</div>
+                </div>
+
+                <div style="background: var(--bg-dark); border-radius: 7px; padding: 0.55rem 0.75rem;
+                            border: 1px solid var(--border);">
+                  <div style="font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase;
+                              font-weight: 600; letter-spacing: 0.05em;">Placement Ask</div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: var(--text-muted);">{{ portfolio.placement_asked }}</div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- Timeline + Staff Portfolio -->
+          <div class="col-12 col-md-6">
+            <div style="background: var(--bg-card2); border: 1px solid var(--border);
+                        border-radius: 10px; padding: 1rem; height: 100%;">
+
+              <!-- Timeline Portfolio -->
+              <div style="font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+                          letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <i class="bi bi-clock-history me-1"></i>Timeline Portfolio
+              </div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 1rem;">
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0; white-space: nowrap; width: 50%;">First Contact</td>
+                  <td style="color: var(--text-main); font-size: 0.78rem;">
+                    {{ portfolio.first_contact.strftime('%d %b %Y') if portfolio.first_contact else '—' }}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Latest Activity</td>
+                  <td style="color: var(--text-main); font-size: 0.78rem;">
+                    {{ portfolio.latest_activity.strftime('%d %b %Y, %H:%M') if portfolio.latest_activity else '—' }}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: var(--text-muted); padding: 0.25rem 0.5rem 0.25rem 0;">Relationship Age</td>
+                  <td style="color: var(--yellow); font-weight: 700;">
+                    {{ portfolio.relationship_days }} day{% if portfolio.relationship_days != 1 %}s{% endif %}
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Staff Portfolio -->
+              <div style="border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                <div style="font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+                            letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.65rem;">
+                  <i class="bi bi-person-badge-fill me-1"></i>Staff Portfolio
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">
+                  <tr>
+                    <td style="color: var(--text-muted); padding: 0.2rem 0.5rem 0.2rem 0; width: 55%;">Assigned Staff</td>
+                    <td style="color: var(--text-main); font-weight: 600;">{{ lead.assigned_staff or '—' }}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted); padding: 0.2rem 0.5rem 0.2rem 0;">Admissions (this lead)</td>
+                    <td style="color: var(--green); font-weight: 700;">{{ portfolio.admissions_count }}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted); padding: 0.2rem 0.5rem 0.2rem 0;">Admission Status</td>
+                    <td>
+                      {% if lead.is_admitted %}
+                      <span style="font-size: 0.72rem; font-weight: 700; color: var(--green);">
+                        <i class="bi bi-check-circle-fill me-1"></i>Admitted
+                      </span>
+                      {% else %}
+                      <span style="font-size: 0.72rem; color: var(--text-muted);">Not Admitted</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+            </div>
+          </div>
+
+        </div><!-- /row 3 -->
+
+      </div>
+    </div><!-- /lead-portfolio-card -->
+
+
     <!-- â”€â”€ WhatsApp Conversation History (Legacy Phase 5B) â”€â”€ -->
     <details class="crm-card mt-3">
       <summary class="crm-card-header" style="cursor: pointer;">

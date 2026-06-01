@@ -190,6 +190,94 @@ def calculate_lead_health(state_updated_at, state_created_at, latest_msg_time, l
         "escalation": escalation
     }
 
+
+# ── Phase 8.4: Lead Portfolio Dashboard ────────────────────────────────────
+
+def calculate_lead_portfolio(lead, events: list, course_journey: dict) -> dict:
+    """
+    Build a complete portfolio summary for a single lead.
+
+    ZERO new DB queries — all data derived from objects already loaded
+    in crm_lead_detail() before this helper is called:
+
+        lead          → ConversationState ORM row
+        events        → list[LeadEvent] (already fetched, ASC order)
+        course_journey→ {"enquiries": [...], "admissions": [...]}
+                         (already computed by get_course_enquiries /
+                          get_course_admissions)
+
+    Returns a plain dict safe for Jinja2 template rendering.
+    Read-only. No writes. No side effects.
+    """
+    from datetime import datetime
+
+    # ── Event-type counters (single O(n) pass) ────────────────────────────
+    total_events       = len(events)
+    course_views       = 0
+    fees_requests      = 0
+    demo_requests      = 0
+    admissions_count   = 0
+    placement_asked    = 0
+
+    timestamps = []   # collect all created_at values for timeline metrics
+
+    for ev in events:
+        et = ev.event_type
+        if et == "COURSE_VIEWED":
+            course_views += 1
+        elif et == "FEES_REQUESTED":
+            fees_requests += 1
+        elif et == "DEMO_REQUESTED":
+            demo_requests += 1
+        elif et == "COURSE_ADMISSION":
+            admissions_count += 1
+        elif et == "PLACEMENT_ASKED":
+            placement_asked += 1
+        if ev.created_at:
+            timestamps.append(ev.created_at)
+
+    # ── Timeline Portfolio ────────────────────────────────────────────────
+    # Seed with ConversationState created_at so leads with no events still
+    # show a first-contact date (the moment they first messaged the bot).
+    if lead.created_at:
+        timestamps.append(lead.created_at)
+    if lead.updated_at:
+        timestamps.append(lead.updated_at)
+
+    if timestamps:
+        first_contact    = min(timestamps)
+        latest_activity  = max(timestamps)
+        relationship_days = max(0, (latest_activity - first_contact).days)
+    else:
+        now              = datetime.utcnow()
+        first_contact    = now
+        latest_activity  = now
+        relationship_days = 0
+
+    # ── Course Portfolio (from already-computed course_journey) ───────────
+    courses_enquired  = course_journey.get("enquiries",  [])
+    courses_admitted  = course_journey.get("admissions", [])
+
+    return {
+        # Engagement
+        "total_events":            total_events,
+        "course_views":            course_views,
+        "fees_requests":           fees_requests,
+        "demo_requests":           demo_requests,
+        "admissions_count":        admissions_count,
+        "placement_asked":         placement_asked,
+        # Course
+        "total_course_enquiries":  len(courses_enquired),
+        "total_course_admissions": len(courses_admitted),
+        "courses_enquired":        courses_enquired,
+        "courses_admitted":        courses_admitted,
+        # Timeline
+        "first_contact":           first_contact,
+        "latest_activity":         latest_activity,
+        "relationship_days":       relationship_days,
+    }
+
+
 admin_bp = Blueprint("admin", __name__)
 
 
@@ -619,6 +707,11 @@ def crm_lead_detail(phone):
             except Exception:
                 pass
 
+    # ── Phase 8.4: Lead Portfolio — zero new queries ─────────────────────────
+    # Passes already-loaded lead ORM row, events list, and course_journey dict.
+    # All aggregation happens in Python memory inside calculate_lead_portfolio().
+    portfolio = calculate_lead_portfolio(lead, events, course_journey)
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
@@ -636,7 +729,9 @@ def crm_lead_detail(phone):
         intelligence=intelligence,
         course_journey=course_journey,
         event_course_map=event_course_map,
+        portfolio=portfolio,
     )
+
 
 
 # ── POST /crm/lead/<phone>/update ──────────────────────────────────────────
