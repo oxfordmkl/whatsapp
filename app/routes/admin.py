@@ -1727,3 +1727,107 @@ def crm_revenue_analytics():
         key=request.args.get("key", ""),
         data=data,
     )
+
+
+# ── Phase 8.3A: Multi-Course Admission Selection ────────────────────────────
+
+@admin_bp.route("/crm/course-admissions/<phone>", methods=["POST"])
+def crm_course_admissions(phone):
+    """
+    POST /crm/course-admissions/<phone>?key=ADMIN_KEY
+
+    Receives a list of admitted_courses[] checkbox values from the
+    Multi-Course Admissions form in crm_lead_detail.html.
+
+    Logic (append-only):
+      1. Read existing COURSE_ADMISSION events for this phone.  (1 query)
+      2. Read existing course enquiries via get_course_enquiries(). (1 query)
+      3. For each submitted course:
+           - Validate it exists in the enquiry list (prevents injection)
+           - If NOT already in admitted-event history → fire log_lead_event()
+           - If ALREADY in admitted-event history → skip silently
+      4. NEVER delete or modify existing COURSE_ADMISSION events.
+      5. Redirect back to lead detail with msg= on success or err= on failure.
+
+    Query count: 2 reads + N writes (one per newly admitted course, typically 0-3).
+    Schema changes: none. Model changes: none. Analytics: unchanged.
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    import json
+    from app.models import LeadEvent
+    from app.extensions import db
+    from app.services.log_service import log_lead_event
+
+    try:
+        # ── 1. Read already-admitted course names (lowercase set for O(1) lookup) ──
+        existing_admission_events = (
+            LeadEvent.query
+            .filter_by(phone=phone, event_type="COURSE_ADMISSION")
+            .all()
+        )
+        already_admitted_lower: set = set()
+        for ev in existing_admission_events:
+            try:
+                data = json.loads(ev.event_data or "{}")
+                name = (data.get("course") or "").strip()
+                if name:
+                    already_admitted_lower.add(normalize_course_name(name).lower())
+            except (ValueError, TypeError):
+                pass
+
+        # ── 2. Read valid enquiry courses (source of truth for checkbox values) ──
+        valid_enquiry_courses_lower: set = {
+            c.lower() for c in get_course_enquiries(phone)
+        }
+
+        # ── 3. Process submitted checkboxes ───────────────────────────────────────
+        # request.form.getlist() returns [] if no boxes checked (all unchecked).
+        submitted_courses = request.form.getlist("admitted_courses")
+
+        newly_admitted: list = []
+        for raw_course in submitted_courses:
+            course = normalize_course_name(raw_course.strip())
+            if not course:
+                continue
+            # Security: only accept courses that came from the enquiry list
+            if course.lower() not in valid_enquiry_courses_lower:
+                continue
+            # Idempotency: skip if already recorded
+            if course.lower() in already_admitted_lower:
+                continue
+            # Append-only: fire one new COURSE_ADMISSION event
+            log_lead_event(
+                phone=phone,
+                event_type="COURSE_ADMISSION",
+                event_data=json.dumps({"course": course}),
+            )
+            newly_admitted.append(course)
+
+        # ── 4. Redirect with result message ───────────────────────────────────────
+        if newly_admitted:
+            count = len(newly_admitted)
+            names = ", ".join(newly_admitted)
+            msg = f"course+admissions+saved%3A+{count}+new+course{'s' if count != 1 else ''}+admitted+%28{'+'.join(n.replace(' ', '+') for n in newly_admitted)}%29"
+            return redirect(url_for(
+                "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY, msg=msg
+            ))
+        else:
+            # Nothing new — all checked courses already recorded, or nothing checked
+            return redirect(url_for(
+                "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
+                msg="course+admissions+saved%3A+no+new+admissions+to+record"
+            ))
+
+    except Exception as exc:
+        import logging
+        logging.exception(f"[crm_course_admissions] Unexpected error for {phone}: {exc}")
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return redirect(url_for(
+            "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
+            err="course+admission+save+failed%3A+please+try+again"
+        ))
