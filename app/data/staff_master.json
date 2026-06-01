@@ -1,0 +1,17 @@
+{
+  "ANJU": {
+    "display_name": "Anju",
+    "role": "STAFF",
+    "active": true
+  },
+  "KIRAN": {
+    "display_name": "Kiran",
+    "role": "STAFF",
+    "active": true
+  },
+  "NISHA": {
+    "display_name": "Nisha",
+    "role": "STAFF",
+    "active": true
+  }
+}

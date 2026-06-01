@@ -680,9 +680,15 @@
               <!-- Assigned Staff -->
               <div class="mb-3">
                 <label class="form-label-crm" for="assigned_staff">Assigned Staff</label>
-                <input type="text" class="crm-input" name="assigned_staff" id="assigned_staff"
-                       placeholder="Staff name…"
-                       value="{{ lead.assigned_staff or '' }}">
+                <select class="crm-input" name="assigned_staff" id="assigned_staff">
+                  <option value="">-- Unassigned --</option>
+                  {% for s in active_staff %}
+                  <option value="{{ s }}" {% if lead.assigned_staff == s %}selected{% endif %}>{{ s }}</option>
+                  {% endfor %}
+                  {% if lead.assigned_staff and lead.assigned_staff not in active_staff %}
+                  <option value="{{ lead.assigned_staff }}" selected>{{ lead.assigned_staff }} (Inactive)</option>
+                  {% endif %}
+                </select>
               </div>
 
               <!-- Lead Score -->

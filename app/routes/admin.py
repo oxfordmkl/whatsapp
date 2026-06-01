@@ -3,6 +3,32 @@ from sqlalchemy import or_
 from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for
 from app.config import ADMIN_KEY
 
+import os
+import json
+
+def get_staff_json_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "staff_master.json")
+
+def load_staff_registry():
+    path = get_staff_json_path()
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logging.error(f"Error loading staff_master.json: {e}")
+    return {}
+
+def save_staff_registry(data):
+    path = get_staff_json_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logging.error(f"Error saving staff_master.json: {e}")
+
+
 def normalize_staff_name(name):
     """
     Normalizes staff names for reporting (e.g. 'kiran', 'KIRAN', ' Kiran ' -> 'Kiran').
@@ -571,6 +597,93 @@ def _calculate_audiences():
 
 # ── Phase 4C: Lead Detail helpers ─────────────────────────────────────────
 
+# ── Phase 9.2A-Lite: Staff Management ────────────────────────────────────────
+
+@admin_bp.route("/crm/staff-management", methods=["GET", "POST"])
+def crm_staff_management():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    key = request.args.get("key", "")
+    registry = load_staff_registry()
+    
+    if request.method == "POST":
+        action = request.form.get("action")
+        
+        if action == "add":
+            code = request.form.get("staff_code", "").strip().upper()
+            display_name = request.form.get("display_name", "").strip()
+            role = request.form.get("role", "STAFF").strip()
+            active = request.form.get("active") == "on"
+            
+            if not code or not display_name:
+                return redirect(url_for("admin.crm_staff_management", key=key, err="Code and Name required"))
+            if code in registry:
+                return redirect(url_for("admin.crm_staff_management", key=key, err="Staff code already exists"))
+                
+            registry[code] = {
+                "display_name": display_name,
+                "role": role,
+                "active": active
+            }
+            save_staff_registry(registry)
+            return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff added"))
+            
+        elif action == "edit":
+            code = request.form.get("staff_code", "").strip().upper()
+            if code not in registry:
+                return redirect(url_for("admin.crm_staff_management", key=key, err="Staff not found"))
+                
+            registry[code]["display_name"] = request.form.get("display_name", "").strip() or registry[code]["display_name"]
+            registry[code]["role"] = request.form.get("role", "").strip() or registry[code]["role"]
+            registry[code]["active"] = request.form.get("active") == "on"
+            
+            save_staff_registry(registry)
+            return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff updated"))
+            
+        elif action == "toggle":
+            code = request.form.get("staff_code", "").strip().upper()
+            if code in registry:
+                registry[code]["active"] = not registry[code]["active"]
+                save_staff_registry(registry)
+                return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff status toggled"))
+    
+    # Calculate statistics based on existing analytics logic
+    analytics_data = calculate_admission_analytics()
+    # analytics_data["staff_rows"] contains {"name": ..., "leads": ..., "admissions": ...}
+    stats_map = {row["name"]: {"leads": row["leads"], "admissions": row["admissions"]} for row in analytics_data["staff_rows"]}
+    
+    staff_list = []
+    for code, data in registry.items():
+        name = data.get("display_name", "")
+        # The analytics normalize_staff_name(staff) resolves the name for grouping
+        norm_name = normalize_staff_name(name)
+        stats = stats_map.get(norm_name, {"leads": 0, "admissions": 0})
+        
+        staff_list.append({
+            "code": code,
+            "display_name": name,
+            "role": data.get("role", "STAFF"),
+            "active": data.get("active", False),
+            "assigned_leads": stats["leads"],
+            "admissions": stats["admissions"]
+        })
+        
+    staff_list.sort(key=lambda x: (not x["active"], x["display_name"]))
+    
+    return render_template(
+        "crm_staff_management.html",
+        key=key,
+        staff_list=staff_list,
+        msg=request.args.get("msg", ""),
+        err=request.args.get("err", "")
+    )
+
+
+# ── GET /crm/leads ─────────────────────────────────────────────────────────
+
+@admin_bp.route("/crm/leads", methods=["GET"])
+
 def _deny():
     return (
         "<html><body style='font-family:sans-serif;text-align:center;"
@@ -731,6 +844,11 @@ def crm_lead_detail(phone):
     # All aggregation happens in Python memory inside calculate_lead_portfolio().
     portfolio = calculate_lead_portfolio(lead, events, course_journey)
 
+    # ── Phase 9.2A-Lite: Staff Registry ──────────────────────────────────────
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+
     return render_template(
         "crm_lead_detail.html",
         lead=lead,
@@ -749,6 +867,8 @@ def crm_lead_detail(phone):
         course_journey=course_journey,
         event_course_map=event_course_map,
         portfolio=portfolio,
+        active_staff=active_staff,
+        event_payload_map=event_payload_map,
     )
 
 
