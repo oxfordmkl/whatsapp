@@ -305,6 +305,7 @@
               <th>Phone</th>
               <th>Lead Name</th>
               <th>Enquiries</th>
+              <th>Admissions</th>
               <th>Course List</th>
               <th>Assigned Staff</th>
               <th>Action</th>
@@ -316,6 +317,7 @@
               <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
               <td class="fw-medium">{{ item.name }}</td>
               <td class="fw-bold text-info">{{ item.course_count }}</td>
+              <td class="fw-bold {% if item.admissions_count > 0 %}text-success{% else %}text-muted{% endif %}">{{ item.admissions_count }}</td>
               <td style="font-size: 0.8rem; color: var(--text-muted);">{{ item.courses }}</td>
               <td>
                 {% if item.staff == '—' %}

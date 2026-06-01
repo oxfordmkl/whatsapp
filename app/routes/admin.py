@@ -2,6 +2,19 @@ import logging
 from sqlalchemy import or_
 from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for
 from app.config import ADMIN_KEY
+
+def normalize_staff_name(name):
+    """
+    Normalizes staff names for reporting (e.g. 'kiran', 'KIRAN', ' Kiran ' -> 'Kiran').
+    Does not modify database records.
+    """
+    if not name:
+        return "Unassigned"
+    cleaned = name.strip()
+    if not cleaned:
+        return "Unassigned"
+    return cleaned.title()
+
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
 
@@ -1146,10 +1159,10 @@ def calculate_staff_performance():
     total_admissions = 0
     
     for phone, assigned_staff, is_admitted, lead_score in states:
-        if not assigned_staff:
+        staff = normalize_staff_name(assigned_staff)
+        if staff == "Unassigned":
             continue
             
-        staff = assigned_staff
         total_staff.add(staff)
         
         if staff not in staff_stats:
@@ -1266,10 +1279,10 @@ def calculate_staff_performance_fixed():
     total_admissions = 0
     
     for phone, assigned_staff, is_admitted, lead_score in states:
-        if not assigned_staff:
+        staff = normalize_staff_name(assigned_staff)
+        if staff == "Unassigned":
             continue
             
-        staff = assigned_staff
         total_staff.add(staff)
         
         if staff not in staff_stats:
@@ -1534,7 +1547,7 @@ def calculate_admission_analytics():
             total_admissions += 1
 
         # ── Staff attribution ──────────────────────────────────────────
-        staff_key = (staff or "").strip() or "Unassigned"
+        staff_key = normalize_staff_name(staff)
         if staff_key not in staff_stats:
             staff_stats[staff_key] = {"leads": 0, "admissions": 0}
         staff_stats[staff_key]["leads"] += 1
@@ -1977,9 +1990,23 @@ def calculate_crm_health():
     total_leads = len(leads)
     unhealthy_lead_phones = set()
 
+    # Track staff variations
+    normalized_to_raw = {}
+
     for lead in leads:
         p = lead.phone
-        staff = (lead.assigned_staff or "").strip()
+        # Record raw staff for duplicate detection
+        raw_staff = (lead.assigned_staff or "").strip()
+        if raw_staff:
+            norm = normalize_staff_name(raw_staff)
+            if norm not in normalized_to_raw:
+                normalized_to_raw[norm] = set()
+            normalized_to_raw[norm].add(raw_staff)
+            
+        staff = normalize_staff_name(raw_staff)
+        if staff == "Unassigned":
+            staff = ""
+            
         score = lead.lead_score or 0
         is_admitted = lead.is_admitted
         
@@ -2033,6 +2060,18 @@ def calculate_crm_health():
             unhealthy_lead_phones.add(p)
 
     healthy_count = total_leads - len(unhealthy_lead_phones)
+
+    # Duplicate Staff Naming Warning & Penalty
+    for norm_name, variants in normalized_to_raw.items():
+        if len(variants) > 1:
+            warning_issues.insert(0, {
+                "phone": "-",
+                "name": "System",
+                "issue": f"Duplicate Staff Naming Detected Variants: {' / '.join(variants)}"
+            })
+            # Penalize health score
+            healthy_count -= len(variants)
+
     health_score = (healthy_count / total_leads * 100) if total_leads > 0 else 100.0
 
     return {
@@ -2139,10 +2178,16 @@ def calculate_action_center():
     unassigned_hot = []
     followup_required = []
 
+    assigned_bucket = set()
+
     # Process leads in a single O(L) pass
     for lead in leads:
         p = lead.phone
-        staff = (lead.assigned_staff or "").strip()
+        staff_raw = (lead.assigned_staff or "").strip()
+        staff = normalize_staff_name(staff_raw)
+        if staff == "Unassigned":
+            staff = ""
+            
         score = lead.lead_score or 0
         is_admitted = lead.is_admitted
         lead_name = lead.name or "Unknown"
@@ -2151,7 +2196,7 @@ def calculate_action_center():
         has_demo = pd.get("has_demo", False)
         has_fees = pd.get("has_fees", False)
         enquiries_set = pd.get("enquiries", set())
-        has_admissions = len(pd.get("admissions", set())) > 0
+        admissions_count = len(pd.get("admissions", set()))
 
         # Determine latest activity for this lead
         event_latest = pd.get("latest_activity")
@@ -2167,43 +2212,49 @@ def calculate_action_center():
 
         course_interest = ", ".join(enquiries_set) if enquiries_set else "None"
 
-        # 1. ADMISSION READY
-        if has_demo and has_fees and not is_admitted and staff:
-            admission_ready.append({
-                "phone": p, "name": lead_name, "staff": staff,
-                "course": course_interest, "score": score
-            })
-
-        # 2. HOT LEADS
-        if score >= 80 and not is_admitted:
-            hot_leads.append({
-                "phone": p, "name": lead_name, "score": score, "staff": staff or "—"
-            })
-
-        # 3. MULTI-COURSE OPPORTUNITIES
-        if len(enquiries_set) >= 3 and not has_admissions:
-            multi_course.append({
-                "phone": p, "name": lead_name, "course_count": len(enquiries_set),
-                "courses": course_interest, "staff": staff or "—"
-            })
-
-        # 4. DEMO PENDING
-        if has_demo and not is_admitted:
-            demo_pending.append({
-                "phone": p, "name": lead_name, "staff": staff or "—", "course": course_interest
-            })
-
-        # 5. UNASSIGNED HOT LEADS
+        # Note: 'Unassigned Hot Leads' is tracked separately from operational workflow prioritization.
         if score >= 80 and not staff:
             unassigned_hot.append({
                 "phone": p, "name": lead_name, "score": score
             })
 
-        # 6. FOLLOW-UP REQUIRED
-        if staff and not is_admitted and latest_act and latest_act < followup_threshold_date:
+        # 1. ADMISSION READY
+        if p not in assigned_bucket and has_demo and has_fees and not is_admitted and staff:
+            admission_ready.append({
+                "phone": p, "name": lead_name, "staff": staff,
+                "course": course_interest, "score": score
+            })
+            assigned_bucket.add(p)
+
+        # 2. HOT LEADS
+        if p not in assigned_bucket and score >= 80 and not is_admitted:
+            hot_leads.append({
+                "phone": p, "name": lead_name, "score": score, "staff": staff or "—"
+            })
+            assigned_bucket.add(p)
+
+        # 3. MULTI-COURSE OPPORTUNITIES
+        if p not in assigned_bucket and len(enquiries_set) >= 3:
+            multi_course.append({
+                "phone": p, "name": lead_name, "course_count": len(enquiries_set),
+                "admissions_count": admissions_count,
+                "courses": course_interest, "staff": staff or "—"
+            })
+            assigned_bucket.add(p)
+
+        # 4. DEMO PENDING
+        if p not in assigned_bucket and has_demo and not is_admitted:
+            demo_pending.append({
+                "phone": p, "name": lead_name, "staff": staff or "—", "course": course_interest
+            })
+            assigned_bucket.add(p)
+
+        # 5. FOLLOW-UP REQUIRED
+        if p not in assigned_bucket and staff and not is_admitted and latest_act and latest_act < followup_threshold_date:
             followup_required.append({
                 "phone": p, "name": lead_name, "staff": staff, "days": days_since_activity
             })
+            assigned_bucket.add(p)
 
     # Sort descending by score where applicable, else by days or count
     admission_ready.sort(key=lambda x: x["score"], reverse=True)
