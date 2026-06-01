@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CRM Health & Data Quality - Oxford</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0d1117;
+      --bg-card: #161b22;
+      --bg-card2: #21262d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --border: #30363d;
+      --green: #238636;
+      --blue: #58a6ff;
+      --red: #f85149;
+      --yellow: #d29922;
+      --purple: #bc8cff;
+    }
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+    }
+    .crm-navbar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.8rem 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .crm-nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .crm-nav-link:hover {
+      color: var(--text-main);
+      background: rgba(255,255,255,0.05);
+    }
+    .crm-nav-link.active {
+      color: var(--text-main);
+      background: rgba(255,255,255,0.1);
+    }
+    .crm-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .crm-card-header {
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .kpi-box {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .kpi-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .kpi-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .issue-table {
+      width: 100%;
+      font-size: 0.85rem;
+    }
+    .issue-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+    }
+    .issue-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .issue-table tr:last-child td {
+      border-bottom: none;
+    }
+    .phone-link {
+      color: var(--blue);
+      text-decoration: none;
+      font-family: 'Courier New', monospace;
+      font-weight: 600;
+    }
+    .phone-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <div class="crm-navbar">
+    <div class="d-flex align-items-center gap-2 me-3">
+      <i class="bi bi-robot" style="font-size: 1.2rem; color: var(--blue);"></i>
+      <span style="font-weight: 700; font-size: 1rem; letter-spacing: -0.02em;">Oxford CRM</span>
+    </div>
+    <div class="d-flex gap-1" style="flex-wrap: wrap;">
+      <a href="/crm/leads?key={{ key }}" class="crm-nav-link">Leads Pipeline</a>
+      <a href="/crm/analytics?key={{ key }}" class="crm-nav-link">Analytics</a>
+      <a href="/crm/source-analytics?key={{ key }}" class="crm-nav-link">Sources</a>
+      <a href="/crm/admission-analytics?key={{ key }}" class="crm-nav-link">Admissions</a>
+      <a href="/crm/staff-performance?key={{ key }}" class="crm-nav-link">Staff</a>
+      <a href="/crm/revenue-analytics?key={{ key }}" class="crm-nav-link">Revenue</a>
+      <a href="/crm/health?key={{ key }}" class="crm-nav-link active">Health</a>
+    </div>
+  </div>
+
+  <div class="container-fluid p-4" style="max-width: 1400px; margin: 0 auto;">
+    
+    <div class="mb-4">
+      <h2 style="font-weight: 700; font-size: 1.5rem; margin-bottom: 0.2rem;">
+        <i class="bi bi-heart-pulse text-danger me-2"></i>Data Quality Dashboard
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">
+        Read-only audit of CRM data integrity.
+      </p>
+    </div>
+
+    <!-- KPIs -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--blue);">
+          <div class="kpi-title">Total Leads</div>
+          <div class="kpi-value text-white">{{ data.total_leads }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid {% if data.health_score >= 90 %}var(--green){% elif data.health_score >= 70 %}var(--yellow){% else %}var(--red){% endif %};">
+          <div class="kpi-title">Health Score</div>
+          <div class="kpi-value" style="color: {% if data.health_score >= 90 %}var(--green){% elif data.health_score >= 70 %}var(--yellow){% else %}var(--red){% endif %};">{{ data.health_score }}%</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--red);">
+          <div class="kpi-title">Critical Issues</div>
+          <div class="kpi-value" style="color: var(--red);">{{ data.critical_count }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--yellow);">
+          <div class="kpi-title">Warnings</div>
+          <div class="kpi-value" style="color: var(--yellow);">{{ data.warning_count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4">
+      
+      <!-- Critical Issues -->
+      <div class="col-12 col-xl-6">
+        <div class="crm-card h-100">
+          <div class="crm-card-header" style="color: var(--red);">
+            <i class="bi bi-exclamation-octagon-fill"></i> Critical Issues
+            <span class="badge bg-danger ms-auto rounded-pill">{{ data.critical_count }}</span>
+          </div>
+          <div class="crm-card-body p-0" style="max-height: 600px; overflow-y: auto;">
+            {% if data.critical_issues %}
+            <table class="issue-table">
+              <thead>
+                <tr>
+                  <th>Lead</th>
+                  <th>Issue Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for issue in data.critical_issues %}
+                <tr>
+                  <td style="width: 35%;">
+                    <a href="/crm/lead/{{ issue.phone }}?key={{ key }}" class="phone-link">{{ issue.phone }}</a>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">{{ issue.name }}</div>
+                  </td>
+                  <td>
+                    <span style="font-size: 0.75rem; font-weight: 500; background: rgba(248,81,73,0.1); color: var(--red); border: 1px solid rgba(248,81,73,0.2); border-radius: 5px; padding: 0.2rem 0.5rem;">
+                      {{ issue.issue }}
+                    </span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="p-4 text-center" style="color: var(--text-muted); font-size: 0.9rem;">
+              <i class="bi bi-check-circle text-success" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
+              No critical issues found. Great job!
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Warning Issues -->
+      <div class="col-12 col-xl-6">
+        <div class="crm-card h-100">
+          <div class="crm-card-header" style="color: var(--yellow);">
+            <i class="bi bi-exclamation-triangle-fill"></i> Warning Issues
+            <span class="badge bg-warning text-dark ms-auto rounded-pill">{{ data.warning_count }}</span>
+          </div>
+          <div class="crm-card-body p-0" style="max-height: 600px; overflow-y: auto;">
+            {% if data.warning_issues %}
+            <table class="issue-table">
+              <thead>
+                <tr>
+                  <th>Lead</th>
+                  <th>Issue Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for issue in data.warning_issues %}
+                <tr>
+                  <td style="width: 35%;">
+                    <a href="/crm/lead/{{ issue.phone }}?key={{ key }}" class="phone-link">{{ issue.phone }}</a>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">{{ issue.name }}</div>
+                  </td>
+                  <td>
+                    <span style="font-size: 0.75rem; font-weight: 500; background: rgba(210,153,34,0.1); color: var(--yellow); border: 1px solid rgba(210,153,34,0.2); border-radius: 5px; padding: 0.2rem 0.5rem;">
+                      {{ issue.issue }}
+                    </span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="p-4 text-center" style="color: var(--text-muted); font-size: 0.9rem;">
+              <i class="bi bi-check-circle text-success" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
+              No warning issues found.
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

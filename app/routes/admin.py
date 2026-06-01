@@ -1926,3 +1926,139 @@ def crm_course_admissions(phone):
             "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
             err="course+admission+save+failed%3A+please+try+again"
         ))
+
+
+# ── Phase 8.5: CRM Health & Data Quality Dashboard ───────────────────────────
+
+def calculate_crm_health():
+    from app.models import ConversationState, LeadEvent
+    from app.bot.constants import normalize_course_name
+    from datetime import datetime
+    import json
+
+    # 2 bulk queries max
+    leads = ConversationState.query.all()
+    events = LeadEvent.query.all()
+
+    admitted_phones = set()
+    enquiries_by_phone = {}
+    latest_event_by_phone = {}
+
+    for e in events:
+        p = e.phone
+        if p not in enquiries_by_phone:
+            enquiries_by_phone[p] = set()
+
+        if e.event_type == "COURSE_ADMISSION":
+            admitted_phones.add(p)
+        elif e.event_type in ("COURSE_ENQUIRY", "COURSE_VIEWED"):
+            course = ""
+            if e.event_type == "COURSE_ENQUIRY":
+                try:
+                    data = json.loads(e.event_data or "{}")
+                    course = (data.get("course") or "").strip()
+                except (ValueError, TypeError):
+                    course = (e.event_data or "").strip()
+            else:
+                course = (e.event_data or "").strip()
+            
+            course = normalize_course_name(course)
+            if course:
+                enquiries_by_phone[p].add(course.lower())
+
+        if e.created_at:
+            if p not in latest_event_by_phone or e.created_at > latest_event_by_phone[p]:
+                latest_event_by_phone[p] = e.created_at
+
+    critical_issues = []
+    warning_issues = []
+    
+    now = datetime.utcnow()
+    total_leads = len(leads)
+    unhealthy_lead_phones = set()
+
+    for lead in leads:
+        p = lead.phone
+        staff = (lead.assigned_staff or "").strip()
+        score = lead.lead_score or 0
+        is_admitted = lead.is_admitted
+        
+        has_admission_event = p in admitted_phones
+        enquiry_count = len(enquiries_by_phone.get(p, set()))
+        
+        latest_act = latest_event_by_phone.get(p)
+        if not latest_act:
+            latest_act = lead.updated_at or lead.created_at
+        else:
+            if lead.updated_at and lead.updated_at > latest_act:
+                latest_act = lead.updated_at
+        
+        days_inactive = (now - (latest_act or now)).days
+
+        lead_name_display = lead.name or "Unknown"
+
+        # CRITICAL CHECKS
+        is_critical = False
+        if is_admitted and not staff:
+            critical_issues.append({"phone": p, "name": lead_name_display, "issue": "Admitted lead with no assigned staff"})
+            is_critical = True
+        
+        if is_admitted and not has_admission_event:
+            critical_issues.append({"phone": p, "name": lead_name_display, "issue": "Admitted lead with no COURSE_ADMISSION event"})
+            is_critical = True
+            
+        if score >= 80 and not staff:
+            critical_issues.append({"phone": p, "name": lead_name_display, "issue": "Lead score >= 80 and no assigned staff"})
+            is_critical = True
+
+        # WARNING CHECKS
+        is_warning = False
+        if score >= 80 and not is_admitted:
+            warning_issues.append({"phone": p, "name": lead_name_display, "issue": "Lead score >= 80 and not admitted"})
+            is_warning = True
+            
+        if enquiry_count >= 2 and not has_admission_event:
+            warning_issues.append({"phone": p, "name": lead_name_display, "issue": "Multiple course enquiries and zero admissions"})
+            is_warning = True
+            
+        if not staff:
+            warning_issues.append({"phone": p, "name": lead_name_display, "issue": "Unassigned lead"})
+            is_warning = True
+            
+        if days_inactive >= 7:
+            warning_issues.append({"phone": p, "name": lead_name_display, "issue": f"No activity for {days_inactive} days"})
+            is_warning = True
+
+        if is_critical or is_warning:
+            unhealthy_lead_phones.add(p)
+
+    healthy_count = total_leads - len(unhealthy_lead_phones)
+    health_score = (healthy_count / total_leads * 100) if total_leads > 0 else 100.0
+
+    return {
+        "total_leads": total_leads,
+        "health_score": round(health_score, 1),
+        "critical_count": len(critical_issues),
+        "warning_count": len(warning_issues),
+        "critical_issues": critical_issues,
+        "warning_issues": warning_issues
+    }
+
+
+@admin_bp.route("/crm/health", methods=["GET"])
+def crm_health():
+    """
+    Phase 8.5: CRM Health & Data Quality Dashboard.
+    Protected by ?key=ADMIN_KEY. Read-only.
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+    
+    data = calculate_crm_health()
+    
+    return render_template(
+        "crm_health.html",
+        key=request.args.get("key", ""),
+        data=data,
+    )
+
