@@ -2062,3 +2062,186 @@ def crm_health():
         data=data,
     )
 
+
+# ── Phase 8.6: CRM Action Center (Read-Only) ─────────────────────────────
+
+def calculate_action_center():
+    from app.models import ConversationState, LeadEvent
+    from app.bot.constants import normalize_course_name
+    from datetime import datetime, timedelta
+    import json
+
+    FOLLOWUP_DAYS = 3
+    now = datetime.utcnow()
+    followup_threshold_date = now - timedelta(days=FOLLOWUP_DAYS)
+
+    # 1. Fetch filtered events
+    events = LeadEvent.query.filter(LeadEvent.event_type.in_([
+        "COURSE_VIEWED",
+        "COURSE_ENQUIRY",
+        "COURSE_ADMISSION",
+        "FEES_REQUESTED",
+        "DEMO_REQUESTED"
+    ])).all()
+
+    # 2. Fetch all leads
+    leads = ConversationState.query.all()
+
+    # Process events in a single O(E) pass
+    phone_data = {}
+    for e in events:
+        p = e.phone
+        if p not in phone_data:
+            phone_data[p] = {
+                "enquiries": set(),
+                "admissions": set(),
+                "has_demo": False,
+                "has_fees": False,
+                "latest_activity": None
+            }
+
+        data = phone_data[p]
+        et = e.event_type
+
+        # Track latest activity
+        if e.created_at:
+            if not data["latest_activity"] or e.created_at > data["latest_activity"]:
+                data["latest_activity"] = e.created_at
+
+        # Categorize event
+        if et == "DEMO_REQUESTED":
+            data["has_demo"] = True
+        elif et == "FEES_REQUESTED":
+            data["has_fees"] = True
+        elif et == "COURSE_ADMISSION":
+            # Just mark they have an admission, course name tracking for admission not strictly required for logic but good
+            data["admissions"].add("yes")
+        elif et in ("COURSE_VIEWED", "COURSE_ENQUIRY"):
+            course = ""
+            if et == "COURSE_ENQUIRY":
+                try:
+                    js = json.loads(e.event_data or "{}")
+                    course = (js.get("course") or "").strip()
+                except (ValueError, TypeError):
+                    course = (e.event_data or "").strip()
+            else:
+                course = (e.event_data or "").strip()
+            
+            course = normalize_course_name(course)
+            if course:
+                data["enquiries"].add(course.lower())
+
+    # Initialize buckets
+    admission_ready = []
+    hot_leads = []
+    multi_course = []
+    demo_pending = []
+    unassigned_hot = []
+    followup_required = []
+
+    # Process leads in a single O(L) pass
+    for lead in leads:
+        p = lead.phone
+        staff = (lead.assigned_staff or "").strip()
+        score = lead.lead_score or 0
+        is_admitted = lead.is_admitted
+        lead_name = lead.name or "Unknown"
+        
+        pd = phone_data.get(p, {})
+        has_demo = pd.get("has_demo", False)
+        has_fees = pd.get("has_fees", False)
+        enquiries_set = pd.get("enquiries", set())
+        has_admissions = len(pd.get("admissions", set())) > 0
+
+        # Determine latest activity for this lead
+        event_latest = pd.get("latest_activity")
+        latest_act = event_latest
+        if not latest_act:
+            latest_act = lead.updated_at or lead.created_at
+        else:
+            if lead.updated_at and lead.updated_at > latest_act:
+                latest_act = lead.updated_at
+        
+        # Calculate days since activity
+        days_since_activity = (now - (latest_act or now)).days
+
+        course_interest = ", ".join(enquiries_set) if enquiries_set else "None"
+
+        # 1. ADMISSION READY
+        if has_demo and has_fees and not is_admitted and staff:
+            admission_ready.append({
+                "phone": p, "name": lead_name, "staff": staff,
+                "course": course_interest, "score": score
+            })
+
+        # 2. HOT LEADS
+        if score >= 80 and not is_admitted:
+            hot_leads.append({
+                "phone": p, "name": lead_name, "score": score, "staff": staff or "—"
+            })
+
+        # 3. MULTI-COURSE OPPORTUNITIES
+        if len(enquiries_set) >= 3 and not has_admissions:
+            multi_course.append({
+                "phone": p, "name": lead_name, "course_count": len(enquiries_set),
+                "courses": course_interest, "staff": staff or "—"
+            })
+
+        # 4. DEMO PENDING
+        if has_demo and not is_admitted:
+            demo_pending.append({
+                "phone": p, "name": lead_name, "staff": staff or "—", "course": course_interest
+            })
+
+        # 5. UNASSIGNED HOT LEADS
+        if score >= 80 and not staff:
+            unassigned_hot.append({
+                "phone": p, "name": lead_name, "score": score
+            })
+
+        # 6. FOLLOW-UP REQUIRED
+        if staff and not is_admitted and latest_act and latest_act < followup_threshold_date:
+            followup_required.append({
+                "phone": p, "name": lead_name, "staff": staff, "days": days_since_activity
+            })
+
+    # Sort descending by score where applicable, else by days or count
+    admission_ready.sort(key=lambda x: x["score"], reverse=True)
+    hot_leads.sort(key=lambda x: x["score"], reverse=True)
+    unassigned_hot.sort(key=lambda x: x["score"], reverse=True)
+    multi_course.sort(key=lambda x: x["course_count"], reverse=True)
+    followup_required.sort(key=lambda x: x["days"], reverse=True)
+
+    return {
+        "kpis": {
+            "total_hot_leads": len(hot_leads),
+            "admission_ready": len(admission_ready),
+            "unassigned_hot": len(unassigned_hot),
+            "followup_required": len(followup_required)
+        },
+        "admission_ready": admission_ready,
+        "hot_leads": hot_leads,
+        "multi_course": multi_course,
+        "demo_pending": demo_pending,
+        "unassigned_hot": unassigned_hot,
+        "followup_required": followup_required
+    }
+
+
+@admin_bp.route("/crm/action-center", methods=["GET"])
+def crm_action_center():
+    """
+    Phase 8.6: CRM Action Center
+    Protected by ?key=ADMIN_KEY. Read-only operational dashboard.
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+    
+    data = calculate_action_center()
+    
+    return render_template(
+        "crm_action_center.html",
+        key=request.args.get("key", ""),
+        data=data,
+    )
+

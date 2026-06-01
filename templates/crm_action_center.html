@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Action Center - Oxford</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0d1117;
+      --bg-card: #161b22;
+      --bg-card2: #21262d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --border: #30363d;
+      --green: #238636;
+      --blue: #58a6ff;
+      --red: #f85149;
+      --yellow: #d29922;
+      --purple: #bc8cff;
+    }
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+    }
+    .crm-navbar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.8rem 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .crm-nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .crm-nav-link:hover {
+      color: var(--text-main);
+      background: rgba(255,255,255,0.05);
+    }
+    .crm-nav-link.active {
+      color: var(--text-main);
+      background: rgba(255,255,255,0.1);
+    }
+    .kpi-box {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .kpi-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .kpi-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .crm-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .crm-card-header {
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .issue-table {
+      width: 100%;
+      font-size: 0.85rem;
+    }
+    .issue-table th {
+      background: var(--bg-card2);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+    }
+    .issue-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .issue-table tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .issue-table tr:last-child td {
+      border-bottom: none;
+    }
+    .btn-open {
+      background: rgba(88,166,255,0.1);
+      color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.2);
+      border-radius: 6px;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      transition: all 0.2s;
+    }
+    .btn-open:hover {
+      background: var(--blue);
+      color: #fff;
+    }
+    .score-badge {
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+    .score-hot { color: var(--red); }
+    .score-warm { color: var(--yellow); }
+    .score-cold { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <div class="crm-navbar">
+    <div class="d-flex align-items-center gap-2 me-3">
+      <i class="bi bi-robot" style="font-size: 1.2rem; color: var(--blue);"></i>
+      <span style="font-weight: 700; font-size: 1rem; letter-spacing: -0.02em;">Oxford CRM</span>
+    </div>
+    <div class="d-flex gap-1" style="flex-wrap: wrap;">
+      <a href="/crm/leads?key={{ key }}" class="crm-nav-link">Leads Pipeline</a>
+      <a href="/crm/analytics?key={{ key }}" class="crm-nav-link">Analytics</a>
+      <a href="/crm/source-analytics?key={{ key }}" class="crm-nav-link">Sources</a>
+      <a href="/crm/admission-analytics?key={{ key }}" class="crm-nav-link">Admissions</a>
+      <a href="/crm/staff-performance?key={{ key }}" class="crm-nav-link">Staff</a>
+      <a href="/crm/revenue-analytics?key={{ key }}" class="crm-nav-link">Revenue</a>
+      <a href="/crm/health?key={{ key }}" class="crm-nav-link">Health</a>
+      <a href="/crm/action-center?key={{ key }}" class="crm-nav-link active">Action Center</a>
+    </div>
+  </div>
+
+  <div class="container-fluid p-4" style="max-width: 1400px; margin: 0 auto;">
+    
+    <div class="mb-4">
+      <h2 style="font-weight: 700; font-size: 1.5rem; margin-bottom: 0.2rem;">
+        <i class="bi bi-lightning-charge-fill text-warning me-2"></i>Action Center
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">
+        Operational queues prioritizing leads that need immediate action today.
+      </p>
+    </div>
+
+    <!-- KPIs -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--green);">
+          <div class="kpi-title">Admission Ready</div>
+          <div class="kpi-value text-white">{{ data.kpis.admission_ready }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--red);">
+          <div class="kpi-title">Hot Leads</div>
+          <div class="kpi-value text-white">{{ data.kpis.total_hot_leads }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--purple);">
+          <div class="kpi-title">Unassigned Hot Leads</div>
+          <div class="kpi-value text-white">{{ data.kpis.unassigned_hot }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="kpi-box" style="border-left: 3px solid var(--yellow);">
+          <div class="kpi-title">Follow-Up Required</div>
+          <div class="kpi-value text-white">{{ data.kpis.followup_required }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. Admission Ready -->
+    <div class="crm-card border-success">
+      <div class="crm-card-header text-success bg-success bg-opacity-10 border-success">
+        <i class="bi bi-check-circle-fill"></i> Admission Ready
+        <span class="badge bg-success ms-auto rounded-pill">{{ data.kpis.admission_ready }}</span>
+      </div>
+      <div class="crm-card-body p-0">
+        {% if data.admission_ready %}
+        <table class="issue-table">
+          <thead>
+            <tr>
+              <th>Phone</th>
+              <th>Lead Name</th>
+              <th>Assigned Staff</th>
+              <th>Course Interest</th>
+              <th>Score</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in data.admission_ready %}
+            <tr>
+              <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
+              <td class="fw-medium">{{ item.name }}</td>
+              <td>{{ item.staff }}</td>
+              <td style="color: var(--blue);">{{ item.course }}</td>
+              <td class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">
+                {{ item.score }}
+              </td>
+              <td>
+                <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                  <i class="bi bi-box-arrow-up-right"></i> Open
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">No leads currently flagged as Admission Ready.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 2. Hot Leads -->
+    <div class="crm-card">
+      <div class="crm-card-header text-danger">
+        <i class="bi bi-fire"></i> Hot Leads
+        <span class="badge bg-danger ms-auto rounded-pill">{{ data.kpis.total_hot_leads }}</span>
+      </div>
+      <div class="crm-card-body p-0">
+        {% if data.hot_leads %}
+        <table class="issue-table">
+          <thead>
+            <tr>
+              <th>Phone</th>
+              <th>Lead Name</th>
+              <th>Score</th>
+              <th>Assigned Staff</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in data.hot_leads %}
+            <tr>
+              <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
+              <td class="fw-medium">{{ item.name }}</td>
+              <td class="score-badge score-hot">{{ item.score }}</td>
+              <td>
+                {% if item.staff == '—' %}
+                <span class="text-muted fst-italic">Unassigned</span>
+                {% else %}
+                {{ item.staff }}
+                {% endif %}
+              </td>
+              <td>
+                <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                  <i class="bi bi-box-arrow-up-right"></i> Open
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">No unadmitted hot leads at this time.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 3. Multi-Course Opportunities -->
+    <div class="crm-card">
+      <div class="crm-card-header text-info">
+        <i class="bi bi-stack"></i> Multi-Course Opportunities
+        <span class="badge bg-info text-dark ms-auto rounded-pill">{{ data.multi_course|length }}</span>
+      </div>
+      <div class="crm-card-body p-0">
+        {% if data.multi_course %}
+        <table class="issue-table">
+          <thead>
+            <tr>
+              <th>Phone</th>
+              <th>Lead Name</th>
+              <th>Enquiries</th>
+              <th>Course List</th>
+              <th>Assigned Staff</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in data.multi_course %}
+            <tr>
+              <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
+              <td class="fw-medium">{{ item.name }}</td>
+              <td class="fw-bold text-info">{{ item.course_count }}</td>
+              <td style="font-size: 0.8rem; color: var(--text-muted);">{{ item.courses }}</td>
+              <td>
+                {% if item.staff == '—' %}
+                <span class="text-muted fst-italic">Unassigned</span>
+                {% else %}
+                {{ item.staff }}
+                {% endif %}
+              </td>
+              <td>
+                <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                  <i class="bi bi-box-arrow-up-right"></i> Open
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">No multi-course opportunities identified.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 4. Demo Pending -->
+    <div class="crm-card">
+      <div class="crm-card-header" style="color: var(--blue);">
+        <i class="bi bi-display"></i> Demo Pending
+        <span class="badge ms-auto rounded-pill" style="background-color: var(--blue);">{{ data.demo_pending|length }}</span>
+      </div>
+      <div class="crm-card-body p-0">
+        {% if data.demo_pending %}
+        <table class="issue-table">
+          <thead>
+            <tr>
+              <th>Phone</th>
+              <th>Lead Name</th>
+              <th>Assigned Staff</th>
+              <th>Course Interest</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in data.demo_pending %}
+            <tr>
+              <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
+              <td class="fw-medium">{{ item.name }}</td>
+              <td>
+                {% if item.staff == '—' %}
+                <span class="text-muted fst-italic">Unassigned</span>
+                {% else %}
+                {{ item.staff }}
+                {% endif %}
+              </td>
+              <td style="color: var(--blue);">{{ item.course }}</td>
+              <td>
+                <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                  <i class="bi bi-box-arrow-up-right"></i> Open
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">No pending demos right now.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 5. Unassigned Hot Leads -->
+    <div class="crm-card">
+      <div class="crm-card-header" style="color: var(--purple);">
+        <i class="bi bi-person-x-fill"></i> Unassigned Hot Leads
+        <span class="badge ms-auto rounded-pill" style="background-color: var(--purple);">{{ data.kpis.unassigned_hot }}</span>
+      </div>
+      <div class="crm-card-body p-0">
+        {% if data.unassigned_hot %}
+        <table class="issue-table">
+          <thead>
+            <tr>
+              <th>Phone</th>
+              <th>Lead Name</th>
+              <th>Score</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in data.unassigned_hot %}
+            <tr>
+              <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
+              <td class="fw-medium">{{ item.name }}</td>
+              <td class="score-badge score-hot">{{ item.score }}</td>
+              <td>
+                <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                  <i class="bi bi-box-arrow-up-right"></i> Open
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">All hot leads are currently assigned!</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 6. Follow-Up Required -->
+    <div class="crm-card">
+      <div class="crm-card-header text-warning">
+        <i class="bi bi-clock-history"></i> Follow-Up Required
+        <span class="badge bg-warning text-dark ms-auto rounded-pill">{{ data.kpis.followup_required }}</span>
+      </div>
+      <div class="crm-card-body p-0">
+        {% if data.followup_required %}
+        <table class="issue-table">
+          <thead>
+            <tr>
+              <th>Phone</th>
+              <th>Lead Name</th>
+              <th>Assigned Staff</th>
+              <th>Days Since Activity</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in data.followup_required %}
+            <tr>
+              <td style="font-family: 'Courier New', monospace;">{{ item.phone }}</td>
+              <td class="fw-medium">{{ item.name }}</td>
+              <td>{{ item.staff }}</td>
+              <td class="fw-bold text-warning">{{ item.days }} days</td>
+              <td>
+                <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                  <i class="bi bi-box-arrow-up-right"></i> Open
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">No follow-ups pending. Great job staying on top of leads!</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
