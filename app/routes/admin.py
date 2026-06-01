@@ -2296,3 +2296,185 @@ def crm_action_center():
         data=data,
     )
 
+
+# ── Phase 8.8: CRM Operations Command Center ─────────────────────────────
+
+def calculate_operations():
+    from app.models import ConversationState, LeadEvent
+    from app.bot.constants import normalize_course_name
+    from datetime import datetime, timedelta
+    import json
+
+    now = datetime.utcnow()
+    followup_threshold_date = now - timedelta(days=3)
+
+    events = LeadEvent.query.all()
+    leads = ConversationState.query.all()
+
+    phone_data = {}
+    for e in events:
+        p = e.phone
+        if p not in phone_data:
+            phone_data[p] = {
+                "enquiries": set(),
+                "admissions": set(),
+                "latest_activity": None,
+                "has_admission_event": False
+            }
+
+        data = phone_data[p]
+        et = e.event_type
+
+        if e.created_at:
+            if not data["latest_activity"] or e.created_at > data["latest_activity"]:
+                data["latest_activity"] = e.created_at
+
+        if et == "COURSE_ADMISSION":
+            data["admissions"].add("yes")
+            data["has_admission_event"] = True
+        elif et in ("COURSE_VIEWED", "COURSE_ENQUIRY"):
+            course = ""
+            if et == "COURSE_ENQUIRY":
+                try:
+                    js = json.loads(e.event_data or "{}")
+                    course = (js.get("course") or "").strip()
+                except (ValueError, TypeError):
+                    course = (e.event_data or "").strip()
+            else:
+                course = (e.event_data or "").strip()
+            
+            course = normalize_course_name(course)
+            if course:
+                data["enquiries"].add(course.lower())
+
+    admission_ready = []
+    data_issues = []
+    high_value_ops = []
+    staff_workload = {}
+    normalized_to_raw = {}
+    
+    total_hot_leads = 0
+
+    for lead in leads:
+        p = lead.phone
+        raw_staff = (lead.assigned_staff or "").strip()
+        if raw_staff:
+            norm = normalize_staff_name(raw_staff)
+            if norm not in normalized_to_raw:
+                normalized_to_raw[norm] = set()
+            normalized_to_raw[norm].add(raw_staff)
+            
+        staff = normalize_staff_name(raw_staff)
+        if staff == "Unassigned":
+            staff = ""
+            
+        score = lead.lead_score or 0
+        is_admitted = lead.is_admitted
+        lead_name = lead.name or "Unknown"
+        
+        pd = phone_data.get(p, {})
+        enquiries_set = pd.get("enquiries", set())
+        enquiries_count = len(enquiries_set)
+        admissions_count = len(pd.get("admissions", set()))
+        has_admission_event = pd.get("has_admission_event", False)
+
+        latest_act = pd.get("latest_activity")
+        if not latest_act:
+            latest_act = lead.updated_at or lead.created_at
+        else:
+            if lead.updated_at and lead.updated_at > latest_act:
+                latest_act = lead.updated_at
+        
+        course_interest = ", ".join(enquiries_set) if enquiries_set else "None"
+
+        # 1. ADMISSION READY
+        is_adm_ready = False
+        if staff and score >= 60 and enquiries_count >= 1 and not is_admitted:
+            is_adm_ready = True
+            admission_ready.append({
+                "phone": p, "name": lead_name, "staff": staff,
+                "enquiries": enquiries_count, "admissions": admissions_count,
+                "score": score
+            })
+
+        # 2. DATA ISSUES
+        if is_admitted and not has_admission_event:
+            data_issues.append({"phone": p, "name": lead_name, "issue": "Admitted lead with no COURSE_ADMISSION event"})
+        if not staff:
+            data_issues.append({"phone": p, "name": lead_name, "issue": "Unassigned lead"})
+        if enquiries_count >= 2 and not has_admission_event:
+            data_issues.append({"phone": p, "name": lead_name, "issue": "Multiple course enquiries and zero admissions"})
+
+        # 3. HIGH VALUE OPPORTUNITIES
+        if score >= 80 and enquiries_count >= 2 and not is_admitted:
+            high_value_ops.append({
+                "phone": p, "name": lead_name,
+                "courses": course_interest, "staff": staff or "—", "score": score
+            })
+
+        if score >= 80 and not is_admitted:
+            total_hot_leads += 1
+
+        # 4. STAFF WORKLOAD SUMMARY
+        if staff:
+            if staff not in staff_workload:
+                staff_workload[staff] = {
+                    "assigned": 0, "hot": 0, "admission_ready": 0, "followup": 0
+                }
+            staff_workload[staff]["assigned"] += 1
+            if score >= 80 and not is_admitted:
+                staff_workload[staff]["hot"] += 1
+            if is_adm_ready:
+                staff_workload[staff]["admission_ready"] += 1
+            if not is_admitted and latest_act and latest_act < followup_threshold_date:
+                staff_workload[staff]["followup"] += 1
+
+    for norm_name, variants in normalized_to_raw.items():
+        if len(variants) > 1:
+            data_issues.insert(0, {
+                "phone": "-",
+                "name": "System",
+                "issue": f"Duplicate Staff Naming Detected Variants: {' / '.join(variants)}"
+            })
+
+    admission_ready.sort(key=lambda x: x["score"], reverse=True)
+    high_value_ops.sort(key=lambda x: x["score"], reverse=True)
+    
+    staff_workload_list = []
+    for s, w in staff_workload.items():
+        w["staff"] = s
+        staff_workload_list.append(w)
+    staff_workload_list.sort(key=lambda x: x["assigned"], reverse=True)
+
+    total_followups = sum(w["followup"] for w in staff_workload_list)
+
+    return {
+        "kpis": {
+            "total_admission_ready": len(admission_ready),
+            "total_hot_leads": total_hot_leads,
+            "total_data_issues": len(data_issues),
+            "total_followups": total_followups
+        },
+        "admission_ready": admission_ready,
+        "data_issues": data_issues,
+        "high_value_ops": high_value_ops,
+        "staff_workload": staff_workload_list
+    }
+
+@admin_bp.route("/crm/operations", methods=["GET"])
+def crm_operations():
+    """
+    Phase 8.8: CRM Operations Command Center
+    Protected by ?key=ADMIN_KEY. Read-only.
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+    
+    data = calculate_operations()
+    
+    return render_template(
+        "crm_operations.html",
+        key=request.args.get("key", ""),
+        data=data,
+    )
+
