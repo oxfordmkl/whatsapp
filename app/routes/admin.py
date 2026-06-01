@@ -672,6 +672,27 @@ def crm_lead_update(phone):
         # ── Snapshot values before commit for post-commit event firing ──
         new_course    = (lead.course or "").strip()
         new_admitted  = request.form.get("is_admitted") == "1"
+
+        # ── Phase 8.2 Gap 2: Hard block — admission requires assigned staff ──────
+        # lead.assigned_staff was already written from the form at L665 above.
+        # If marking as admitted and no staff is assigned, abort before any commit.
+        # Uses the same err= redirect pattern as crm_lead_send().
+        if new_admitted and not (lead.assigned_staff or "").strip():
+            db.session.rollback()
+            return redirect(url_for(
+                "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
+                err="Admission+blocked%3A+please+assign+a+staff+member+before+marking+this+lead+as+admitted."
+            ))
+
+        # ── Phase 8.2 Gap 3: Auto-promote lead_status → Enrolled on admission ────
+        # If the lead is being admitted and their status is still at an early
+        # pipeline stage, silently promote to Enrolled.
+        # Mirrors the JS auto-promote in crm_lead_detail.html.
+        # No change if lead_status is already Enrolled/Lost/etc.
+        _PROMOTE_STATUSES = {"Lead", "Contacted", "Interested"}
+        if new_admitted and (lead.lead_status or "").strip() in _PROMOTE_STATUSES:
+            lead.lead_status = "Enrolled"
+
         lead.is_admitted = new_admitted
 
         db.session.commit()
@@ -1500,6 +1521,209 @@ def crm_admission_analytics():
 
     return render_template(
         "crm_admission_analytics.html",
+        key=request.args.get("key", ""),
+        data=data,
+    )
+
+
+# ── Phase 8.1: Revenue Analytics Dashboard ─────────────────────────────────
+#
+# READ-ONLY. No schema changes. No migrations. No model changes.
+# No webhook changes. No campaign changes. No scoring changes.
+#
+# Data sources (existing only):
+#   Query 1 — ConversationState: phone, is_admitted, assigned_staff, course,
+#              offer_course, lead_score
+#   Query 2 — LeadEvent: phone, event_type, event_data
+#
+# Revenue amount: NOT stored in database → displays "Revenue Tracking Not Yet
+# Configured" per Phase 8.1 specification. No fabricated values.
+#
+# Rollback: remove this route + crm_revenue_analytics.html + nav link.
+# No database rollback required.
+# ────────────────────────────────────────────────────────────────────────────
+
+def calculate_revenue_analytics():
+    """
+    Phase 8.1: Read-only revenue analytics.
+
+    Query strategy:
+    - Bulk Query 1: SELECT phone, is_admitted, assigned_staff, course,
+                           offer_course, lead_score
+                   FROM conversation_state
+    - Bulk Query 2: SELECT phone, event_type, event_data
+                   FROM lead_event
+                   WHERE event_type IN (COURSE_VIEWED, COURSE_ENQUIRY, COURSE_ADMISSION)
+
+    All aggregation is performed in Python memory.
+    Zero N+1 queries. Zero writes. Zero ORM per-row loops.
+
+    Revenue amount fields do NOT exist in the database.
+    revenue_configured = False → template shows warning banner.
+    """
+    import json as _json
+    from app.models import ConversationState, LeadEvent
+    from app.extensions import db
+
+    # ── Bulk Query 1: ConversationState ─────────────────────────────────
+    states = db.session.query(
+        ConversationState.phone,
+        ConversationState.is_admitted,
+        ConversationState.assigned_staff,
+        ConversationState.course,
+        ConversationState.offer_course,
+        ConversationState.lead_score,
+    ).all()
+
+    # ── Bulk Query 2: LeadEvent (admission + course events only) ─────────
+    events = db.session.query(
+        LeadEvent.phone,
+        LeadEvent.event_type,
+        LeadEvent.event_data,
+    ).filter(
+        LeadEvent.event_type.in_([
+            "COURSE_VIEWED",
+            "COURSE_ENQUIRY",
+            "COURSE_ADMISSION",
+        ])
+    ).all()
+
+    # ── Revenue amount check ─────────────────────────────────────────────
+    # No payment_amount / fee_paid / revenue column exists in any table.
+    # Audit confirmed: COURSE_FEES in constants.py are catalog prices only,
+    # not per-lead payment records. revenue_configured stays False.
+    revenue_configured = False
+
+    # ── In-memory: aggregate ConversationState ───────────────────────────
+    total_leads = 0
+    total_admissions = 0
+    # staff → {assigned, admissions}
+    staff_agg: dict = {}
+
+    for phone, is_admitted, staff, course, offer_course, lead_score in states:
+        total_leads += 1
+        admitted = bool(is_admitted)
+        if admitted:
+            total_admissions += 1
+
+        # Staff aggregation (ConversationState.assigned_staff)
+        staff_key = (staff or "").strip() or "Unassigned"
+        if staff_key not in staff_agg:
+            staff_agg[staff_key] = {"assigned": 0, "admissions": 0}
+        staff_agg[staff_key]["assigned"] += 1
+        if admitted:
+            staff_agg[staff_key]["admissions"] += 1
+
+    admitted_pct = round(
+        (total_admissions / total_leads * 100) if total_leads > 0 else 0.0, 1
+    )
+
+    # ── In-memory: aggregate LeadEvents per course ───────────────────────
+    # course → {enquiries: set(phones), admissions: set(phones), views: set(phones)}
+    course_agg: dict = {}
+
+    for phone, event_type, event_data in events:
+        # Extract course name based on event type
+        if event_type in ("COURSE_ENQUIRY", "COURSE_ADMISSION"):
+            try:
+                parsed = _json.loads(event_data or "{}")
+                course_name = (parsed.get("course") or "").strip()
+            except (ValueError, TypeError):
+                course_name = (event_data or "").strip()
+        else:
+            # COURSE_VIEWED — plain string
+            course_name = (event_data or "").strip()
+
+        # Normalize alias → canonical name
+        course_name = normalize_course_name(course_name)
+        if not course_name:
+            continue
+
+        if course_name not in course_agg:
+            course_agg[course_name] = {
+                "enquiry_phones":   set(),
+                "admission_phones": set(),
+                "view_phones":      set(),
+            }
+
+        if event_type == "COURSE_ADMISSION":
+            course_agg[course_name]["admission_phones"].add(phone)
+            # Admission implies enquiry
+            course_agg[course_name]["enquiry_phones"].add(phone)
+        elif event_type == "COURSE_ENQUIRY":
+            course_agg[course_name]["enquiry_phones"].add(phone)
+        elif event_type == "COURSE_VIEWED":
+            course_agg[course_name]["view_phones"].add(phone)
+            # View implies enquiry signal
+            course_agg[course_name]["enquiry_phones"].add(phone)
+
+    # ── Build course performance rows ────────────────────────────────────
+    def _pct(num, den):
+        return round(num / den * 100, 1) if den > 0 else 0.0
+
+    course_rows = []
+    for name, agg in course_agg.items():
+        enquiries  = len(agg["enquiry_phones"])
+        admissions = len(agg["admission_phones"])
+        conv       = _pct(admissions, enquiries)
+        course_rows.append({
+            "course":      name,
+            "enquiries":   enquiries,
+            "admissions":  admissions,
+            "conversion":  conv,
+        })
+    course_rows.sort(key=lambda r: (r["admissions"], r["conversion"]), reverse=True)
+
+    # ── Build staff performance rows ─────────────────────────────────────
+    staff_rows = []
+    for name, agg in staff_agg.items():
+        assigned   = agg["assigned"]
+        admissions = agg["admissions"]
+        conv       = _pct(admissions, assigned)
+        staff_rows.append({
+            "name":       name,
+            "assigned":   assigned,
+            "admissions": admissions,
+            "conversion": conv,
+        })
+    staff_rows.sort(key=lambda r: (r["admissions"], r["conversion"]), reverse=True)
+
+    # ── Top performers (KPI headlines) ───────────────────────────────────
+    admitted_staff   = [r for r in staff_rows   if r["admissions"] > 0 and r["name"] != "Unassigned"]
+    admitted_courses = [r for r in course_rows  if r["admissions"] > 0]
+
+    top_staff  = admitted_staff[0]["name"]     if admitted_staff   else "—"
+    top_course = admitted_courses[0]["course"] if admitted_courses else "—"
+
+    return {
+        # Revenue gate
+        "revenue_configured":  revenue_configured,
+        # KPI Cards
+        "total_admissions":    total_admissions,
+        "total_leads":         total_leads,
+        "admitted_pct":        admitted_pct,
+        "top_staff":           top_staff,
+        "top_course":          top_course,
+        # Tables
+        "course_rows":         course_rows,
+        "staff_rows":          staff_rows,
+    }
+
+
+@admin_bp.route("/crm/revenue-analytics", methods=["GET"])
+def crm_revenue_analytics():
+    """
+    Phase 8.1: Revenue Analytics Dashboard.
+    Protected by ?key=ADMIN_KEY (same pattern as all CRM analytics pages).
+    Read-only. No writes. No schema changes.
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    data = calculate_revenue_analytics()
+
+    return render_template(
+        "crm_revenue_analytics.html",
         key=request.args.get("key", ""),
         data=data,
     )

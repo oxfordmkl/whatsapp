@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Revenue Analytics &middot; Oxford CRM</title>
+  <meta name="description" content="Revenue analytics dashboard for Oxford Computers CRM — admissions, staff and course performance.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+      --orange:     #e3813a;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ─────────────────────────────────────────────────── */
+    .crm-nav {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+    }
+    .crm-nav .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--green);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .crm-nav .brand span { color: var(--text-muted); font-weight: 400; }
+
+    .btn-nav-back {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      border-radius: 8px;
+      padding: 0.35rem 0.85rem;
+      text-decoration: none;
+      transition: border-color 0.2s, color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .btn-nav-back:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── Phase badge ────────────────────────────────────────────── */
+    .phase-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(88,166,255,0.1);
+      border: 1px solid rgba(88,166,255,0.25);
+      color: var(--blue);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      border-radius: 6px;
+      padding: 0.25rem 0.6rem;
+    }
+
+    /* ── Revenue not-configured banner ──────────────────────────── */
+    .revenue-banner {
+      background: rgba(210,153,34,0.08);
+      border: 1px solid rgba(210,153,34,0.3);
+      border-left: 4px solid var(--yellow);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.9rem;
+      margin-bottom: 1.75rem;
+    }
+    .revenue-banner .rb-icon {
+      font-size: 1.4rem;
+      color: var(--yellow);
+      flex-shrink: 0;
+      margin-top: 0.05rem;
+    }
+    .revenue-banner .rb-title {
+      font-weight: 700;
+      color: var(--yellow);
+      font-size: 0.9rem;
+      margin-bottom: 0.2rem;
+    }
+    .revenue-banner .rb-body {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      line-height: 1.6;
+    }
+    .revenue-banner .rb-body code {
+      background: rgba(255,255,255,0.07);
+      border-radius: 3px;
+      padding: 0.05em 0.3em;
+      font-size: 0.75rem;
+      color: var(--text-main);
+    }
+
+    /* ── Page header ────────────────────────────────────────────── */
+    .page-header {
+      margin-bottom: 1.75rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .page-header h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.25rem;
+    }
+    .page-header .sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* ── KPI Grid ────────────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .kpi-card:hover { border-color: #444c56; }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity 0.2s;
+      border-radius: inherit;
+    }
+    .kpi-card.accent-green { border-left: 3px solid var(--green); }
+    .kpi-card.accent-blue  { border-left: 3px solid var(--blue); }
+    .kpi-card.accent-yellow{ border-left: 3px solid var(--yellow); }
+    .kpi-card.accent-purple{ border-left: 3px solid var(--purple); }
+
+    .kpi-icon {
+      width: 46px; height: 46px;
+      border-radius: 11px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+    .icon-green  { background: rgba(37,211,102,0.12); color: var(--green); }
+    .icon-blue   { background: rgba(88,166,255,0.12); color: var(--blue); }
+    .icon-purple { background: rgba(188,140,255,0.12); color: var(--purple); }
+    .icon-yellow { background: rgba(210,153,34,0.12); color: var(--yellow); }
+
+    .kpi-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.2rem;
+    }
+    .kpi-value {
+      font-size: 1.9rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .kpi-sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Section heading ─────────────────────────────────────────── */
+    .section-heading {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .section-heading i { font-size: 0.85rem; }
+
+    /* ── Table card ──────────────────────────────────────────────── */
+    .table-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.75rem;
+    }
+    .table-card-header {
+      background: var(--bg-card2);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.25rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .table-card table { margin: 0; border-color: var(--border); }
+    .table-card thead th {
+      background: var(--bg-card2);
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+      border-top: none;
+      padding: 0.7rem 1rem;
+      white-space: nowrap;
+    }
+    .table-card tbody td {
+      color: var(--text-main);
+      border-color: var(--border);
+      padding: 0.85rem 1rem;
+      vertical-align: middle;
+      font-size: 0.85rem;
+    }
+    .table-card tbody tr:hover td { background: rgba(255,255,255,0.025); }
+    .table-card tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Rank badge ──────────────────────────────────────────────── */
+    .rank-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .rank-1 { color: var(--yellow); }
+    .rank-2 { color: #c0c0c0; }
+    .rank-3 { color: #cd7f32; }
+
+    /* ── Conversion bar ──────────────────────────────────────────── */
+    .conv-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 150px;
+    }
+    .conv-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .conv-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--green-dim), var(--green));
+      transition: width 0.4s ease;
+    }
+    .conv-fill.zero { background: var(--border); }
+    .conv-pct {
+      font-size: 0.78rem;
+      font-weight: 600;
+      min-width: 42px;
+      text-align: right;
+    }
+
+    /* ── Admission pill ──────────────────────────────────────────── */
+    .adm-pill {
+      display: inline-block;
+      padding: 0.2em 0.55em;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      min-width: 28px;
+      text-align: center;
+    }
+    .adm-pill.has-adm { background: rgba(37,211,102,0.15); color: var(--green); border: 1px solid rgba(37,211,102,0.3); }
+    .adm-pill.no-adm  { background: rgba(139,148,158,0.12); color: var(--text-muted); border: 1px solid rgba(139,148,158,0.15); }
+
+    /* ── Enquiry pill ────────────────────────────────────────────── */
+    .enq-pill {
+      display: inline-block;
+      padding: 0.2em 0.55em;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      min-width: 28px;
+      text-align: center;
+      background: rgba(88,166,255,0.1);
+      color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.2);
+    }
+
+    /* ── Course name ─────────────────────────────────────────────── */
+    .course-name {
+      font-weight: 600;
+      font-size: 0.88rem;
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Empty state ─────────────────────────────────────────────── */
+    .empty-cell {
+      padding: 3rem 1rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Data note box ───────────────────────────────────────────── */
+    .note-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1.1rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .note-box strong { color: var(--text-main); }
+
+    @media (max-width: 600px) {
+      .kpi-value { font-size: 1.5rem; }
+      .table-card { font-size: 0.78rem; }
+      .conv-wrap { min-width: 100px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="crm-nav d-flex align-items-center justify-content-between">
+    <a class="brand" href="/crm/leads?key={{ key }}">
+      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
+      <span class="ms-2">/ Revenue Analytics</span>
+    </a>
+    <div class="d-flex align-items-center gap-2">
+      <span class="phase-badge"><i class="bi bi-bar-chart-fill"></i> Phase 8.1</span>
+      <a href="/crm/leads?key={{ key }}" class="btn-nav-back">
+        <i class="bi bi-arrow-left"></i>Back to Leads
+      </a>
+    </div>
+  </nav>
+
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1200px;">
+
+    <!-- ── Page header ───────────────────────────────────────────── -->
+    <div class="page-header">
+      <h1><i class="bi bi-graph-up-arrow me-2" style="color: var(--green);"></i>Revenue Analytics</h1>
+      <p class="sub">
+        Admission performance &amp; course metrics &mdash; read-only &bull;
+        Data source: <code style="font-size: 0.72rem; background: rgba(255,255,255,0.06); border-radius:3px; padding: 0.05em 0.3em;">conversation_state</code> +
+        <code style="font-size: 0.72rem; background: rgba(255,255,255,0.06); border-radius:3px; padding: 0.05em 0.3em;">lead_event</code>
+      </p>
+    </div>
+
+    <!-- ── Revenue not-configured banner ────────────────────────── -->
+    {% if not data.revenue_configured %}
+    <div class="revenue-banner" id="revenue-not-configured-banner">
+      <div class="rb-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+      <div>
+        <div class="rb-title">Revenue Tracking Not Yet Configured</div>
+        <div class="rb-body">
+          No payment amount fields (<code>payment_amount</code>, <code>fee_paid</code>, <code>revenue</code>) exist in the database.
+          Catalogue prices in <code>constants.py</code> (e.g. ₹15,999) are <strong>display strings only</strong> — they are not stored per-lead transaction records.<br>
+          Revenue totals cannot be calculated. The dashboard shows <strong>admission counts and conversion rates</strong> derived from real stored data.
+          To enable revenue tracking, add a <code>payment_amount</code> column to <code>conversation_state</code> or a dedicated payments table, then redeploy.
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── KPI Cards ──────────────────────────────────────────────── -->
+    <div class="kpi-grid">
+
+      <!-- Card 1: Total Admissions -->
+      <div class="kpi-card accent-green" id="kpi-total-admissions">
+        <div class="kpi-icon icon-green"><i class="bi bi-patch-check-fill"></i></div>
+        <div>
+          <div class="kpi-label">Total Admissions</div>
+          <div class="kpi-value" style="color: var(--green);">{{ data.total_admissions }}</div>
+          <div class="kpi-sub">Out of {{ data.total_leads }} total leads</div>
+        </div>
+      </div>
+
+      <!-- Card 2: Admitted Leads % -->
+      <div class="kpi-card accent-blue" id="kpi-admitted-pct">
+        <div class="kpi-icon icon-blue"><i class="bi bi-percent"></i></div>
+        <div>
+          <div class="kpi-label">Admitted Leads %</div>
+          <div class="kpi-value" style="color: var(--blue);">{{ data.admitted_pct }}%</div>
+          <div class="kpi-sub">Admitted ÷ total leads</div>
+        </div>
+      </div>
+
+      <!-- Card 3: Top Performing Staff -->
+      <div class="kpi-card accent-yellow" id="kpi-top-staff">
+        <div class="kpi-icon icon-yellow"><i class="bi bi-person-badge-fill"></i></div>
+        <div>
+          <div class="kpi-label">Top Performing Staff</div>
+          <div class="kpi-value" style="font-size: {% if data.top_staff|length > 12 %}1rem{% else %}1.15rem{% endif %}; color: var(--yellow);">{{ data.top_staff }}</div>
+          <div class="kpi-sub">Most admissions closed</div>
+        </div>
+      </div>
+
+      <!-- Card 4: Top Performing Course -->
+      <div class="kpi-card accent-purple" id="kpi-top-course">
+        <div class="kpi-icon icon-purple"><i class="bi bi-mortarboard-fill"></i></div>
+        <div>
+          <div class="kpi-label">Top Performing Course</div>
+          <div class="kpi-value" style="font-size: {% if data.top_course|length > 12 %}0.9rem{% else %}1rem{% endif %}; color: var(--purple);">{{ data.top_course }}</div>
+          <div class="kpi-sub">Most admissions recorded</div>
+        </div>
+      </div>
+
+    </div><!-- /kpi-grid -->
+
+    <!-- ── Tables ─────────────────────────────────────────────────── -->
+    <div class="row g-4">
+
+      <!-- ── Course Performance Table ────────────────────────────── -->
+      <div class="col-12 col-xl-7">
+        <div class="section-heading">
+          <i class="bi bi-mortarboard-fill"></i>Course Performance
+        </div>
+        <div class="table-card" id="course-performance-table">
+          <div class="table-card-header">
+            <i class="bi bi-bar-chart-steps"></i>By Course
+            <span style="margin-left: auto; font-size: 0.65rem; font-weight: 400;
+                         text-transform: none; letter-spacing: 0; color: var(--text-muted);">
+              Source: COURSE_VIEWED · COURSE_ENQUIRY · COURSE_ADMISSION events
+            </span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-borderless mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 36px;">#</th>
+                  <th>Course</th>
+                  <th style="text-align: right;">Enquiries</th>
+                  <th style="text-align: right;">Admissions</th>
+                  <th style="min-width: 150px;">Admission %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if data.course_rows %}
+                  {% for row in data.course_rows %}
+                  <tr>
+                    <td>
+                      <span class="rank-num {% if loop.index == 1 %}rank-1{% elif loop.index == 2 %}rank-2{% elif loop.index == 3 %}rank-3{% endif %}">
+                        {% if loop.index == 1 %}<i class="bi bi-award-fill"></i>
+                        {% elif loop.index == 2 %}<i class="bi bi-award-fill"></i>
+                        {% elif loop.index == 3 %}<i class="bi bi-award-fill"></i>
+                        {% else %}{{ loop.index }}{% endif %}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="course-name" title="{{ row.course }}">{{ row.course }}</div>
+                    </td>
+                    <td style="text-align: right;">
+                      <span class="enq-pill">{{ row.enquiries }}</span>
+                    </td>
+                    <td style="text-align: right;">
+                      <span class="adm-pill {% if row.admissions > 0 %}has-adm{% else %}no-adm{% endif %}">{{ row.admissions }}</span>
+                    </td>
+                    <td>
+                      <div class="conv-wrap">
+                        <div class="conv-track">
+                          <div class="conv-fill {% if row.conversion == 0 %}zero{% endif %}"
+                               style="width: {{ [row.conversion, 100] | min }}%;"></div>
+                        </div>
+                        <span class="conv-pct"
+                              style="color: {% if row.conversion >= 30 %}var(--green){% elif row.conversion >= 10 %}var(--yellow){% elif row.conversion > 0 %}var(--red){% else %}var(--text-muted){% endif %};">
+                          {{ row.conversion }}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr><td colspan="5"><div class="empty-cell">
+                    <i class="bi bi-inbox d-block fs-2 mb-2"></i>
+                    No COURSE_VIEWED / COURSE_ENQUIRY / COURSE_ADMISSION events recorded yet.
+                  </div></td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /col -->
+
+      <!-- ── Staff Performance Table ──────────────────────────────── -->
+      <div class="col-12 col-xl-5">
+        <div class="section-heading">
+          <i class="bi bi-people-fill"></i>Staff Performance
+        </div>
+        <div class="table-card" id="staff-performance-table">
+          <div class="table-card-header">
+            <i class="bi bi-trophy-fill"></i>By Assigned Staff
+            <span style="margin-left: auto; font-size: 0.65rem; font-weight: 400;
+                         text-transform: none; letter-spacing: 0; color: var(--text-muted);">
+              Sorted by admissions
+            </span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-borderless mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 36px;">#</th>
+                  <th>Staff</th>
+                  <th style="text-align: right;">Assigned</th>
+                  <th style="text-align: right;">Admitted</th>
+                  <th style="min-width: 130px;">Conv %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if data.staff_rows %}
+                  {% for row in data.staff_rows %}
+                  <tr>
+                    <td>
+                      <span class="rank-num {% if loop.index == 1 and row.name != 'Unassigned' %}rank-1{% elif loop.index == 2 and row.name != 'Unassigned' %}rank-2{% elif loop.index == 3 and row.name != 'Unassigned' %}rank-3{% endif %}">
+                        {% if loop.index <= 3 and row.name != 'Unassigned' %}<i class="bi bi-award-fill"></i>
+                        {% else %}{{ loop.index }}{% endif %}
+                      </span>
+                    </td>
+                    <td>
+                      <span style="font-weight: {% if loop.index <= 3 and row.name != 'Unassigned' %}600{% else %}400{% endif %}; color: {% if row.name == 'Unassigned' %}var(--text-muted){% else %}var(--text-main){% endif %};">
+                        {% if row.name == 'Unassigned' %}<i class="bi bi-dash-circle me-1" style="font-size: 0.75rem;"></i>{% endif %}{{ row.name }}
+                      </span>
+                    </td>
+                    <td style="text-align: right;">
+                      <span style="font-family: monospace;">{{ row.assigned }}</span>
+                    </td>
+                    <td style="text-align: right;">
+                      <span class="adm-pill {% if row.admissions > 0 %}has-adm{% else %}no-adm{% endif %}">{{ row.admissions }}</span>
+                    </td>
+                    <td>
+                      <div class="conv-wrap">
+                        <div class="conv-track">
+                          <div class="conv-fill {% if row.conversion == 0 %}zero{% endif %}"
+                               style="width: {{ [row.conversion, 100] | min }}%;"></div>
+                        </div>
+                        <span class="conv-pct"
+                              style="color: {% if row.conversion >= 30 %}var(--green){% elif row.conversion >= 10 %}var(--yellow){% elif row.conversion > 0 %}var(--red){% else %}var(--text-muted){% endif %};">
+                          {{ row.conversion }}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr><td colspan="5"><div class="empty-cell">
+                    <i class="bi bi-inbox d-block fs-2 mb-2"></i>
+                    No staff assignments found.
+                  </div></td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /col -->
+
+    </div><!-- /row -->
+
+    <!-- ── Data Notes ──────────────────────────────────────────────── -->
+    <div class="note-box" id="data-notes-box">
+      <strong><i class="bi bi-info-circle me-1"></i>Data Notes — Phase 8.1</strong><br>
+      <strong>Revenue amounts</strong>: Not stored in database. No <code>payment_amount</code> or <code>fee_paid</code> column exists.
+      Catalogue prices in <code>constants.py</code> are display strings only — not per-lead transaction records.<br>
+      <strong>Enquiries</strong>: Unique leads with a <code>COURSE_VIEWED</code>, <code>COURSE_ENQUIRY</code>, or <code>COURSE_ADMISSION</code> event for the course.<br>
+      <strong>Admissions</strong>: Unique leads with a <code>COURSE_ADMISSION</code> event for the course. Top course KPI excludes courses with zero admissions.<br>
+      <strong>Staff</strong>: Uses <code>ConversationState.assigned_staff</code>. Leads with no assignment appear as <em>Unassigned</em> and are excluded from the Top Performing Staff KPI.<br>
+      <strong>Queries</strong>: 2 bulk queries total &mdash; zero N+1 &mdash; all aggregation in Python memory. Read-only, zero writes.
+    </div>
+
+  </div><!-- /container -->
+
+</body>
+</html>

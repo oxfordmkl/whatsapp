@@ -729,6 +729,63 @@
                     </label>
                   </div>
                 </div>
+
+                <!-- Phase 8.2 Gap 1: Non-blocking course warning (JS-controlled) -->
+                <!-- Shown only when is_admitted=Yes AND lead.course is empty.    -->
+                <!-- course is NOT editable from this form — banner is advisory.  -->
+                <div id="admission-course-warning"
+                     style="display:none; margin-top:0.65rem;
+                            background:rgba(210,153,34,0.08);
+                            border:1px solid rgba(210,153,34,0.35);
+                            border-left:3px solid var(--yellow);
+                            border-radius:8px;
+                            padding:0.55rem 0.85rem;
+                            font-size:0.76rem;
+                            color:var(--yellow);
+                            line-height:1.5;"
+                     role="alert">
+                  <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                  <strong>No course assigned.</strong>
+                  This lead has no course assigned. Course analytics may be inaccurate until a course is detected.
+                </div>
+
+                <!-- Phase 8.2 Gap 2: Inline staff-missing error (JS-controlled) -->
+                <!-- Shown when is_admitted=Yes AND assigned_staff field is empty. -->
+                <!-- Save is blocked until staff is provided.                      -->
+                <div id="admission-staff-error"
+                     style="display:none; margin-top:0.65rem;
+                            background:rgba(248,81,73,0.08);
+                            border:1px solid rgba(248,81,73,0.3);
+                            border-left:3px solid var(--red);
+                            border-radius:8px;
+                            padding:0.55rem 0.85rem;
+                            font-size:0.76rem;
+                            color:var(--red);
+                            line-height:1.5;"
+                     role="alert">
+                  <i class="bi bi-x-circle-fill me-1"></i>
+                  <strong>Staff required.</strong>
+                  Please assign a staff member above before marking this lead as admitted.
+                </div>
+
+                <!-- Phase 8.2 Gap 3: Auto-promote confirmation banner (JS-controlled) -->
+                <!-- Shown after JS auto-changes lead_status to Enrolled.              -->
+                <div id="admission-status-promoted"
+                     style="display:none; margin-top:0.65rem;
+                            background:rgba(37,211,102,0.07);
+                            border:1px solid rgba(37,211,102,0.25);
+                            border-left:3px solid var(--green);
+                            border-radius:8px;
+                            padding:0.55rem 0.85rem;
+                            font-size:0.76rem;
+                            color:var(--green);
+                            line-height:1.5;"
+                     role="status">
+                  <i class="bi bi-check-circle-fill me-1"></i>
+                  <strong>Status auto-updated.</strong>
+                  Lead Status has been automatically set to <strong>Enrolled</strong>.
+                </div>
+
               </div>
 
               <!-- Notes -->
@@ -1170,6 +1227,78 @@
         textarea.focus();
       });
     });
+
+    // ── Phase 8.2: Admission Data Quality Guardrails ──────────────────────
+    // Gap 1: Non-blocking warning when admitted with no course.
+    // Gap 2: Hard block when admitted with no assigned staff.
+    // Gap 3: Auto-promote lead_status → Enrolled when admitted.
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Server-rendered values injected at page load (read-only, no DB write).
+    // lead.course is the WhatsApp-bot-detected course stored in ConversationState.
+    const CURRENT_COURSE  = {{ (lead.course or '') | tojson }};
+    const CURRENT_STATUS  = {{ (lead.lead_status or '') | tojson }};
+    // Statuses that should auto-promote to Enrolled on admission.
+    const AUTO_PROMOTE_STATUSES = new Set(['Lead', 'Contacted', 'Interested']);
+
+    const radioYes       = document.getElementById('admitted_yes');
+    const radioNo        = document.getElementById('admitted_no');
+    const staffInput     = document.getElementById('assigned_staff');
+    const statusSelect   = document.getElementById('lead_status');
+    const courseWarn     = document.getElementById('admission-course-warning');
+    const staffError     = document.getElementById('admission-staff-error');
+    const statusPromoted = document.getElementById('admission-status-promoted');
+    const crmForm        = document.querySelector('form[action*="/update"]');
+
+    // Evaluate and show/hide all three banners based on current field state.
+    function evaluateAdmissionBanners() {
+      const isAdmitted = radioYes && radioYes.checked;
+
+      // Gap 1: warn if no course (non-blocking)
+      if (courseWarn) {
+        courseWarn.style.display = (isAdmitted && !CURRENT_COURSE.trim()) ? 'block' : 'none';
+      }
+
+      // Gap 2: error if no staff (shown; save blocked on submit)
+      if (staffError) {
+        const hasStaff = staffInput && staffInput.value.trim().length > 0;
+        staffError.style.display = (isAdmitted && !hasStaff) ? 'block' : 'none';
+      }
+
+      // Gap 3: auto-promote lead_status to Enrolled if applicable
+      if (isAdmitted && statusSelect && AUTO_PROMOTE_STATUSES.has(statusSelect.value)) {
+        statusSelect.value = 'Enrolled';
+        if (statusPromoted) { statusPromoted.style.display = 'block'; }
+      } else if (!isAdmitted && statusPromoted) {
+        // Hide the promotion banner if user un-ticks Admitted.
+        statusPromoted.style.display = 'none';
+      }
+    }
+
+    // Run on page load so banners reflect any server-side redirect state.
+    evaluateAdmissionBanners();
+
+    // Re-evaluate whenever the admission radio changes.
+    if (radioYes) { radioYes.addEventListener('change', evaluateAdmissionBanners); }
+    if (radioNo)  { radioNo.addEventListener('change',  evaluateAdmissionBanners); }
+
+    // Re-evaluate when staff field changes (hide/show Gap 2 error live).
+    if (staffInput) { staffInput.addEventListener('input', evaluateAdmissionBanners); }
+
+    // Gap 2: Hard block on form submit — do not allow save if admitted & no staff.
+    if (crmForm) {
+      crmForm.addEventListener('submit', function(e) {
+        const isAdmitted = radioYes && radioYes.checked;
+        const hasStaff   = staffInput && staffInput.value.trim().length > 0;
+        if (isAdmitted && !hasStaff) {
+          e.preventDefault();
+          if (staffError) { staffError.style.display = 'block'; }
+          if (staffInput) { staffInput.focus(); }
+          // Scroll the error into view smoothly.
+          staffError && staffError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    }
   });
 </script>
 
