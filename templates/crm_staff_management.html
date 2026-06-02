@@ -43,7 +43,22 @@
   <div class="alert alert-success bg-success text-white border-0">{{ msg }}</div>
   {% endif %}
   {% if err %}
-  <div class="alert alert-danger bg-danger text-white border-0">{{ err }}</div>
+  {% if err.startswith('BLOCK_DEACTIVATION:') %}
+    {% set parts = err.split(':') %}
+    {% set count = parts[1] %}
+    {% set staff_name = parts[2] %}
+    <div class="alert alert-danger bg-danger text-white border-0 d-flex justify-content-between align-items-center">
+      <div>
+        <i class="bi bi-exclamation-triangle-fill me-2"></i> <strong>Deactivation Blocked:</strong> {{ staff_name }} currently has {{ count }} assigned lead(s).
+      </div>
+      <div>
+        <a href="/crm/leads?search={{ staff_name }}&key={{ key }}" class="btn btn-sm btn-light text-danger me-2"><i class="bi bi-eye"></i> View Leads</a>
+        <a href="/crm/reassignment-center?key={{ key }}" class="btn btn-sm btn-dark"><i class="bi bi-arrow-left-right"></i> Bulk Reassign</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-danger bg-danger text-white border-0">{{ err }}</div>
+  {% endif %}
   {% endif %}
 
   <div class="crm-card">

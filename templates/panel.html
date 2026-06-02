@@ -780,6 +780,23 @@ tr:hover td { background: rgba(37,211,102,0.03); }
     </div>
   </div>
 
+  <!-- CRM Quick Links Phase 9.2B -->
+  <div class="config-bar" style="grid-template-columns: 1fr; padding: 12px 20px; display: flex; gap: 10px; flex-wrap: wrap;" id="crmLinks">
+    <span style="font-size: 11px; color: var(--text-dim); display: flex; align-items: center; margin-right: 10px;">CRM MODULES:</span>
+    <a href="#" onclick="goCrm('/crm/operations')" class="btn btn-outline btn-sm">Command Center</a>
+    <a href="#" onclick="goCrm('/crm/staff-workload')" class="btn btn-outline btn-sm text-success">Staff Workload</a>
+    <a href="#" onclick="goCrm('/crm/leads/unassigned')" class="btn btn-outline btn-sm text-warning">Unassigned Queue</a>
+    <a href="#" onclick="goCrm('/crm/reassignment-center')" class="btn btn-outline btn-sm text-info">Reassignment Center</a>
+    <a href="#" onclick="goCrm('/crm/staff-management')" class="btn btn-outline btn-sm">Staff Registry</a>
+  </div>
+  <script>
+    function goCrm(path) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const key = urlParams.get('key') || '';
+      window.location.href = path + '?key=' + key;
+    }
+  </script>
+
   <!-- CONFIG -->
   <div class="config-bar">
     <div class="config-field">

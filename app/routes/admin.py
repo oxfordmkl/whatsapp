@@ -634,9 +634,19 @@ def crm_staff_management():
             if code not in registry:
                 return redirect(url_for("admin.crm_staff_management", key=key, err="Staff not found"))
                 
+            new_active = request.form.get("active") == "on"
+            if not new_active and registry[code].get("active", False):
+                from app.models import ConversationState
+                staff_name = registry[code].get("display_name", "")
+                norm_name = normalize_staff_name(staff_name)
+                leads_count = ConversationState.query.filter(ConversationState.assigned_staff == norm_name).count()
+                if leads_count > 0:
+                    err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
+                    return redirect(url_for("admin.crm_staff_management", key=key, err=err_msg))
+                
             registry[code]["display_name"] = request.form.get("display_name", "").strip() or registry[code]["display_name"]
             registry[code]["role"] = request.form.get("role", "").strip() or registry[code]["role"]
-            registry[code]["active"] = request.form.get("active") == "on"
+            registry[code]["active"] = new_active
             
             save_staff_registry(registry)
             return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff updated"))
@@ -644,7 +654,17 @@ def crm_staff_management():
         elif action == "toggle":
             code = request.form.get("staff_code", "").strip().upper()
             if code in registry:
-                registry[code]["active"] = not registry[code]["active"]
+                new_active = not registry[code]["active"]
+                if not new_active:
+                    from app.models import ConversationState
+                    staff_name = registry[code].get("display_name", "")
+                    norm_name = normalize_staff_name(staff_name)
+                    leads_count = ConversationState.query.filter(ConversationState.assigned_staff == norm_name).count()
+                    if leads_count > 0:
+                        err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
+                        return redirect(url_for("admin.crm_staff_management", key=key, err=err_msg))
+
+                registry[code]["active"] = new_active
                 save_staff_registry(registry)
                 return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff status toggled"))
     
@@ -2648,4 +2668,231 @@ def crm_operations():
         key=request.args.get("key", ""),
         data=data,
     )
+
+
+# ── Phase 9.2B Helpers & Routes ─────────────────────────────────────────────
+
+def calculate_workload_scoring():
+    """
+    Returns a dictionary of staff name -> Workload Score.
+    Score = (Lead * 1) + (Contacted * 2) + (Interested * 3)
+    Only considers active staff.
+    """
+    from app.models import ConversationState
+    from app.extensions import db
+    
+    registry = load_staff_registry()
+    active_staff = {normalize_staff_name(data["display_name"]): data["display_name"] 
+                    for code, data in registry.items() if data.get("active")}
+    
+    workload_query = db.session.query(
+        ConversationState.assigned_staff,
+        ConversationState.lead_status,
+        db.func.count(ConversationState.id)
+    ).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
+    
+    scores = {norm_name: 0 for norm_name in active_staff.keys()}
+    
+    weights = {
+        "Lead": 1,
+        "Contacted": 2,
+        "Interested": 3,
+        "Enrolled": 0,  # Inactive workload
+        "Dropped": 0    # Inactive workload
+    }
+    
+    for staff_name, status, count in workload_query:
+        if not staff_name: continue
+        norm_name = normalize_staff_name(staff_name)
+        if norm_name in scores:
+            weight = weights.get(status, 1)
+            scores[norm_name] += (count * weight)
+            
+    return scores, active_staff
+
+def get_staff_recommendations(limit=3):
+    """
+    Returns a list of recommended active staff members based on lowest workload score.
+    Format: [{"name": "...", "score": ...}, ...]
+    """
+    scores, active_staff = calculate_workload_scoring()
+    
+    # Sort by lowest score
+    sorted_staff = sorted([{"name": display_name, "score": scores[norm_name]} 
+                           for norm_name, display_name in active_staff.items()],
+                          key=lambda x: x["score"])
+                          
+    return sorted_staff[:limit]
+
+
+@admin_bp.route("/crm/staff-workload", methods=["GET"])
+def crm_staff_workload():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    from app.models import ConversationState
+    from app.extensions import db
+    
+    workload_query = db.session.query(
+        ConversationState.assigned_staff,
+        ConversationState.lead_status,
+        db.func.count(ConversationState.id)
+    ).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
+    
+    registry = load_staff_registry()
+    staff_data = {}
+    
+    for code, data in registry.items():
+        name = data.get("display_name", "")
+        norm_name = normalize_staff_name(name)
+        if norm_name not in staff_data:
+            staff_data[norm_name] = {
+                "display_name": name,
+                "active": data.get("active", False),
+                "statuses": {"Lead": 0, "Contacted": 0, "Interested": 0, "Enrolled": 0, "Dropped": 0, "Other": 0},
+                "total_active": 0
+            }
+            
+    for staff_name, status, count in workload_query:
+        if not staff_name: continue
+        norm_name = normalize_staff_name(staff_name)
+        
+        if norm_name not in staff_data:
+            staff_data[norm_name] = {
+                "display_name": staff_name,
+                "active": False,
+                "statuses": {"Lead": 0, "Contacted": 0, "Interested": 0, "Enrolled": 0, "Dropped": 0, "Other": 0},
+                "total_active": 0
+            }
+            
+        status = status or "Lead"
+        if status in staff_data[norm_name]["statuses"]:
+            staff_data[norm_name]["statuses"][status] += count
+        else:
+            staff_data[norm_name]["statuses"]["Other"] += count
+            
+        if status in ["Lead", "Contacted", "Interested"]:
+            staff_data[norm_name]["total_active"] += count
+            
+    # Sort by active workload
+    workload_list = list(staff_data.values())
+    workload_list.sort(key=lambda x: (not x["active"], -x["total_active"]))
+    
+    return render_template(
+        "crm_staff_workload.html",
+        key=request.args.get("key", ""),
+        workload_list=workload_list
+    )
+
+
+@admin_bp.route("/crm/leads/unassigned", methods=["GET"])
+def crm_unassigned_leads():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    from app.models import ConversationState
+    from sqlalchemy import or_
+    
+    unassigned = ConversationState.query.filter(
+        or_(ConversationState.assigned_staff.is_(None), ConversationState.assigned_staff == '')
+    ).order_by(ConversationState.lead_score.desc()).all()
+    
+    recommendations = get_staff_recommendations(limit=5)
+    
+    return render_template(
+        "crm_unassigned_leads.html",
+        key=request.args.get("key", ""),
+        leads=unassigned,
+        recommendations=recommendations,
+        total=len(unassigned)
+    )
+
+@admin_bp.route("/crm/reassignment-center", methods=["GET"])
+def crm_reassignment_center():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+    
+    recommendations = get_staff_recommendations(limit=5)
+    
+    return render_template(
+        "crm_reassignment_center.html",
+        key=request.args.get("key", ""),
+        active_staff=active_staff,
+        recommendations=recommendations,
+        msg=request.args.get("msg", ""),
+        err=request.args.get("err", "")
+    )
+
+@admin_bp.route("/crm/reassignment-center/preview", methods=["POST"])
+def crm_reassignment_preview():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    data = request.get_json(silent=True) or {}
+    phones = data.get("phones", [])
+    target_staff = data.get("target_staff", "").strip()
+    
+    if not phones or not target_staff:
+        return jsonify({"error": "Phones and Target Staff are required"}), 400
+        
+    from app.models import ConversationState
+    leads = ConversationState.query.filter(ConversationState.phone.in_(phones)).all()
+    
+    preview_data = []
+    for lead in leads:
+        preview_data.append({
+            "phone": lead.phone,
+            "name": lead.name,
+            "old_staff": lead.assigned_staff or "Unassigned",
+            "new_staff": target_staff,
+            "stage": lead.stage,
+            "score": lead.lead_score
+        })
+        
+    return jsonify({"preview": preview_data, "target_staff": target_staff})
+
+@admin_bp.route("/crm/reassignment-center/confirm", methods=["POST"])
+def crm_reassignment_confirm():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    data = request.get_json(silent=True) or {}
+    phones = data.get("phones", [])
+    target_staff = data.get("target_staff", "").strip()
+    
+    if not phones or not target_staff:
+        return jsonify({"error": "Phones and Target Staff are required"}), 400
+        
+    from app.models import ConversationState
+    from app.extensions import db
+    from app.services.log_service import log_lead_event
+    import json
+    
+    leads = ConversationState.query.filter(ConversationState.phone.in_(phones)).all()
+    
+    updated_count = 0
+    for lead in leads:
+        old_staff = lead.assigned_staff
+        if old_staff != target_staff:
+            lead.assigned_staff = target_staff
+            updated_count += 1
+            # Add LEAD_REASSIGNED event
+            log_lead_event(
+                phone=lead.phone,
+                event_type="LEAD_REASSIGNED",
+                event_data=json.dumps({
+                    "from": old_staff or "Unassigned",
+                    "to": target_staff,
+                    "by": "Admin Bulk Reassignment"
+                })
+            )
+            
+    db.session.commit()
+    
+    return jsonify({"success": True, "updated_count": updated_count})
+
 
