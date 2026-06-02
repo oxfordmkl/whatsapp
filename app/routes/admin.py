@@ -2799,13 +2799,134 @@ def crm_unassigned_leads():
     
     recommendations = get_staff_recommendations(limit=5)
     
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+    
     return render_template(
         "crm_unassigned_leads.html",
         key=request.args.get("key", ""),
         leads=unassigned,
         recommendations=recommendations,
+        active_staff=active_staff,
         total=len(unassigned)
     )
+
+@admin_bp.route("/crm/leads/unassigned/assign", methods=["POST"])
+def crm_unassigned_assign():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    phone = request.form.get("phone")
+    target_staff = request.form.get("target_staff", "").strip()
+    key = request.args.get("key", "")
+    
+    if not phone or not target_staff:
+        return redirect(url_for("admin.crm_unassigned_leads", key=key))
+        
+    from app.models import ConversationState
+    from app.extensions import db
+    from app.services.log_service import log_lead_event
+    import json
+    
+    lead = ConversationState.query.filter_by(phone=phone).first()
+    if lead and lead.assigned_staff != target_staff:
+        old_staff = lead.assigned_staff
+        lead.assigned_staff = target_staff
+        
+        log_lead_event(
+            phone=lead.phone,
+            event_type="LEAD_REASSIGNED",
+            event_data=json.dumps({
+                "from": old_staff or "Unassigned",
+                "to": target_staff,
+                "by": "Admin UX Assignment"
+            })
+        )
+        db.session.commit()
+        
+    return redirect(url_for("admin.crm_unassigned_leads", key=key))
+
+@admin_bp.route("/crm/leads/unassigned/auto-assign-preview", methods=["POST"])
+def crm_auto_assign_preview():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    from app.models import ConversationState
+    from sqlalchemy import or_
+    
+    unassigned = ConversationState.query.filter(
+        or_(ConversationState.assigned_staff.is_(None), ConversationState.assigned_staff == '')
+    ).order_by(ConversationState.lead_score.desc()).all()
+    
+    if not unassigned:
+        return jsonify({"error": "No unassigned leads found"}), 400
+        
+    scores, active_staff = calculate_workload_scoring()
+    
+    if not active_staff:
+        return jsonify({"error": "No active staff found"}), 400
+        
+    preview_data = []
+    
+    # Simulate workload distribution in memory
+    for lead in unassigned:
+        # Find staff with lowest score
+        best_staff = min(active_staff.values(), key=lambda name: scores.get(normalize_staff_name(name), 0))
+        
+        preview_data.append({
+            "phone": lead.phone,
+            "name": lead.name,
+            "score": lead.lead_score,
+            "target_staff": best_staff
+        })
+        
+        # Increment score simulating assignment (using "Lead" weight of 1)
+        scores[normalize_staff_name(best_staff)] += 1
+        
+    return jsonify({"preview": preview_data})
+
+@admin_bp.route("/crm/leads/unassigned/auto-assign-confirm", methods=["POST"])
+def crm_auto_assign_confirm():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    data = request.get_json(silent=True) or {}
+    assignments = data.get("assignments", [])
+    
+    if not assignments:
+        return jsonify({"error": "No assignments provided"}), 400
+        
+    from app.models import ConversationState
+    from app.extensions import db
+    from app.services.log_service import log_lead_event
+    import json
+    
+    updated_count = 0
+    for assign in assignments:
+        phone = assign.get("phone")
+        target_staff = assign.get("target_staff")
+        
+        if phone and target_staff:
+            lead = ConversationState.query.filter_by(phone=phone).first()
+            if lead and lead.assigned_staff != target_staff:
+                old_staff = lead.assigned_staff
+                lead.assigned_staff = target_staff
+                
+                log_lead_event(
+                    phone=lead.phone,
+                    event_type="LEAD_REASSIGNED",
+                    event_data=json.dumps({
+                        "from": old_staff or "Unassigned",
+                        "to": target_staff,
+                        "by": "Admin Auto Assignment"
+                    })
+                )
+                updated_count += 1
+                
+    db.session.commit()
+    
+    return jsonify({"success": True, "updated_count": updated_count})
 
 @admin_bp.route("/crm/reassignment-center", methods=["GET"])
 def crm_reassignment_center():

@@ -24,6 +24,9 @@
     .btn-crm-outline:hover { background: rgba(37, 211, 102, 0.1); color: var(--primary); }
     .score-badge { background: rgba(37, 211, 102, 0.2); color: var(--primary); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
     .recommendation-card { background: #1a1a1a; border: 1px solid #444; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .crm-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1050; justify-content: center; align-items: center; }
+    .crm-modal { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 700px; padding: 1.5rem; max-height: 90vh; display: flex; flex-direction: column; }
+    .crm-modal-body { overflow-y: auto; flex: 1; margin: 1rem 0; }
   </style>
 </head>
 <body>
@@ -38,7 +41,8 @@
     </div>
     <div>
       <a href="/panel?key={{ key }}" class="btn-crm-outline me-2"><i class="bi bi-arrow-left"></i> Back to Panel</a>
-      <a href="/crm/reassignment-center?key={{ key }}" class="btn btn-outline-light"><i class="bi bi-arrow-left-right"></i> Reassignment Center</a>
+      <a href="/crm/reassignment-center?key={{ key }}" class="btn btn-outline-light me-2"><i class="bi bi-arrow-left-right"></i> Reassignment Center</a>
+      <button onclick="previewAutoAssign()" class="btn btn-primary" {% if not leads %}disabled{% endif %}><i class="bi bi-magic"></i> Auto-Assign All</button>
     </div>
   </div>
 
@@ -53,6 +57,7 @@
               <th>Stage</th>
               <th>Score</th>
               <th>Updated</th>
+              <th>Assign To</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -65,12 +70,24 @@
               <td><span class="score-badge">{{ lead.lead_score }}</span></td>
               <td class="text-muted" style="font-size: 0.85rem;">{{ lead.updated_at.strftime('%Y-%m-%d %H:%M') if lead.updated_at else '-' }}</td>
               <td>
-                <a href="/crm/lead/{{ lead.phone }}?key={{ key }}" class="btn btn-sm btn-outline-success">View</a>
+                <form action="/crm/leads/unassigned/assign?key={{ key }}" method="POST" class="d-flex gap-2 mb-0">
+                  <input type="hidden" name="phone" value="{{ lead.phone }}">
+                  <select name="target_staff" class="form-select form-select-sm" style="background: var(--bg-color); color: var(--text-color); border-color: var(--border); min-width: 140px;">
+                    {% set rec_name = recommendations[0].name if recommendations else '' %}
+                    {% for staff in active_staff %}
+                    <option value="{{ staff }}" {% if staff == rec_name %}selected{% endif %}>{{ staff }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-sm btn-success">Assign</button>
+                </form>
+              </td>
+              <td>
+                <a href="/crm/lead/{{ lead.phone }}?key={{ key }}" class="btn btn-sm btn-outline-secondary">View</a>
               </td>
             </tr>
             {% endfor %}
             {% if not leads %}
-            <tr><td colspan="6" class="text-center text-muted py-4">No unassigned leads! Queue is clear.</td></tr>
+            <tr><td colspan="7" class="text-center text-muted py-4">No unassigned leads! Queue is clear.</td></tr>
             {% endif %}
           </tbody>
         </table>
@@ -101,5 +118,123 @@
   </div>
   
 </div>
+
+<!-- Auto Assign Modal -->
+<div class="crm-modal-overlay" id="autoAssignModal">
+  <div class="crm-modal">
+    <div class="d-flex justify-content-between align-items-center">
+      <h4 class="mb-0"><i class="bi bi-magic text-primary"></i> Preview Auto-Assignment</h4>
+      <button class="btn-close btn-close-white" onclick="closeModal()"></button>
+    </div>
+    
+    <div class="crm-modal-body">
+      <div id="modalAlert" class="alert alert-info bg-info text-white border-0" style="background-color: rgba(13, 202, 240, 0.2) !important; color: #0dcaf0 !important;">Generating distribution plan...</div>
+      
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Phone</th>
+            <th>Name</th>
+            <th>Score</th>
+            <th>Target Staff</th>
+          </tr>
+        </thead>
+        <tbody id="previewTableBody">
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="d-flex justify-content-end gap-2 mt-2">
+      <button class="btn btn-outline-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="btnConfirmAuto" onclick="confirmAutoAssign()">Confirm & Execute</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const ADMIN_KEY = "{{ key }}";
+  let currentAssignments = [];
+  
+  function closeModal() {
+    document.getElementById('autoAssignModal').style.display = 'none';
+  }
+  
+  async function previewAutoAssign() {
+    document.getElementById('autoAssignModal').style.display = 'flex';
+    const tbody = document.getElementById('previewTableBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+    document.getElementById('btnConfirmAuto').disabled = true;
+    
+    try {
+      const response = await fetch('/crm/leads/unassigned/auto-assign-preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Key': ADMIN_KEY
+        }
+      });
+      
+      const data = await response.json();
+      if (data.error) {
+        document.getElementById('modalAlert').innerText = data.error;
+        tbody.innerHTML = '';
+        return;
+      }
+      
+      currentAssignments = data.preview;
+      tbody.innerHTML = "";
+      
+      currentAssignments.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-family: monospace;">${p.phone}</td>
+          <td>${p.name || '-'}</td>
+          <td><span class="score-badge">${p.score}</span></td>
+          <td class="text-success" style="font-weight: 600;">${p.target_staff}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
+      document.getElementById('modalAlert').innerText = `Smart Engine will distribute ${currentAssignments.length} lead(s) among active staff.`;
+      document.getElementById('btnConfirmAuto').disabled = false;
+      
+    } catch (err) {
+      document.getElementById('modalAlert').innerText = "Error generating preview.";
+      console.error(err);
+    }
+  }
+  
+  async function confirmAutoAssign() {
+    const btn = document.getElementById('btnConfirmAuto');
+    btn.disabled = true;
+    btn.innerHTML = "Executing...";
+    
+    try {
+      const response = await fetch('/crm/leads/unassigned/auto-assign-confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Key': ADMIN_KEY
+        },
+        body: JSON.stringify({ assignments: currentAssignments })
+      });
+      
+      const data = await response.json();
+      if (data.error) {
+        alert(data.error);
+        btn.disabled = false;
+        btn.innerHTML = "Confirm & Execute";
+      } else {
+        alert(`Successfully auto-assigned ${data.updated_count} lead(s).`);
+        window.location.reload();
+      }
+    } catch (err) {
+      alert("Error confirming auto-assignment.");
+      console.error(err);
+      btn.disabled = false;
+      btn.innerHTML = "Confirm & Execute";
+    }
+  }
+</script>
 </body>
 </html>
