@@ -685,7 +685,7 @@
       <div class="row g-3">
 
       <!-- Ã¢"â‚¬Ã¢"â‚¬ CRM Update Form Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬ -->
-      <div class="col-12 col-lg-6">
+      <div class="col-12 col-md-6 col-xl-4">
         <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-pencil-square"></i>CRM Updates
@@ -841,7 +841,7 @@
       </div>
 
       <!-- Ã¢" â‚¬Ã¢" â‚¬ Manual WhatsApp Reply Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬ -->
-      <div class="col-12 col-xl-4 col-lg-6">
+      <div class="col-12 col-md-6 col-xl-4">
         <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-chat-dots"></i>Manual WhatsApp Reply
@@ -905,7 +905,7 @@
       </div>
 
       <!-- Ã¢" â‚¬Ã¢" â‚¬ Task Management Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬ -->
-      <div class="col-12 col-xl-4 col-lg-6">
+      <div class="col-12 col-md-6 col-xl-4">
         <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-calendar-check"></i>Task Management
@@ -1797,7 +1797,7 @@
     }
 
     // Quick Replies Logic
-    document.querySelectorAll('.btn-qr').forEach(btn => {
+    document.querySelectorAll('#quick-replies .btn-qr').forEach(btn => {
       btn.addEventListener('click', function() {
         const textarea = document.getElementById('manual_message');
         const text = this.getAttribute('data-text');
