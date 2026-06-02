@@ -22,147 +22,87 @@
       --purple: #bc8cff;
       --orange: #e3813a;
     }
-    body {
-      background-color: var(--bg-main);
-      color: var(--text-main);
-      font-family: 'Inter', sans-serif;
-    }
+    body { background-color: var(--bg-main); color: var(--text-main); font-family: 'Inter', sans-serif; }
     .crm-navbar {
-      background: var(--bg-card);
-      border-bottom: 1px solid var(--border);
-      padding: 0.8rem 1rem;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
+      background: var(--bg-card); border-bottom: 1px solid var(--border);
+      padding: 0.8rem 1rem; position: sticky; top: 0; z-index: 1000;
+      display: flex; align-items: center; gap: 1rem;
     }
     .crm-nav-link {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 0.85rem;
-      font-weight: 500;
-      padding: 0.4rem 0.8rem;
-      border-radius: 6px;
-      transition: all 0.2s;
+      color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
+      font-weight: 500; padding: 0.4rem 0.8rem; border-radius: 6px; transition: all 0.2s;
     }
-    .crm-nav-link:hover {
-      color: var(--text-main);
-      background: rgba(255,255,255,0.05);
-    }
-    .crm-nav-link.active {
-      color: var(--text-main);
-      background: rgba(255,255,255,0.1);
-    }
+    .crm-nav-link:hover { color: var(--text-main); background: rgba(255,255,255,0.05); }
+    .crm-nav-link.active { color: var(--text-main); background: rgba(255,255,255,0.1); }
     .kpi-box {
-      background: var(--bg-card2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1.25rem;
-      position: relative;
-      overflow: hidden;
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.25rem; position: relative; overflow: hidden;
     }
-    .kpi-title {
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      margin-bottom: 0.5rem;
-    }
-    .kpi-value {
-      font-size: 2.25rem;
-      font-weight: 700;
-      line-height: 1;
-    }
+    .kpi-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; }
+    .kpi-value { font-size: 2rem; font-weight: 700; line-height: 1; }
     .crm-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 1.5rem;
-      height: 100%;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; height: 100%;
     }
     .crm-card-header {
-      background: rgba(255,255,255,0.02);
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 1.25rem;
-      font-size: 0.95rem;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
+      background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.25rem; font-size: 0.9rem; font-weight: 600;
+      display: flex; align-items: center; gap: 0.6rem;
     }
-    .issue-table {
-      width: 100%;
-      font-size: 0.85rem;
-    }
+    .issue-table { width: 100%; font-size: 0.85rem; }
     .issue-table th {
-      background: var(--bg-card2);
-      color: var(--text-muted);
-      font-weight: 600;
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--border);
-      text-transform: uppercase;
-      font-size: 0.7rem;
-      letter-spacing: 0.05em;
+      background: var(--bg-card2); color: var(--text-muted); font-weight: 600;
+      padding: 0.65rem 1rem; border-bottom: 1px solid var(--border);
+      text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em;
     }
-    .issue-table td {
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--border);
-      vertical-align: middle;
-    }
-    .issue-table tr:hover td {
-      background: rgba(255,255,255,0.02);
-    }
-    .issue-table tr:last-child td {
-      border-bottom: none;
-    }
+    .issue-table td { padding: 0.65rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .issue-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .issue-table tr:last-child td { border-bottom: none; }
     .btn-open {
-      background: rgba(88,166,255,0.1);
-      color: var(--blue);
-      border: 1px solid rgba(88,166,255,0.2);
-      border-radius: 6px;
-      padding: 0.25rem 0.75rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      transition: all 0.2s;
+      background: rgba(88,166,255,0.1); color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.2); border-radius: 6px;
+      padding: 0.25rem 0.75rem; font-size: 0.75rem; font-weight: 600;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.2s;
     }
-    .btn-open:hover {
-      background: var(--blue);
-      color: #fff;
-    }
-    .score-badge {
-      font-weight: 700;
-      font-size: 0.85rem;
-      padding: 0.2em 0.5em;
-      border-radius: 4px;
-      background: rgba(255,255,255,0.05);
-    }
+    .btn-open:hover { background: var(--blue); color: #fff; }
+    .score-badge { font-weight: 700; font-size: 0.85rem; padding: 0.2em 0.5em; border-radius: 4px; background: rgba(255,255,255,0.05); }
     .score-hot { color: var(--red); background: rgba(248,81,73,0.1); }
     .score-warm { color: var(--yellow); background: rgba(210,153,34,0.1); }
     .score-cold { color: var(--text-muted); }
-    
-    .table-container {
-      max-height: 400px;
-      overflow-y: auto;
+    .table-container { max-height: 360px; overflow-y: auto; }
+    .table-container::-webkit-scrollbar { width: 5px; }
+    .table-container::-webkit-scrollbar-track { background: var(--bg-card); }
+    .table-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Phase 9.5 intelligence styles */
+    .sla-pill {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 1rem; border-radius: 8px; margin-bottom: 0.5rem;
+      font-size: 0.85rem; font-weight: 600; border: 1px solid transparent;
     }
-    .table-container::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+    .sla-green { background: rgba(35,134,54,0.12); border-color: rgba(35,134,54,0.3); color: #3fb950; }
+    .sla-yellow { background: rgba(210,153,34,0.12); border-color: rgba(210,153,34,0.3); color: var(--yellow); }
+    .sla-orange { background: rgba(227,129,58,0.12); border-color: rgba(227,129,58,0.3); color: var(--orange); }
+    .sla-red { background: rgba(248,81,73,0.12); border-color: rgba(248,81,73,0.3); color: var(--red); }
+
+    .feed-item {
+      display: flex; gap: 0.75rem; padding: 0.65rem 0; border-bottom: 1px solid var(--border);
+      align-items: flex-start;
     }
-    .table-container::-webkit-scrollbar-track {
-      background: var(--bg-card); 
+    .feed-item:last-child { border-bottom: none; }
+    .feed-icon { font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
+    .feed-label { font-size: 0.82rem; color: var(--text-main); line-height: 1.4; }
+    .feed-time { font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; text-align: right; }
+
+    .lb-rank { font-size: 1.3rem; width: 30px; flex-shrink: 0; }
+    .lb-name { font-weight: 600; font-size: 0.9rem; }
+    .lb-meta { font-size: 0.75rem; color: var(--text-muted); }
+    .lb-badge {
+      font-size: 0.7rem; font-weight: 700; padding: 3px 8px;
+      border-radius: 4px; background: rgba(255,255,255,0.07); color: var(--text-main);
     }
-    .table-container::-webkit-scrollbar-thumb {
-      background: var(--border); 
-      border-radius: 3px;
-    }
+    .lb-badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+    .lb-badge-green { background: rgba(35,134,54,0.15); color: #3fb950; }
   </style>
 </head>
 <body>
@@ -186,24 +126,24 @@
     </div>
   </div>
 
-  <div class="container-fluid p-4" style="max-width: 1400px; margin: 0 auto;">
-    
+  <div class="container-fluid p-4" style="max-width: 1600px; margin: 0 auto;">
+
     <div class="d-flex align-items-center justify-content-between mb-4">
       <div>
-        <h2 style="font-weight: 700; font-size: 1.6rem; margin-bottom: 0.2rem;">
+        <h2 style="font-weight: 700; font-size: 1.5rem; margin-bottom: 0.2rem;">
           <i class="bi bi-speedometer2 text-primary me-2"></i>Operations Command Center
+          <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted); margin-left: 0.75rem;">Phase 9.5 Intelligence Layer</span>
         </h2>
-        <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
-          Single view combining workflow priority queues, data health alerts, and staff utilization.
+        <p style="color: var(--text-muted); font-size: 0.82rem; margin: 0;">
+          Leaderboard · SLA Health · Activity Feed · Priority Queue · Workload Snapshot — all read-only, O(L+E)
         </p>
       </div>
-      <div style="font-size: 0.75rem; color: var(--text-muted); text-align: right;">
-        <i class="bi bi-clock-history me-1"></i> Live Data<br>
-        O(L+E) Read-Only Pipeline
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-align: right;">
+        <i class="bi bi-clock-history me-1"></i>Live Data<br>2 Bulk Queries
       </div>
     </div>
 
-    <!-- KPIs -->
+    <!-- ── KPI Row (Phase 8.8) ─────────────────────────────────────────── -->
     <div class="row g-3 mb-4">
       <div class="col-6 col-md-3">
         <div class="kpi-box" style="border-left: 3px solid var(--green);">
@@ -226,22 +166,116 @@
         </a>
       </div>
       <div class="col-6 col-md-3">
-        <a href="/crm/tasks/admin?key={{ key }}" style="text-decoration: none;">
-          <div class="kpi-box" style="border-left: 3px solid var(--orange); transition: all 0.2s;">
-            <div class="kpi-title">Overdue Tasks</div>
-            <div class="kpi-value text-white"><i class="bi bi-arrow-right-circle fs-4 text-muted"></i> View</div>
-          </div>
-        </a>
+        <div class="kpi-box" style="border-left: 3px solid var(--purple);">
+          <div class="kpi-title">Data Issues</div>
+          <div class="kpi-value text-white">{{ data.data_issues|length }}</div>
+        </div>
       </div>
     </div>
 
+    <!-- ── Phase 9.5 Module 2: SLA Dashboard ─────────────────────────── -->
+    <div class="row g-3 mb-4">
+      <div class="col-12">
+        <div class="crm-card" style="border-left: 3px solid var(--blue); margin-bottom: 0;">
+          <div class="crm-card-header" style="color: var(--blue);">
+            <i class="bi bi-calendar-check"></i> Follow-Up SLA Health
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; margin-left: 0.5rem;">Open task deadline tracking</span>
+          </div>
+          <div class="p-3">
+            <div class="row g-3">
+              <div class="col-6 col-md-3">
+                <div class="sla-pill sla-green">
+                  <span><i class="bi bi-calendar-day me-2"></i>Due Today</span>
+                  <span style="font-size: 1.4rem; font-weight: 700;">{{ intel.sla.due_today }}</span>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="sla-pill sla-yellow">
+                  <span><i class="bi bi-exclamation me-2"></i>1–3 Days Overdue</span>
+                  <span style="font-size: 1.4rem; font-weight: 700;">{{ intel.sla.overdue_1_3 }}</span>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="sla-pill sla-orange">
+                  <span><i class="bi bi-exclamation-circle me-2"></i>4–7 Days Overdue</span>
+                  <span style="font-size: 1.4rem; font-weight: 700;">{{ intel.sla.overdue_4_7 }}</span>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="sla-pill sla-red">
+                  <span><i class="bi bi-exclamation-triangle me-2"></i>7+ Days Overdue</span>
+                  <span style="font-size: 1.4rem; font-weight: 700;">{{ intel.sla.overdue_7plus }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Main Content Grid ───────────────────────────────────────────── -->
     <div class="row g-4">
-      
-      <!-- Left Column -->
-      <div class="col-12 col-xl-8">
-        
-        <!-- 1. Admission Ready -->
-        <div class="crm-card border-success">
+
+      <!-- LEFT COLUMN (wide) -->
+      <div class="col-12 col-xl-8 d-flex flex-column gap-4">
+
+        <!-- Module 4: Priority Opportunity Queue -->
+        <div class="crm-card border-danger" style="margin-bottom: 0;">
+          <div class="crm-card-header" style="color: var(--red);">
+            <i class="bi bi-lightning-charge-fill"></i> Priority Opportunity Queue
+            <span class="badge ms-auto rounded-pill" style="background: rgba(248,81,73,0.2); color: var(--red);">{{ intel.priority_queue|length }}</span>
+          </div>
+          <div class="table-container">
+            {% if intel.priority_queue %}
+            <table class="issue-table">
+              <thead style="position: sticky; top: 0; z-index: 10;">
+                <tr>
+                  <th>Lead</th>
+                  <th>Assigned Staff</th>
+                  <th>Status</th>
+                  <th class="text-center">Score</th>
+                  <th class="text-center">Follow-Ups</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in intel.priority_queue %}
+                <tr>
+                  <td>
+                    <div class="fw-medium" style="font-size: 0.9rem;">{{ item.name }}</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">{{ item.phone }}</div>
+                  </td>
+                  <td>{{ item.staff if item.staff and item.staff != 'Unassigned' else '—' }}</td>
+                  <td><span style="font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.07);">{{ item.status }}</span></td>
+                  <td class="text-center">
+                    <span class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">
+                      {{ item.score }}
+                    </span>
+                  </td>
+                  <td class="text-center">
+                    {% if item.follow_ups > 0 %}
+                    <span style="color: var(--yellow); font-weight: 700;">{{ item.follow_ups }}</span>
+                    {% else %}
+                    <span class="text-muted">0</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                      <i class="bi bi-box-arrow-up-right"></i> Open Lead
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="p-5 text-center text-muted">No high-priority leads (score ≥ 70) currently active.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Admission Ready (Phase 8.8) -->
+        <div class="crm-card border-success" style="margin-bottom: 0;">
           <div class="crm-card-header text-success bg-success bg-opacity-10 border-success">
             <i class="bi bi-check-circle-fill"></i> Admission Ready
             <span class="badge bg-success ms-auto rounded-pill">{{ data.admission_ready|length }}</span>
@@ -251,33 +285,20 @@
             <table class="issue-table">
               <thead style="position: sticky; top: 0; z-index: 10;">
                 <tr>
-                  <th>Phone</th>
-                  <th>Lead Name</th>
-                  <th>Assigned Staff</th>
-                  <th>Enquiries</th>
-                  <th>Admissions</th>
-                  <th>Score</th>
-                  <th>Action</th>
+                  <th>Phone</th><th>Lead Name</th><th>Assigned Staff</th>
+                  <th>Enquiries</th><th>Admissions</th><th>Score</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {% for item in data.admission_ready %}
                 <tr>
-                  <td style="font-family: 'Courier New', monospace; font-size: 0.8rem;">{{ item.phone }}</td>
+                  <td style="font-family: monospace; font-size: 0.78rem;">{{ item.phone }}</td>
                   <td class="fw-medium">{{ item.name }}</td>
                   <td>{{ item.staff }}</td>
                   <td class="fw-bold text-info">{{ item.enquiries }}</td>
                   <td class="fw-bold {% if item.admissions > 0 %}text-success{% else %}text-muted{% endif %}">{{ item.admissions }}</td>
-                  <td>
-                    <span class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">
-                      {{ item.score }}
-                    </span>
-                  </td>
-                  <td>
-                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
-                      <i class="bi bi-box-arrow-up-right"></i> Open
-                    </a>
-                  </td>
+                  <td><span class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">{{ item.score }}</span></td>
+                  <td><a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open"><i class="bi bi-box-arrow-up-right"></i> Open</a></td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -288,8 +309,8 @@
           </div>
         </div>
 
-        <!-- 3. High Value Opportunities -->
-        <div class="crm-card border-primary">
+        <!-- High Value Opportunities (Phase 8.8) -->
+        <div class="crm-card border-primary" style="margin-bottom: 0;">
           <div class="crm-card-header text-primary bg-primary bg-opacity-10 border-primary">
             <i class="bi bi-gem"></i> High Value Opportunities
             <span class="badge bg-primary ms-auto rounded-pill">{{ data.high_value_ops|length }}</span>
@@ -298,36 +319,17 @@
             {% if data.high_value_ops %}
             <table class="issue-table">
               <thead style="position: sticky; top: 0; z-index: 10;">
-                <tr>
-                  <th>Phone</th>
-                  <th>Lead Name</th>
-                  <th>Courses Explored</th>
-                  <th>Assigned Staff</th>
-                  <th>Score</th>
-                  <th>Action</th>
-                </tr>
+                <tr><th>Phone</th><th>Lead Name</th><th>Courses Explored</th><th>Assigned Staff</th><th>Score</th><th>Action</th></tr>
               </thead>
               <tbody>
                 {% for item in data.high_value_ops %}
                 <tr>
-                  <td style="font-family: 'Courier New', monospace; font-size: 0.8rem;">{{ item.phone }}</td>
+                  <td style="font-family: monospace; font-size: 0.78rem;">{{ item.phone }}</td>
                   <td class="fw-medium">{{ item.name }}</td>
                   <td style="font-size: 0.8rem; color: var(--blue);">{{ item.courses }}</td>
-                  <td>
-                    {% if item.staff == '—' or item.staff == '' %}
-                    <span class="text-muted fst-italic">Unassigned</span>
-                    {% else %}
-                    {{ item.staff }}
-                    {% endif %}
-                  </td>
-                  <td>
-                    <span class="score-badge score-hot">{{ item.score }}</span>
-                  </td>
-                  <td>
-                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
-                      <i class="bi bi-box-arrow-up-right"></i> Open
-                    </a>
-                  </td>
+                  <td>{% if item.staff == '—' or item.staff == '' %}<span class="text-muted fst-italic">Unassigned</span>{% else %}{{ item.staff }}{% endif %}</td>
+                  <td><span class="score-badge score-hot">{{ item.score }}</span></td>
+                  <td><a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open"><i class="bi bi-box-arrow-up-right"></i> Open</a></td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -338,36 +340,67 @@
           </div>
         </div>
 
-      </div>
+      </div><!-- /LEFT COLUMN -->
 
-      <!-- Right Column -->
+      <!-- RIGHT COLUMN -->
       <div class="col-12 col-xl-4 d-flex flex-column gap-4">
-        
-        <!-- 4. Staff Workload Summary -->
-        <div class="crm-card border-secondary mb-0">
+
+        <!-- Module 1: Staff Leaderboard -->
+        <div class="crm-card" style="border-left: 3px solid var(--purple); margin-bottom: 0;">
+          <div class="crm-card-header" style="color: var(--purple);">
+            <i class="bi bi-trophy-fill"></i> Staff Leaderboard
+          </div>
+          <div class="p-3">
+            {% if intel.leaderboard %}
+              {% for item in intel.leaderboard %}
+              <div class="d-flex align-items-center gap-3 mb-3 pb-3" style="border-bottom: 1px solid var(--border);">
+                <div class="lb-rank">
+                  {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}<span style="color: var(--text-muted); font-size: 0.9rem;">#{{ loop.index }}</span>{% endif %}
+                </div>
+                <div class="flex-grow-1">
+                  <div class="lb-name">{{ item.name }}</div>
+                  <div class="lb-meta mt-1">
+                    <span class="lb-badge lb-badge-purple me-1">{{ item.admissions }} Admissions</span>
+                    <span class="lb-badge lb-badge-green me-1">{{ item.conversion }}%</span>
+                    <span class="lb-badge">{{ item.assigned_leads }} Leads</span>
+                  </div>
+                </div>
+                {% if item.open_tasks > 0 %}
+                <div style="font-size: 0.72rem; color: var(--yellow);">{{ item.open_tasks }} tasks</div>
+                {% endif %}
+              </div>
+              {% endfor %}
+            {% else %}
+            <div class="text-muted text-center py-3">No staff data available.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Module 5: Workload Snapshot -->
+        <div class="crm-card border-secondary" style="margin-bottom: 0;">
           <div class="crm-card-header text-light bg-secondary bg-opacity-10 border-secondary">
-            <i class="bi bi-person-lines-fill"></i> Staff Workload Summary
+            <i class="bi bi-bar-chart-line"></i> Workload Snapshot
           </div>
           <div class="table-container" style="max-height: none;">
-            {% if data.staff_workload %}
+            {% if intel.workload_snapshot %}
             <table class="issue-table">
               <thead style="position: sticky; top: 0; z-index: 10;">
                 <tr>
                   <th>Staff</th>
-                  <th class="text-center" title="Assigned Leads">Lds</th>
-                  <th class="text-center text-danger" title="Hot Leads">Hot</th>
-                  <th class="text-center text-success" title="Admission Ready">AR</th>
-                  <th class="text-center text-warning" title="Follow-ups Due">FU</th>
+                  <th class="text-center" title="Assigned Leads">Leads</th>
+                  <th class="text-center text-warning" title="Open Tasks">Tasks</th>
+                  <th class="text-center text-danger" title="Overdue Tasks">Ovrd</th>
+                  <th class="text-center text-success" title="Admissions">Adm</th>
                 </tr>
               </thead>
               <tbody>
-                {% for item in data.staff_workload %}
+                {% for item in intel.workload_snapshot %}
                 <tr>
-                  <td class="fw-medium">{{ item.staff }}</td>
-                  <td class="text-center text-muted fw-bold">{{ item.assigned }}</td>
-                  <td class="text-center text-danger fw-bold">{{ item.hot }}</td>
-                  <td class="text-center text-success fw-bold">{{ item.admission_ready }}</td>
-                  <td class="text-center text-warning fw-bold">{{ item.followup }}</td>
+                  <td class="fw-medium" style="font-size: 0.85rem;">{{ item.name }}</td>
+                  <td class="text-center text-muted fw-bold">{{ item.assigned_leads }}</td>
+                  <td class="text-center fw-bold" style="color: {% if item.open_tasks > 5 %}var(--orange){% else %}var(--yellow){% endif %};">{{ item.open_tasks }}</td>
+                  <td class="text-center fw-bold" style="color: {% if item.overdue_tasks > 0 %}var(--red){% else %}var(--text-muted){% endif %};">{{ item.overdue_tasks }}</td>
+                  <td class="text-center text-success fw-bold">{{ item.admissions }}</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -378,8 +411,32 @@
           </div>
         </div>
 
-        <!-- 2. Data Issues -->
-        <div class="crm-card border-warning mb-0">
+        <!-- Module 3: Activity Feed -->
+        <div class="crm-card" style="border-left: 3px solid var(--blue); margin-bottom: 0;">
+          <div class="crm-card-header" style="color: var(--blue);">
+            <i class="bi bi-activity"></i> Staff Activity Feed
+            <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 400; margin-left: 0.5rem;">latest 50</span>
+          </div>
+          <div class="p-3 table-container" style="max-height: 420px;">
+            {% if intel.activity_feed %}
+              {% for item in intel.activity_feed %}
+              <div class="feed-item">
+                <i class="bi {{ item.icon }} feed-icon" style="color: {{ item.color }};"></i>
+                <div class="flex-grow-1 feed-label">{{ item.label }}</div>
+                <div class="feed-time">
+                  <div>{{ item.time }}</div>
+                  <div>{{ item.date }}</div>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+            <div class="text-muted text-center py-4">No recent activity recorded.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Data Issues (Phase 8.8) -->
+        <div class="crm-card border-warning" style="margin-bottom: 0;">
           <div class="crm-card-header text-warning bg-warning bg-opacity-10 border-warning">
             <i class="bi bi-exclamation-triangle-fill"></i> Data Issues
             <span class="badge bg-warning text-dark ms-auto rounded-pill">{{ data.data_issues|length }}</span>
@@ -388,10 +445,10 @@
             {% if data.data_issues %}
             <div class="list-group list-group-flush" style="font-size: 0.85rem;">
               {% for issue in data.data_issues %}
-              <div class="list-group-item bg-transparent border-bottom" style="border-color: var(--border) !important; padding: 0.8rem 1rem;">
+              <div class="list-group-item bg-transparent border-bottom" style="border-color: var(--border) !important; padding: 0.75rem 1rem;">
                 <div class="d-flex w-100 justify-content-between align-items-center mb-1">
                   <h6 class="mb-0 fw-bold" style="color: var(--text-main); font-size: 0.85rem;">{{ issue.name }}</h6>
-                  <small style="font-family: 'Courier New', monospace; color: var(--text-muted);">{{ issue.phone }}</small>
+                  <small style="font-family: monospace; color: var(--text-muted);">{{ issue.phone }}</small>
                 </div>
                 <p class="mb-0 text-warning">{{ issue.issue }}</p>
                 {% if issue.phone != '-' %}
@@ -410,11 +467,11 @@
           </div>
         </div>
 
-      </div>
+      </div><!-- /RIGHT COLUMN -->
 
-    </div>
+    </div><!-- /row -->
 
-  </div>
+  </div><!-- /container -->
 
 </body>
 </html>

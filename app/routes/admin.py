@@ -672,7 +672,19 @@ def crm_staff_management():
     analytics_data = calculate_admission_analytics()
     # analytics_data["staff_rows"] contains {"name": ..., "leads": ..., "admissions": ...}
     stats_map = {row["name"]: {"leads": row["leads"], "admissions": row["admissions"]} for row in analytics_data["staff_rows"]}
-    
+    data = calculate_operations()
+    intel = calculate_intelligence()
+
+    return render_template(
+        "crm_operations.html",
+        key=request.args.get("key", ""),
+        data=data,
+        intel=intel,
+    )
+
+def calculate_intelligence():
+    pass
+
     staff_list = []
     for code, data in registry.items():
         name = data.get("display_name", "")
@@ -2697,13 +2709,230 @@ def crm_operations():
         return _deny()
     
     data = calculate_operations()
-    
+    intel = calculate_intelligence()
+
     return render_template(
         "crm_operations.html",
         key=request.args.get("key", ""),
         data=data,
+        intel=intel,
     )
 
+
+
+
+# ── Phase 9.5: Operations Intelligence Layer ──────────────────────────
+
+def calculate_intelligence():
+    """
+    Five intelligence modules. Exactly TWO bulk queries total.
+    Query 1: LeadEvent filtered to intel types only.
+    Query 2: ConversationState.query.all()
+    O(L+E). No N+1. Read-only.
+    """
+    from app.models import ConversationState, LeadEvent
+    from datetime import datetime
+    import json
+
+    now = datetime.utcnow()
+    today = now.date()
+
+    intel_event_types = [
+        "FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED",
+        "COURSE_ADMISSION", "LEAD_REASSIGNED", "MANUAL_MESSAGE"
+    ]
+    events = LeadEvent.query.filter(
+        LeadEvent.event_type.in_(intel_event_types)
+    ).order_by(LeadEvent.created_at.desc()).all()
+
+    leads = ConversationState.query.all()
+    lead_map = {l.phone: l for l in leads}
+
+    registry = load_staff_registry()
+    active_staff_names = [d["display_name"] for d in registry.values() if d.get("active")]
+
+    staff_admissions = {}
+    staff_task_open = {}
+    staff_task_done = {}
+    task_events_map = {}
+    completed_ids = set()
+    phone_open_tasks = {}
+
+    for ev in events:
+        try:
+            edata = json.loads(ev.event_data or "{}")
+        except Exception:
+            edata = {}
+
+        if ev.event_type == "COURSE_ADMISSION":
+            lead = lead_map.get(ev.phone)
+            s = normalize_staff_name((lead.assigned_staff or "") if lead else "")
+            if s and s != "Unassigned":
+                staff_admissions[s] = staff_admissions.get(s, 0) + 1
+
+        elif ev.event_type == "FOLLOW_UP_TASK":
+            tid = edata.get("task_id")
+            s = normalize_staff_name(edata.get("staff", ""))
+            if tid and s and s != "Unassigned":
+                staff_task_open.setdefault(s, set()).add(tid)
+                if tid not in task_events_map:
+                    task_events_map[tid] = {
+                        "task_id": tid,
+                        "phone": ev.phone,
+                        "due_date": edata.get("due_date", ""),
+                        "staff": s,
+                        "task": edata.get("task", ""),
+                    }
+
+        elif ev.event_type == "FOLLOW_UP_COMPLETED":
+            tid = edata.get("task_id")
+            by = normalize_staff_name(edata.get("completed_by", edata.get("staff", "")))
+            if tid:
+                completed_ids.add(tid)
+            if tid and by and by != "Unassigned":
+                staff_task_done.setdefault(by, set()).add(tid)
+
+    for tid, t in task_events_map.items():
+        if tid not in completed_ids:
+            p = t["phone"]
+            phone_open_tasks[p] = phone_open_tasks.get(p, 0) + 1
+
+    staff_assigned = {}
+    for lead in leads:
+        s = normalize_staff_name(lead.assigned_staff or "")
+        if s and s != "Unassigned":
+            staff_assigned[s] = staff_assigned.get(s, 0) + 1
+
+    # Module 1: Leaderboard
+    leaderboard = []
+    for staff in active_staff_names:
+        s = normalize_staff_name(staff)
+        assigned = staff_assigned.get(s, 0)
+        admissions = staff_admissions.get(s, 0)
+        open_set = staff_task_open.get(s, set()) - staff_task_done.get(s, set())
+        conversion = round((admissions / assigned * 100), 1) if assigned > 0 else 0.0
+        leaderboard.append({
+            "name": staff, "assigned_leads": assigned,
+            "admissions": admissions, "conversion": conversion,
+            "open_tasks": len(open_set),
+        })
+    leaderboard.sort(key=lambda x: (x["admissions"], x["conversion"], x["assigned_leads"]), reverse=True)
+
+    # Module 2: SLA Dashboard
+    sla = {"due_today": 0, "overdue_1_3": 0, "overdue_4_7": 0, "overdue_7plus": 0}
+    for tid, t in task_events_map.items():
+        if tid in completed_ids:
+            continue
+        due = t.get("due_date", "")
+        if not due:
+            continue
+        try:
+            due_dt = datetime.strptime(due, "%Y-%m-%d").date()
+            diff = (today - due_dt).days
+            if diff == 0:
+                sla["due_today"] += 1
+            elif 1 <= diff <= 3:
+                sla["overdue_1_3"] += 1
+            elif 4 <= diff <= 7:
+                sla["overdue_4_7"] += 1
+            elif diff > 7:
+                sla["overdue_7plus"] += 1
+        except Exception:
+            pass
+
+    # Module 3: Activity Feed (newest first, max 50)
+    activity_feed = []
+    feed_types = {"LEAD_REASSIGNED", "COURSE_ADMISSION", "FOLLOW_UP_TASK",
+                  "FOLLOW_UP_COMPLETED", "MANUAL_MESSAGE"}
+    for ev in events:
+        if ev.event_type not in feed_types or len(activity_feed) >= 50:
+            continue
+        lead = lead_map.get(ev.phone)
+        lead_name = (lead.name if lead and lead.name else None) or ev.phone
+        try:
+            edata = json.loads(ev.event_data or "{}")
+        except Exception:
+            edata = {}
+        s = normalize_staff_name(
+            edata.get("staff") or edata.get("new_staff") or
+            (lead.assigned_staff if lead else "") or ""
+        )
+        if ev.event_type == "FOLLOW_UP_COMPLETED":
+            by = normalize_staff_name(edata.get("completed_by", s))
+            label = f"{by} completed task: {edata.get('task', '')[:35]}"
+            icon, color = "bi-check2-circle", "var(--green)"
+        elif ev.event_type == "FOLLOW_UP_TASK":
+            label = f"{s} created task: {edata.get('task', '')[:35]}"
+            icon, color = "bi-calendar-plus", "var(--yellow)"
+        elif ev.event_type == "COURSE_ADMISSION":
+            course = (ev.event_data or "")[:35]
+            label = f"{s} admitted {lead_name}: {course}"
+            icon, color = "bi-mortarboard", "var(--purple)"
+        elif ev.event_type == "LEAD_REASSIGNED":
+            from_s = normalize_staff_name(edata.get("from_staff", "?"))
+            to_s = normalize_staff_name(edata.get("to_staff", "?"))
+            label = f"Reassigned {lead_name}: {from_s} → {to_s}"
+            icon, color = "bi-arrow-left-right", "var(--blue)"
+        elif ev.event_type == "MANUAL_MESSAGE":
+            label = f"{s} messaged {lead_name}"
+            icon, color = "bi-chat-dots", "var(--text-muted)"
+        else:
+            continue
+        ts = ev.created_at
+        activity_feed.append({
+            "time": ts.strftime("%I:%M %p") if ts else "—",
+            "date": ts.strftime("%d %b") if ts else "",
+            "label": label, "icon": icon, "color": color,
+        })
+
+    # Module 4: Priority Opportunity Queue (score >= 70, not admitted, top 25)
+    priority_queue = []
+    for lead in leads:
+        score = lead.lead_score or 0
+        if score >= 70 and not lead.is_admitted:
+            priority_queue.append({
+                "phone": lead.phone,
+                "name": lead.name or "Unknown",
+                "staff": normalize_staff_name(lead.assigned_staff or ""),
+                "score": score,
+                "follow_ups": phone_open_tasks.get(lead.phone, 0),
+                "status": lead.lead_status or "—",
+            })
+    priority_queue.sort(key=lambda x: x["score"], reverse=True)
+    priority_queue = priority_queue[:25]
+
+    # Module 5: Workload Snapshot
+    workload_snapshot = []
+    for staff in active_staff_names:
+        s = normalize_staff_name(staff)
+        open_set = staff_task_open.get(s, set()) - staff_task_done.get(s, set())
+        overdue_t = 0
+        for tid in open_set:
+            t = task_events_map.get(tid, {})
+            due = t.get("due_date", "")
+            if due:
+                try:
+                    due_dt = datetime.strptime(due, "%Y-%m-%d").date()
+                    if (today - due_dt).days > 0:
+                        overdue_t += 1
+                except Exception:
+                    pass
+        workload_snapshot.append({
+            "name": staff,
+            "assigned_leads": staff_assigned.get(s, 0),
+            "open_tasks": len(open_set),
+            "overdue_tasks": overdue_t,
+            "admissions": staff_admissions.get(s, 0),
+        })
+    workload_snapshot.sort(key=lambda x: x["assigned_leads"], reverse=True)
+
+    return {
+        "leaderboard": leaderboard,
+        "sla": sla,
+        "activity_feed": activity_feed,
+        "priority_queue": priority_queue,
+        "workload_snapshot": workload_snapshot,
+    }
 
 # ── Phase 9.2B Helpers & Routes ─────────────────────────────────────────────
 
@@ -3377,20 +3606,34 @@ def crm_staff_dashboard():
     
     open_tasks, _ = get_all_tasks()
     follow_ups_due = sum(1 for t in open_tasks if t.get("staff") == staff_name)
-    
+
+    # Phase 9.5: intelligence summary for this staff member
+    intel = calculate_intelligence()
+    # Find this staff's rank in leaderboard
+    staff_rank = None
+    staff_lb = None
+    for i, entry in enumerate(intel["leaderboard"]):
+        if entry["name"] == staff_name:
+            staff_rank = i + 1
+            staff_lb = entry
+            break
+
     kpis = {
         "my_leads": my_leads_count,
         "hot_leads": hot_leads_count,
         "follow_ups": follow_ups_due,
         "admissions": admissions_count
     }
-    
+
     return render_template(
         "crm_staff_dashboard.html",
         key=request.args.get("key", ""),
         staff_name=staff_name,
         active_staff=active_staff,
-        kpis=kpis
+        kpis=kpis,
+        intel=intel,
+        staff_rank=staff_rank,
+        staff_lb=staff_lb,
     )
 
 @admin_bp.route("/crm/my-leads", methods=["GET"])
