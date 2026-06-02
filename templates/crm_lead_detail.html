@@ -653,7 +653,36 @@
           </div>
         </div>
       </div>
-      {% endif %}<!-- ── Two-column layout on desktop ── --><div class="row g-3">
+      {% endif %}
+
+      <!-- ── Phase 9.3A: Task Summary ── -->
+      {% if task_summary %}
+      <div class="crm-card mb-3">
+        <div class="crm-card-header">
+          <i class="bi bi-list-check"></i>Task Summary
+          <a href="/crm/tasks/my?key={{ key }}&staff={{ lead.assigned_staff }}" class="ms-auto text-decoration-none" style="font-size: 0.7rem; color: var(--blue);">View All</a>
+        </div>
+        <div class="crm-card-body p-3">
+          <div class="d-flex flex-wrap gap-4 align-items-center">
+            <div class="meta-item">
+              <div class="meta-label">Open Tasks</div>
+              <div class="meta-value" style="font-weight: 700; font-size: 1.1rem; color: var(--text-main);">{{ task_summary.open }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Overdue Tasks</div>
+              <div class="meta-value" style="font-weight: 700; font-size: 1.1rem; color: {% if task_summary.overdue > 0 %}var(--red){% else %}var(--text-muted){% endif %};">{{ task_summary.overdue }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Completed Tasks</div>
+              <div class="meta-value" style="font-weight: 700; font-size: 1.1rem; color: var(--green);">{{ task_summary.completed }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- ── Three-column layout on desktop ── -->
+      <div class="row g-3">
 
       <!-- Ã¢"â‚¬Ã¢"â‚¬ CRM Update Form Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬ -->
       <div class="col-12 col-lg-6">
@@ -808,10 +837,11 @@
             </form>
           </div>
         </div>
+        </div>
       </div>
 
-      <!-- Manual WhatsApp Reply -->
-      <div class="col-12 col-lg-6">
+      <!-- Ã¢" â‚¬Ã¢" â‚¬ Manual WhatsApp Reply Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬ -->
+      <div class="col-12 col-xl-4 col-lg-6">
         <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-chat-dots"></i>Manual WhatsApp Reply
@@ -874,6 +904,62 @@
         </div>
       </div>
 
+      <!-- Ã¢" â‚¬Ã¢" â‚¬ Task Management Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬ -->
+      <div class="col-12 col-xl-4 col-lg-6">
+        <div class="crm-card h-100">
+          <div class="crm-card-header">
+            <i class="bi bi-calendar-check"></i>Task Management
+          </div>
+          <div class="crm-card-body">
+            
+            <form method="POST" action="/crm/tasks/create?key={{ key }}">
+              <input type="hidden" name="phone" value="{{ lead.phone }}">
+              
+              <!-- Quick Templates -->
+              <div class="mb-3">
+                <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Templates</div>
+                <div class="d-flex gap-2 flex-wrap" id="task-templates">
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Call Parent'">Call Parent</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Send Fee Structure'">Send Fee Structure</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Demo Reminder'">Demo Reminder</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Admission Follow-Up'">Admission Follow-Up</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Document Collection'">Document Collection</button>
+                </div>
+              </div>
+
+              <!-- Task Title -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="task_title">Task Title</label>
+                <input type="text" class="crm-input" name="task" id="task_title" placeholder="What needs to be done?" required>
+              </div>
+
+              <!-- Due Date -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="due_date">Due Date</label>
+                <input type="date" class="crm-input" name="due_date" id="due_date" required>
+              </div>
+
+              <!-- Assigned Staff -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="task_staff">Assigned Staff</label>
+                <select class="crm-input" name="staff" id="task_staff" required>
+                  <option value="">-- Select Staff --</option>
+                  {% for s in active_staff %}
+                  <option value="{{ s }}" {% if lead.assigned_staff == s %}selected{% endif %}>{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="mt-4">
+                <button type="submit" class="btn-save w-100">
+                  <i class="bi bi-plus-circle me-1"></i>Create Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /row -->
 
     <!-- â”€â”€ Phase 6A: Lead Journey â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
@@ -930,6 +1016,16 @@
               {% set lbl_cls = 'tl-label-manual'     %}
               {% set eicon   = 'bi-send-fill'        %}
               {% set elabel  = 'Manual Reply'        %}
+            {% elif ev.event_type == 'FOLLOW_UP_TASK' %}
+              {% set dot_cls = 'tl-dot-followup'       %}
+              {% set lbl_cls = 'tl-label-followup'     %}
+              {% set eicon   = 'bi-calendar-event' %}
+              {% set elabel  = 'Task Created'     %}
+            {% elif ev.event_type == 'FOLLOW_UP_COMPLETED' %}
+              {% set dot_cls = 'tl-dot-user'       %}
+              {% set lbl_cls = 'tl-label-user'     %}
+              {% set eicon   = 'bi-check-all' %}
+              {% set elabel  = 'Task Completed'     %}
             {% else %}
               {% set dot_cls = 'tl-dot-manual'   %}
               {% set lbl_cls = 'tl-label-manual' %}
@@ -958,6 +1054,21 @@
                     Sent by {{ event_payload_map[ev.id].get('staff') or 'Admin' }}
                   </span>
                   {% endif %}
+                {% elif ev.event_type == 'FOLLOW_UP_TASK' %}
+                  {% if event_payload_map.get(ev.id) %}
+                  <span style="font-size: 0.85rem; color: var(--text-main); font-weight: 600; display: block; width: 100%;">
+                    {{ event_payload_map[ev.id].get('task') }}
+                  </span>
+                  <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">
+                    Assigned: <strong style="color:var(--text-main)">{{ event_payload_map[ev.id].get('staff') }}</strong> &middot; Due: <strong style="color:var(--yellow)">{{ event_payload_map[ev.id].get('due_date') }}</strong>
+                  </span>
+                  {% endif %}
+                {% elif ev.event_type == 'FOLLOW_UP_COMPLETED' %}
+                  {% if event_payload_map.get(ev.id) %}
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    Completed By: <strong style="color:var(--text-main)">{{ event_payload_map[ev.id].get('completed_by') }}</strong>
+                  </span>
+                  {% endif %}
                 {% elif ev.event_data %}
                 <span style="font-size: 0.75rem; color: var(--text-muted);">{{ ev.event_data }}</span>
                 {% endif %}
@@ -965,6 +1076,21 @@
                   {% if ev.created_at %}{{ ev.created_at.strftime('%d %b %Y, %H:%M') }}{% endif %}
                 </span>
               </div>
+              
+              {% if ev.event_type == 'FOLLOW_UP_TASK' and event_payload_map.get(ev.id) %}
+                {% set tid = event_payload_map[ev.id].get('task_id') %}
+                {% if tid in task_map and not task_map[tid].get('_completed') %}
+                  <div class="mt-2">
+                    <form method="POST" action="/crm/tasks/complete?key={{ key }}">
+                      <input type="hidden" name="phone" value="{{ lead.phone }}">
+                      <input type="hidden" name="task_id" value="{{ tid }}">
+                      <button type="submit" class="btn btn-sm btn-outline-success" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-color: var(--green); color: var(--green);">
+                        <i class="bi bi-check2-circle me-1"></i>Mark Complete
+                      </button>
+                    </form>
+                  </div>
+                {% endif %}
+              {% endif %}
             </div>
           </div>
 

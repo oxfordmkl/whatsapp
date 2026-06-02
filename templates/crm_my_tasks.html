@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Tasks - Oxford CRM</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #000000;
+      --card-bg: #111111;
+      --border: #333333;
+      --text-color: #f5f5f7;
+      --text-muted: #86868b;
+      --primary: #25D366;
+    }
+    body { background-color: var(--bg-color); color: var(--text-color); font-family: 'Inter', sans-serif; }
+    .crm-card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); padding: 1.5rem; margin-bottom: 1.5rem; }
+    .crm-table { width: 100%; border-collapse: collapse; }
+    .crm-table th { background: rgba(0,0,0,0.2); padding: 12px; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 1px solid var(--border); text-align: left; }
+    .crm-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .btn-crm-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;}
+    .btn-crm-outline:hover { background: rgba(37, 211, 102, 0.1); color: var(--primary); }
+    .severity-badge { font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+    .sev-red { background: rgba(248,81,73,0.15); color: #f85149; }
+    .sev-orange { background: rgba(210,153,34,0.15); color: #d29922; }
+    .sev-green { background: rgba(37,211,102,0.15); color: #25D366; }
+  </style>
+</head>
+<body>
+<div class="container-fluid py-4" style="max-width: 1200px;">
+  
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1" style="font-weight: 700;"><i class="bi bi-calendar2-check text-success me-2"></i>My Tasks</h2>
+      <p class="text-muted mb-0">Manage your assigned follow-up tasks</p>
+    </div>
+    <div class="d-flex gap-3">
+      <form method="GET" class="d-flex gap-2 align-items-center">
+        <input type="hidden" name="key" value="{{ key }}">
+        <select name="staff" class="form-select form-select-sm" style="background: var(--card-bg); color: var(--text-color); border-color: var(--border);" onchange="this.form.submit()">
+          <option value="">-- All Staff --</option>
+          {% for s in active_staff %}
+          <option value="{{ s }}" {% if staff_name == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <a href="/panel?key={{ key }}" class="btn-crm-outline"><i class="bi bi-arrow-left"></i> Back to Panel</a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-8">
+      
+      <!-- Overdue Tasks -->
+      <div class="crm-card" style="border-left: 3px solid #f85149;">
+        <h5 class="mb-3" style="color: #f85149;"><i class="bi bi-exclamation-circle me-2"></i>Overdue Tasks ({{ overdue|length }})</h5>
+        {% if overdue %}
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Lead</th>
+              <th>Task</th>
+              <th>Severity</th>
+              <th>Due Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in overdue %}
+            <tr>
+              <td><a href="/crm/lead/{{ t.phone }}?key={{ key }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a><br><small class="text-muted">{{ t.phone }}</small></td>
+              <td>{{ t.task }}</td>
+              <td><span class="severity-badge sev-red">{{ t.severity }}</span></td>
+              <td class="text-muted">{{ t.due_date }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-success" onclick="completeTask('{{ t.task_id }}', '{{ t.phone }}')"><i class="bi bi-check2"></i> Done</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted mb-0">No overdue tasks. Great job!</p>
+        {% endif %}
+      </div>
+
+      <!-- Today's Tasks -->
+      <div class="crm-card" style="border-left: 3px solid #d29922;">
+        <h5 class="mb-3" style="color: #d29922;"><i class="bi bi-calendar-event me-2"></i>Due Today ({{ today|length }})</h5>
+        {% if today %}
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Lead</th>
+              <th>Task</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in today %}
+            <tr>
+              <td><a href="/crm/lead/{{ t.phone }}?key={{ key }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a></td>
+              <td>{{ t.task }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-success" onclick="completeTask('{{ t.task_id }}', '{{ t.phone }}')"><i class="bi bi-check2"></i> Done</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted mb-0">No tasks due today.</p>
+        {% endif %}
+      </div>
+
+      <!-- Upcoming Tasks -->
+      <div class="crm-card">
+        <h5 class="mb-3 text-white"><i class="bi bi-calendar-plus me-2"></i>Upcoming ({{ upcoming|length }})</h5>
+        {% if upcoming %}
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Lead</th>
+              <th>Task</th>
+              <th>Due Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in upcoming %}
+            <tr>
+              <td><a href="/crm/lead/{{ t.phone }}?key={{ key }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a></td>
+              <td>{{ t.task }}</td>
+              <td class="text-muted">{{ t.due_date }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-success" onclick="completeTask('{{ t.task_id }}', '{{ t.phone }}')"><i class="bi bi-check2"></i> Done</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted mb-0">No upcoming tasks scheduled.</p>
+        {% endif %}
+      </div>
+      
+    </div>
+    
+    <div class="col-12 col-lg-4">
+      <!-- Completed This Week -->
+      <div class="crm-card" style="border-left: 3px solid #25D366;">
+        <h5 class="mb-3" style="color: #25D366;"><i class="bi bi-check2-circle me-2"></i>Completed This Week ({{ completed|length }})</h5>
+        {% if completed %}
+        <div style="max-height: 400px; overflow-y: auto;">
+          {% for t in completed %}
+          <div class="p-2 mb-2" style="background: rgba(255,255,255,0.05); border-radius: 6px;">
+            <div style="font-weight: 600; font-size: 0.85rem;">{{ t.task }}</div>
+            <div class="text-muted" style="font-size: 0.75rem;">Lead: {{ t.lead_name }}</div>
+            <div class="text-success" style="font-size: 0.7rem; margin-top: 4px;">Completed {{ t.completed_at.strftime('%d %b %Y') }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No tasks completed in the last 7 days.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function completeTask(taskId, phone) {
+  try {
+    const res = await fetch('/crm/tasks/complete?key={{ key }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId, phone: phone, completed_by: '{{ staff_name or "Admin" }}' })
+    });
+    const data = await res.json();
+    if (data.success) {
+      window.location.reload();
+    } else {
+      alert("Error: " + data.error);
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Error completing task");
+  }
+}
+</script>
+</body>
+</html>

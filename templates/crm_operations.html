@@ -218,16 +218,20 @@
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="kpi-box" style="border-left: 3px solid var(--yellow);">
-          <div class="kpi-title">Follow-ups Due</div>
-          <div class="kpi-value text-white">{{ data.kpis.total_followups }}</div>
-        </div>
+        <a href="/crm/tasks/admin?key={{ key }}" style="text-decoration: none;">
+          <div class="kpi-box" style="border-left: 3px solid var(--yellow); transition: all 0.2s;">
+            <div class="kpi-title">Follow-ups Due</div>
+            <div class="kpi-value text-white">{{ data.kpis.total_followups }}</div>
+          </div>
+        </a>
       </div>
       <div class="col-6 col-md-3">
-        <div class="kpi-box" style="border-left: 3px solid var(--orange);">
-          <div class="kpi-title">Data Issues</div>
-          <div class="kpi-value text-white">{{ data.kpis.total_data_issues }}</div>
-        </div>
+        <a href="/crm/tasks/admin?key={{ key }}" style="text-decoration: none;">
+          <div class="kpi-box" style="border-left: 3px solid var(--orange); transition: all 0.2s;">
+            <div class="kpi-title">Overdue Tasks</div>
+            <div class="kpi-value text-white"><i class="bi bi-arrow-right-circle fs-4 text-muted"></i> View</div>
+          </div>
+        </a>
       </div>
     </div>
 
