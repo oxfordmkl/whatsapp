@@ -919,11 +919,11 @@
               <div class="mb-3">
                 <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Templates</div>
                 <div class="d-flex gap-2 flex-wrap" id="task-templates">
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Call Parent'">Call Parent</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Send Fee Structure'">Send Fee Structure</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Demo Reminder'">Demo Reminder</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Admission Follow-Up'">Admission Follow-Up</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Document Collection'">Document Collection</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Call Parent'; document.getElementById('task_notes').value='Call parent and explain course details. Confirm admission interest.'">Call Parent</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Send Fee Structure'; document.getElementById('task_notes').value='Send latest fee structure and payment options.'">Send Fee Structure</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Demo Reminder'; document.getElementById('task_notes').value='Remind student about scheduled demo session.'">Demo Reminder</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Admission Follow-Up'; document.getElementById('task_notes').value='Follow up regarding admission decision.'">Admission Follow-Up</button>
+                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Document Collection'; document.getElementById('task_notes').value='Collect pending documents required for admission.'">Document Collection</button>
                 </div>
               </div>
 
@@ -931,6 +931,12 @@
               <div class="mb-3">
                 <label class="form-label-crm" for="task_title">Task Title</label>
                 <input type="text" class="crm-input" name="task" id="task_title" placeholder="What needs to be done?" required>
+              </div>
+
+              <!-- Task Notes -->
+              <div class="mb-3">
+                <label class="form-label-crm" for="task_notes">Task Notes</label>
+                <textarea class="crm-input" name="notes" id="task_notes" placeholder="Optional notes for this task..." style="min-height: 80px;"></textarea>
               </div>
 
               <!-- Due Date -->
@@ -1059,6 +1065,9 @@
                   <span style="font-size: 0.85rem; color: var(--text-main); font-weight: 600; display: block; width: 100%;">
                     {{ event_payload_map[ev.id].get('task') }}
                   </span>
+                  {% if event_payload_map[ev.id].get('notes') %}
+                  <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 2px; margin-bottom: 4px; white-space: pre-wrap;">{{ event_payload_map[ev.id].get('notes') }}</span>
+                  {% endif %}
                   <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">
                     Assigned: <strong style="color:var(--text-main)">{{ event_payload_map[ev.id].get('staff') }}</strong> &middot; Due: <strong style="color:var(--yellow)">{{ event_payload_map[ev.id].get('due_date') }}</strong>
                   </span>

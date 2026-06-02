@@ -3167,6 +3167,7 @@ def crm_tasks_create():
         
     phone = request.form.get("phone")
     task_title = request.form.get("task", "").strip()
+    notes = request.form.get("notes", "").strip()
     due_date = request.form.get("due_date", "").strip()
     staff = request.form.get("staff", "").strip()
     key = request.args.get("key", "")
@@ -3180,17 +3181,21 @@ def crm_tasks_create():
     
     task_id = uuid.uuid4().hex
     
+    payload = {
+        "task_id": task_id,
+        "lead_phone": phone,
+        "task": task_title,
+        "due_date": due_date,
+        "staff": staff,
+        "created_by": "Admin UX"
+    }
+    if notes:
+        payload["notes"] = notes
+        
     log_lead_event(
         phone=phone,
         event_type="FOLLOW_UP_TASK",
-        event_data=json.dumps({
-            "task_id": task_id,
-            "lead_phone": phone,
-            "task": task_title,
-            "due_date": due_date,
-            "staff": staff,
-            "created_by": "Admin UX"
-        })
+        event_data=json.dumps(payload)
     )
     
     return redirect(url_for("admin.crm_lead_detail", phone=phone, key=key))
