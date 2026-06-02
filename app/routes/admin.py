@@ -3341,3 +3341,155 @@ def crm_admin_tasks():
         kpis=kpis,
         staff_summary=summary_list
     )
+
+
+# ── Phase 9.4: Staff Workspace ──────────────────────────────────────────────
+
+@admin_bp.route("/crm/staff-dashboard", methods=["GET"])
+def crm_staff_dashboard():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+    
+    staff_name = request.args.get("staff", "").strip()
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+    
+    if not staff_name:
+        if active_staff:
+            staff_name = active_staff[0]
+            return redirect(url_for("admin.crm_staff_dashboard", key=request.args.get("key", ""), staff=staff_name))
+            
+    from app.models import ConversationState
+    
+    leads = ConversationState.query.filter(
+        ConversationState.assigned_staff == staff_name,
+        ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
+    ).all()
+    
+    my_leads_count = len(leads)
+    hot_leads_count = sum(1 for lead in leads if (lead.lead_score or 0) >= 80)
+    
+    admissions_count = ConversationState.query.filter(
+        ConversationState.assigned_staff == staff_name,
+        ConversationState.is_admitted == True
+    ).count()
+    
+    open_tasks, _ = get_all_tasks()
+    follow_ups_due = sum(1 for t in open_tasks if t.get("staff") == staff_name)
+    
+    kpis = {
+        "my_leads": my_leads_count,
+        "hot_leads": hot_leads_count,
+        "follow_ups": follow_ups_due,
+        "admissions": admissions_count
+    }
+    
+    return render_template(
+        "crm_staff_dashboard.html",
+        key=request.args.get("key", ""),
+        staff_name=staff_name,
+        active_staff=active_staff,
+        kpis=kpis
+    )
+
+@admin_bp.route("/crm/my-leads", methods=["GET"])
+def crm_my_leads():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    staff_name = request.args.get("staff", "").strip()
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+    
+    from app.models import ConversationState
+    
+    if staff_name:
+        leads = ConversationState.query.filter(
+            ConversationState.assigned_staff == staff_name,
+            ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
+        ).order_by(ConversationState.updated_at.desc()).all()
+    else:
+        leads = []
+        
+    return render_template(
+        "crm_my_leads.html",
+        key=request.args.get("key", ""),
+        staff_name=staff_name,
+        active_staff=active_staff,
+        leads=leads
+    )
+
+@admin_bp.route("/crm/staff-performance-detail", methods=["GET"])
+def crm_staff_performance_detail():
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    staff_name = request.args.get("staff", "").strip()
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+    
+    from app.models import ConversationState
+    
+    leads = ConversationState.query.all()
+    
+    staff_metrics = {}
+    for staff in active_staff:
+        staff_metrics[staff] = {
+            "assigned_leads": 0,
+            "active_leads": 0,
+            "admissions": 0,
+            "hot_leads": 0,
+            "total_score": 0,
+            "leads_with_score": 0,
+            "open_tasks": 0,
+            "completed_tasks": 0
+        }
+        
+    for lead in leads:
+        s = lead.assigned_staff
+        if not s or s not in staff_metrics:
+            continue
+            
+        staff_metrics[s]["assigned_leads"] += 1
+        
+        if lead.lead_status not in ["Enrolled", "Dropped", "Lost"]:
+            staff_metrics[s]["active_leads"] += 1
+            
+        if lead.is_admitted:
+            staff_metrics[s]["admissions"] += 1
+            
+        score = lead.lead_score or 0
+        if score >= 80 and lead.lead_status not in ["Enrolled", "Dropped", "Lost"]:
+            staff_metrics[s]["hot_leads"] += 1
+            
+        if lead.lead_status not in ["Enrolled", "Dropped", "Lost"]:
+            staff_metrics[s]["total_score"] += score
+            staff_metrics[s]["leads_with_score"] += 1
+
+    open_tasks, completed_tasks = get_all_tasks()
+
+    for s in active_staff:
+        staff_metrics[s]["open_tasks"] = sum(1 for t in open_tasks if t.get("staff") == s)
+        staff_metrics[s]["completed_tasks"] = sum(1 for t in completed_tasks if t.get("staff") == s)
+
+    for s, m in staff_metrics.items():
+        if m["assigned_leads"] > 0:
+            m["conversion"] = round((m["admissions"] / m["assigned_leads"]) * 100, 1)
+        else:
+            m["conversion"] = 0.0
+            
+        if m["leads_with_score"] > 0:
+            m["avg_score"] = round(m["total_score"] / m["leads_with_score"], 1)
+        else:
+            m["avg_score"] = 0.0
+
+    return render_template(
+        "crm_staff_performance_detail.html",
+        key=request.args.get("key", ""),
+        staff_name=staff_name,
+        active_staff=active_staff,
+        metrics=staff_metrics
+    )
