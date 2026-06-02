@@ -919,11 +919,11 @@
               <div class="mb-3">
                 <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Templates</div>
                 <div class="d-flex gap-2 flex-wrap" id="task-templates">
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Call Parent'; document.getElementById('task_notes').value='Call parent and explain course details. Confirm admission interest.'">Call Parent</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Send Fee Structure'; document.getElementById('task_notes').value='Send latest fee structure and payment options.'">Send Fee Structure</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Demo Reminder'; document.getElementById('task_notes').value='Remind student about scheduled demo session.'">Demo Reminder</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Admission Follow-Up'; document.getElementById('task_notes').value='Follow up regarding admission decision.'">Admission Follow-Up</button>
-                  <button type="button" class="btn-qr" onclick="document.getElementById('task_title').value='Document Collection'; document.getElementById('task_notes').value='Collect pending documents required for admission.'">Document Collection</button>
+                  <button type="button" class="btn-qr" onclick="applyTaskTemplate('Call Parent', 'Call parent and explain course details. Confirm admission interest.')">Call Parent</button>
+                  <button type="button" class="btn-qr" onclick="applyTaskTemplate('Send Fee Structure', 'Send latest fee structure and payment options.')">Send Fee Structure</button>
+                  <button type="button" class="btn-qr" onclick="applyTaskTemplate('Demo Reminder', 'Remind student about scheduled demo session.')">Demo Reminder</button>
+                  <button type="button" class="btn-qr" onclick="applyTaskTemplate('Admission Follow-Up', 'Follow up regarding admission decision.')">Admission Follow-Up</button>
+                  <button type="button" class="btn-qr" onclick="applyTaskTemplate('Document Collection', 'Collect pending documents required for admission.')">Document Collection</button>
                 </div>
               </div>
 
@@ -1882,5 +1882,33 @@
       });
     }
   });
+
+  // Phase 9.3A: UX Enhancement for Task Templates
+  function applyTaskTemplate(title, notes) {
+    const taskTitleInput = document.getElementById('task_title');
+    const taskNotesTextarea = document.getElementById('task_notes');
+
+    if (!taskTitleInput || !taskNotesTextarea) return;
+
+    taskTitleInput.value = title;
+    taskNotesTextarea.value = notes;
+
+    // Provide visual feedback (green highlight) for 1.5s to show focus moved
+    taskNotesTextarea.style.transition = 'all 0.3s ease';
+    taskNotesTextarea.style.borderColor = 'var(--green)';
+    taskNotesTextarea.style.boxShadow = '0 0 0 3px rgba(35, 134, 54, 0.3)';
+    
+    setTimeout(() => {
+        taskNotesTextarea.style.borderColor = '';
+        taskNotesTextarea.style.boxShadow = '';
+    }, 1500);
+
+    // Native browser focus
+    taskNotesTextarea.focus();
+
+    // Move cursor to the end of the notes
+    const len = taskNotesTextarea.value.length;
+    taskNotesTextarea.setSelectionRange(len, len);
+  }
 </script>
 
