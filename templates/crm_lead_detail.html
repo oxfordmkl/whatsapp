@@ -282,6 +282,25 @@
       font-weight: 500;
       display: flex; align-items: center; gap: 0.5rem;
     }
+
+    /* ── Phase 9.3A: Workspace Grid ── */
+    .crm-workspace-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+      align-items: start;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1199px) and (min-width: 768px) {
+      .crm-workspace-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 767px) {
+      .crm-workspace-grid {
+        grid-template-columns: 1fr;
+      }
+    }
     .alert-crm-error {
       background: rgba(248,81,73,0.1);
       border: 1px solid rgba(248,81,73,0.25);
@@ -682,11 +701,11 @@
       {% endif %}
 
       <!-- ── Three-column layout on desktop ── -->
-      <div class="row g-3">
+      <!-- ── Phase 9.3A: Workspace Grid ── -->
+      <div class="crm-workspace-grid">
 
       <!-- Ã¢"â‚¬Ã¢"â‚¬ CRM Update Form Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬ -->
-      <div class="col-12 col-md-6 col-xl-4">
-        <div class="crm-card h-100">
+      <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-pencil-square"></i>CRM Updates
           </div>
@@ -837,11 +856,8 @@
             </form>
           </div>
         </div>
-        </div>
-      </div>
 
       <!-- Ã¢" â‚¬Ã¢" â‚¬ Manual WhatsApp Reply Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬ -->
-      <div class="col-12 col-md-6 col-xl-4">
         <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-chat-dots"></i>Manual WhatsApp Reply
@@ -902,10 +918,8 @@
 
           </div>
         </div>
-      </div>
 
       <!-- Ã¢" â‚¬Ã¢" â‚¬ Task Management Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬Ã¢" â‚¬ -->
-      <div class="col-12 col-md-6 col-xl-4">
         <div class="crm-card h-100">
           <div class="crm-card-header">
             <i class="bi bi-calendar-check"></i>Task Management
@@ -964,9 +978,8 @@
             </form>
           </div>
         </div>
-      </div>
 
-    </div><!-- /row -->
+      </div><!-- /crm-workspace-grid -->
 
     <!-- â”€â”€ Phase 6A: Lead Journey â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <div class="crm-card mt-3">
