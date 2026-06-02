@@ -674,12 +674,20 @@ def crm_staff_management():
     stats_map = {row["name"]: {"leads": row["leads"], "admissions": row["admissions"]} for row in analytics_data["staff_rows"]}
     data = calculate_operations()
     intel = calculate_intelligence()
+    
+    # Phase 9.6
+    from app.models import ConversationState, LeadEvent
+    intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
+    auto_events = LeadEvent.query.filter(LeadEvent.event_type.in_(intel_event_types)).all()
+    leads = ConversationState.query.all()
+    automation = calculate_automation_intelligence(leads, auto_events)
 
     return render_template(
         "crm_operations.html",
         key=request.args.get("key", ""),
         data=data,
         intel=intel,
+        automation=automation,
     )
 
 def calculate_intelligence():
@@ -2710,12 +2718,20 @@ def crm_operations():
     
     data = calculate_operations()
     intel = calculate_intelligence()
+    
+    # Phase 9.6
+    from app.models import ConversationState, LeadEvent
+    intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
+    auto_events = LeadEvent.query.filter(LeadEvent.event_type.in_(intel_event_types)).all()
+    leads = ConversationState.query.all()
+    automation = calculate_automation_intelligence(leads, auto_events)
 
     return render_template(
         "crm_operations.html",
         key=request.args.get("key", ""),
         data=data,
         intel=intel,
+        automation=automation,
     )
 
 
@@ -2933,6 +2949,198 @@ def calculate_intelligence():
         "priority_queue": priority_queue,
         "workload_snapshot": workload_snapshot,
     }
+
+
+# ── Phase 9.6: Automation & Lead Nurturing Engine ────────────────────────────
+
+def get_nurture_health_score(lead, lead_events_list, today):
+    """
+    Weighted scoring for relationship strength.
+    Output: Excellent (80+), Good (60-79), Average (40-59), Weak (0-39).
+    """
+    score = 0
+    if lead.updated_at:
+        days_since = (today - lead.updated_at.date()).days
+        if days_since <= 7:
+            score += 25
+        elif days_since <= 14:
+            score += 15
+        elif days_since <= 30:
+            score += 5
+
+    for ev in lead_events_list:
+        if ev.event_type == "COURSE_VIEWED":
+            score += 10
+        elif ev.event_type == "DEMO_REQUESTED":
+            score += 20
+        elif ev.event_type == "FEES_REQUESTED":
+            score += 20
+        elif ev.event_type == "FOLLOW_UP_COMPLETED":
+            score += 10
+        elif ev.event_type == "COURSE_ADMISSION":
+            score += 30
+
+    if score >= 80:
+        return "Excellent"
+    elif score >= 60:
+        return "Good"
+    elif score >= 40:
+        return "Average"
+    else:
+        return "Weak"
+
+def get_admission_probability(lead, lead_events_list):
+    """
+    High: lead_score >= 80 AND (DEMO_REQUESTED or FEES_REQUESTED)
+    Medium: lead_score >= 50
+    Low: everything else
+    """
+    import json
+    score = lead.lead_score or 0
+    has_signal = any(ev.event_type in ("DEMO_REQUESTED", "FEES_REQUESTED") for ev in lead_events_list)
+    
+    if score >= 80 and has_signal:
+        return "High"
+    elif score >= 50:
+        return "Medium"
+    else:
+        return "Low"
+
+def get_auto_task_suggestions(lead, lead_events_list, open_task_titles):
+    """
+    Suggests tasks based on signals if not already open.
+    """
+    suggestions = []
+    signals = {ev.event_type for ev in lead_events_list}
+    
+    if "DEMO_REQUESTED" in signals and not any("Demo" in t for t in open_task_titles):
+        suggestions.append({"title": "Demo Follow-Up", "notes": "Follow up on requested demo session."})
+    
+    if "FEES_REQUESTED" in signals and not any("Fee" in t for t in open_task_titles):
+        suggestions.append({"title": "Send Fee Structure", "notes": "Send latest fee structure and payment options."})
+        
+    if (lead.lead_score or 0) >= 80 and not any("Admission" in t for t in open_task_titles):
+        suggestions.append({"title": "Admission Follow-Up", "notes": "Follow up regarding admission decision."})
+        
+    return suggestions
+
+def calculate_automation_intelligence(leads, events):
+    """
+    Phase 9.6: 2 Bulk Queries (via args). No N+1.
+    Computes Aging, Recovery, Follow-Up Recommendations, and Staff Productivity.
+    """
+    from datetime import datetime
+    import json
+
+    now = datetime.utcnow()
+    today = now.date()
+
+    # Build maps
+    lead_map = {l.phone: l for l in leads}
+    
+    # 1. Lead Aging Engine
+    aging = {"fresh": 0, "attention": 0, "risk": 0, "dormant": 0}
+    
+    for lead in leads:
+        if lead.is_admitted or lead.lead_status in ("Enrolled", "Dropped", "Lost"):
+            continue
+        days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
+        if days <= 3:
+            aging["fresh"] += 1
+        elif days <= 7:
+            aging["attention"] += 1
+        elif days <= 15:
+            aging["risk"] += 1
+        else:
+            aging["dormant"] += 1
+
+    # Track open tasks by phone
+    phone_open_tasks = {}
+    completed_task_ids = set()
+    staff_productivity = {}
+    
+    for ev in events:
+        try:
+            edata = json.loads(ev.event_data or "{}")
+        except Exception:
+            edata = {}
+            
+        if ev.event_type == "FOLLOW_UP_COMPLETED":
+            tid = edata.get("task_id")
+            by = normalize_staff_name(edata.get("completed_by", edata.get("staff", "")))
+            if tid:
+                completed_task_ids.add(tid)
+            if by and by != "Unassigned":
+                if by not in staff_productivity:
+                    staff_productivity[by] = {"created": 0, "completed": 0, "open": 0, "overdue": 0}
+                staff_productivity[by]["completed"] += 1
+                
+        elif ev.event_type == "FOLLOW_UP_TASK":
+            tid = edata.get("task_id")
+            staff = normalize_staff_name(edata.get("staff", ""))
+            if staff and staff != "Unassigned":
+                if staff not in staff_productivity:
+                    staff_productivity[staff] = {"created": 0, "completed": 0, "open": 0, "overdue": 0}
+                staff_productivity[staff]["created"] += 1
+                
+                if tid not in completed_task_ids:
+                    staff_productivity[staff]["open"] += 1
+                    phone_open_tasks[ev.phone] = phone_open_tasks.get(ev.phone, 0) + 1
+                    due_date = edata.get("due_date")
+                    if due_date:
+                        try:
+                            if (today - datetime.strptime(due_date, "%Y-%m-%d").date()).days > 0:
+                                staff_productivity[staff]["overdue"] += 1
+                        except:
+                            pass
+
+    # 2. Recovery Queue (score >= 50, not admitted, silent > 14 days)
+    recovery_queue = []
+    
+    # 3. Follow-Up Recommendations
+    recommendations = []
+    
+    for lead in leads:
+        if lead.is_admitted or lead.lead_status in ("Enrolled", "Dropped", "Lost"):
+            continue
+            
+        days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
+        score = lead.lead_score or 0
+        
+        if score >= 50 and days > 14:
+            recovery_queue.append({
+                "phone": lead.phone,
+                "name": lead.name or "Unknown",
+                "staff": normalize_staff_name(lead.assigned_staff or ""),
+                "course": lead.course or "—",
+                "days_silent": days,
+                "score": score
+            })
+            
+        # Recommendation Logic: Activity > 24h ago AND no open task
+        if days > 1 and phone_open_tasks.get(lead.phone, 0) == 0:
+            recommendations.append({
+                "phone": lead.phone,
+                "name": lead.name or "Unknown",
+                "days": days,
+                "score": score
+            })
+
+    recovery_queue.sort(key=lambda x: x["score"], reverse=True)
+    recommendations.sort(key=lambda x: x["days"], reverse=True)
+    
+    # Compute completion rates
+    for s, data in staff_productivity.items():
+        data["completion_rate"] = round((data["completed"] / data["created"] * 100), 1) if data["created"] > 0 else 0.0
+
+    return {
+        "aging": aging,
+        "recovery_queue": recovery_queue[:20],
+        "recommendations": recommendations[:20],
+        "productivity": staff_productivity
+    }
+
+
 
 # ── Phase 9.2B Helpers & Routes ─────────────────────────────────────────────
 
@@ -3624,6 +3832,15 @@ def crm_staff_dashboard():
         "follow_ups": follow_ups_due,
         "admissions": admissions_count
     }
+    
+    # Phase 9.6
+    from app.models import ConversationState, LeadEvent
+    intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
+    auto_events = LeadEvent.query.filter(LeadEvent.event_type.in_(intel_event_types)).all()
+    leads = ConversationState.query.all()
+    automation = calculate_automation_intelligence(leads, auto_events)
+    my_productivity = automation["productivity"].get(staff_name, {"created": 0, "completed": 0, "open": 0, "overdue": 0, "completion_rate": 0.0})
+
 
     return render_template(
         "crm_staff_dashboard.html",
@@ -3634,6 +3851,7 @@ def crm_staff_dashboard():
         intel=intel,
         staff_rank=staff_rank,
         staff_lb=staff_lb,
+        my_productivity=my_productivity,
     )
 
 @admin_bp.route("/crm/my-leads", methods=["GET"])
