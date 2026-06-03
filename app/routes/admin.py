@@ -4061,3 +4061,226 @@ def crm_staff_performance_detail():
         active_staff=active_staff,
         metrics=staff_metrics
     )
+
+# ── Phase 9.8A: Staff Allocation Center ──────────────────────────────────
+
+@admin_bp.route("/crm/staff-allocation", methods=["GET"])
+def crm_staff_allocation():
+    # future_role = ADMIN
+    # future_permission = STAFF_REALLOCATION
+    # future_tenant = tenant_id
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+    
+    key = request.args.get("key", "")
+    from app.extensions import db
+    from sqlalchemy import func, case
+    from app.models import ConversationState, LeadEvent
+    import json
+    
+    # 1. Total & HOT Leads & Admissions
+    lead_stats = db.session.query(
+        ConversationState.assigned_staff,
+        func.count(ConversationState.phone).label('total_leads'),
+        func.sum(case((ConversationState.lead_score >= 80, 1), else_=0)).label('hot_leads'),
+        func.sum(case((ConversationState.is_admitted == True, 1), else_=0)).label('admissions')
+    ).group_by(ConversationState.assigned_staff).all()
+    
+    total_crm_leads = sum(row.total_leads for row in lead_stats)
+    
+    aggregated = {}
+    for row in lead_stats:
+        s_name = (row.assigned_staff or "").strip() or "Unassigned"
+        if s_name not in aggregated:
+            aggregated[s_name] = {"total_leads": 0, "hot_leads": 0, "admissions": 0}
+        aggregated[s_name]["total_leads"] += row.total_leads
+        aggregated[s_name]["hot_leads"] += row.hot_leads or 0
+        aggregated[s_name]["admissions"] += row.admissions or 0
+    
+    # 2. Task/Admissions mapping from Event logs
+    events = LeadEvent.query.filter(
+        LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])
+    ).all()
+    
+    task_map = {}
+    completed_task_ids = set()
+    open_tasks = {}
+    completed_tasks = {}
+    
+    for ev in events:
+        try:
+            data = json.loads(ev.event_data or "{}")
+        except:
+            data = {}
+            
+        if ev.event_type == "FOLLOW_UP_COMPLETED":
+            tid = data.get("task_id")
+            if tid:
+                completed_task_ids.add(tid)
+                s = (data.get("staff") or "").strip() or "Unassigned"
+                completed_tasks[s] = completed_tasks.get(s, 0) + 1
+        elif ev.event_type == "FOLLOW_UP_TASK":
+            s = (data.get("staff") or "").strip() or "Unassigned"
+            tid = data.get("task_id")
+            if tid:
+                task_map[tid] = s
+
+    # Calculate Open Tasks per staff
+    for tid, s in task_map.items():
+        if tid not in completed_task_ids:
+            open_tasks[s] = open_tasks.get(s, 0) + 1
+
+    # Format output
+    registry = load_staff_registry()
+    staff_data = []
+    
+    for s_name, counts in aggregated.items():
+        pct = round((counts["total_leads"] / total_crm_leads * 100) if total_crm_leads else 0, 1)
+        
+        # UI Thresholds
+        if counts["total_leads"] > 100:
+            status = "Overloaded"
+        elif counts["total_leads"] > 50:
+            status = "Heavy Load"
+        else:
+            status = "Balanced"
+            
+        is_active = True
+        if s_name != "Unassigned":
+            norm_name = normalize_staff_name(s_name)
+            found_active = False
+            for code, details in registry.items():
+                if normalize_staff_name(details.get("display_name", "")) == norm_name:
+                    is_active = details.get("active", False)
+                    found_active = True
+                    break
+            if not found_active:
+                is_active = False # Staff deleted/legacy
+                
+        if not is_active and s_name != "Unassigned":
+            status = "Inactive"
+            
+        staff_data.append({
+            "name": s_name,
+            "total_leads": counts["total_leads"],
+            "hot_leads": counts["hot_leads"],
+            "admissions": counts["admissions"],
+            "open_tasks": open_tasks.get(s_name, 0),
+            "completed_tasks": completed_tasks.get(s_name, 0),
+            "ownership_pct": pct,
+            "status": status,
+            "active": is_active
+        })
+        
+    # Also add staff who have 0 leads but are in registry or have open tasks
+    existing_staff_names = set(s["name"] for s in staff_data)
+    for code, details in registry.items():
+        s_name = details.get("display_name", "").strip()
+        if s_name and s_name not in existing_staff_names:
+            staff_data.append({
+                "name": s_name,
+                "total_leads": 0, "hot_leads": 0, "admissions": 0,
+                "open_tasks": open_tasks.get(s_name, 0),
+                "completed_tasks": completed_tasks.get(s_name, 0),
+                "ownership_pct": 0,
+                "status": "Balanced" if details.get("active", False) else "Inactive",
+                "active": details.get("active", False)
+            })
+            existing_staff_names.add(s_name)
+            
+    # Sort: Unassigned first, then active, then alphabetical
+    staff_data.sort(key=lambda x: (0 if x["name"] == "Unassigned" else (1 if x["active"] else 2), x["name"]))
+    
+    return render_template(
+        "crm_staff_allocation.html",
+        key=key,
+        staff_data=staff_data,
+        total_crm_leads=total_crm_leads
+    )
+
+
+@admin_bp.route("/crm/staff-allocation/<staff_name>", methods=["GET"])
+def crm_staff_allocation_detail(staff_name):
+    # future_role = ADMIN
+    # future_permission = STAFF_REALLOCATION
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+        
+    key = request.args.get("key", "")
+    from app.models import ConversationState
+    
+    actual_name = "" if staff_name == "Unassigned" else staff_name
+    
+    if actual_name == "":
+        leads = ConversationState.query.filter(
+            (ConversationState.assigned_staff == None) | (ConversationState.assigned_staff == "")
+        ).all()
+    else:
+        leads = ConversationState.query.filter_by(assigned_staff=actual_name).all()
+        
+    registry = load_staff_registry()
+    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
+    active_staff.sort()
+    
+    return render_template(
+        "crm_staff_allocation_detail.html",
+        key=key,
+        staff_name=staff_name,
+        leads=leads,
+        active_staff=active_staff
+    )
+
+
+@admin_bp.route("/crm/staff-allocation/check-deactivation/<staff_name>", methods=["GET"])
+def crm_staff_allocation_check(staff_name):
+    # future_role = ADMIN
+    if request.args.get("key", "") != ADMIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    from app.models import ConversationState, LeadEvent
+    import json
+    
+    if staff_name == "Unassigned":
+        return jsonify({"safe": False, "reason": "Cannot deactivate Unassigned"})
+        
+    # 1. Check Leads
+    lead_count = ConversationState.query.filter_by(assigned_staff=staff_name).count()
+    admission_count = ConversationState.query.filter_by(assigned_staff=staff_name, is_admitted=True).count()
+    
+    # 2. Check Open Tasks
+    events = LeadEvent.query.filter(
+        LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])
+    ).all()
+    
+    task_map = {}
+    completed_task_ids = set()
+    
+    for ev in events:
+        try:
+            data = json.loads(ev.event_data or "{}")
+        except:
+            data = {}
+            
+        if ev.event_type == "FOLLOW_UP_COMPLETED":
+            tid = data.get("task_id")
+            if tid:
+                completed_task_ids.add(tid)
+        elif ev.event_type == "FOLLOW_UP_TASK":
+            s = (data.get("staff") or "").strip() or "Unassigned"
+            tid = data.get("task_id")
+            if tid and s == staff_name:
+                task_map[tid] = True
+
+    open_tasks_count = sum(1 for tid in task_map if tid not in completed_task_ids)
+    
+    # Check if safe
+    safe = lead_count == 0 and open_tasks_count == 0
+    
+    return jsonify({
+        "safe": safe,
+        "active_leads": lead_count,
+        "admissions": admission_count,
+        "open_tasks": open_tasks_count,
+        "pending_follow_ups": open_tasks_count
+    })
+

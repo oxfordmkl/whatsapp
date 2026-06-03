@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ staff_name }}'s Leads - Oxford CRM</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #010409; color: #c9d1d9; }
+    .page-header { border-bottom: 1px solid #30363d; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+    .toolbar { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; background: #0d1117; padding: 1rem; border-radius: 8px; border: 1px solid #30363d; }
+    .lead-table-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+    .lead-table { margin-bottom: 0; color: #c9d1d9; font-size: 0.85rem; }
+    .lead-table th { background: #161b22; color: #8b949e; font-size: 0.75rem; text-transform: uppercase; font-weight: 600; padding: 0.8rem; border-bottom: 1px solid #30363d; }
+    .lead-table td { padding: 0.8rem; border-bottom: 1px solid #30363d; vertical-align: middle; }
+    .lead-table tr:last-child td { border-bottom: none; }
+    .chk-col { width: 40px; text-align: center; }
+    .lead-name { font-weight: 600; color: #58a6ff; text-decoration: none; }
+    .lead-name:hover { text-decoration: underline; color: #79c0ff; }
+    .btn-action { font-size: 0.85rem; font-weight: 600; padding: 0.4rem 1rem; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
+    <div class="container-fluid px-4 py-4">
+      <div class="page-header d-flex justify-content-between align-items-center">
+        <div>
+          <h2 class="mb-1 fw-bold text-white">
+            <a href="/crm/staff-allocation?key={{ key }}" class="text-muted text-decoration-none"><i class="bi bi-arrow-left me-2"></i></a>
+            {{ staff_name }}'s Leads
+          </h2>
+          <p class="text-muted mb-0 small">Read-only view. Use Bulk Transfer to reassign ownership.</p>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-danger btn-action" onclick="checkDeactivation()">Check Deactivation Safety</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="form-check me-3">
+          <input class="form-check-input" type="checkbox" id="selectAll" onclick="toggleAll(this)">
+          <label class="form-check-label fw-bold" for="selectAll">Select All</label>
+        </div>
+        <div class="text-muted small me-auto"><span id="selectedCount">0</span> leads selected</div>
+        
+        <select id="targetStaff" class="form-select form-select-sm bg-dark text-white border-secondary w-auto">
+          <option value="">-- Choose Target Staff --</option>
+          {% for s in active_staff %}
+            {% if s != staff_name %}
+              <option value="{{ s }}">{{ s }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+        <button class="btn btn-primary btn-action" onclick="previewTransfer()">Preview Transfer</button>
+      </div>
+
+      <div class="lead-table-card">
+        <div class="table-responsive">
+          <table class="table lead-table table-hover" id="leadsTable">
+            <thead>
+              <tr>
+                <th class="chk-col"></th>
+                <th>Phone</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Course</th>
+                <th>Admitted</th>
+                <th>Last Active</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lead in leads %}
+              <tr>
+                <td class="chk-col">
+                  <input class="form-check-input lead-chk" type="checkbox" value="{{ lead.phone }}" data-name="{{ lead.name }}">
+                </td>
+                <td class="font-monospace">{{ lead.phone }}</td>
+                <td><a href="/crm/lead/{{ lead.phone }}?key={{ key }}" class="lead-name" target="_blank">{{ lead.name or 'Unknown' }}</a></td>
+                <td>{{ lead.lead_status or '-' }}</td>
+                <td>
+                  {% if lead.lead_score >= 80 %}<span class="badge bg-danger">{{ lead.lead_score }}</span>
+                  {% elif lead.lead_score >= 50 %}<span class="badge bg-warning text-dark">{{ lead.lead_score }}</span>
+                  {% else %}<span class="badge bg-secondary">{{ lead.lead_score or 0 }}</span>{% endif %}
+                </td>
+                <td>{{ lead.course or '-' }}</td>
+                <td>{% if lead.is_admitted %}<span class="badge bg-success">Yes</span>{% else %}-{% endif %}</td>
+                <td class="text-muted">{{ lead.updated_at.strftime('%Y-%m-%d') if lead.updated_at else '-' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="8" class="text-center py-4 text-muted">No leads assigned.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transfer Preview Modal -->
+  <div class="modal fade" id="previewModal" tabindex="-1" data-bs-theme="dark">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content bg-dark border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title text-white">Transfer Preview</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-light">
+          <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i> You are about to transfer <strong id="pvCount"></strong> leads from <strong>{{ staff_name }}</strong> to <strong id="pvTarget"></strong>.
+          </div>
+          <div class="table-responsive" style="max-height:300px;">
+            <table class="table table-dark table-sm mb-0">
+              <thead><tr><th>Phone</th><th>Name</th></tr></thead>
+              <tbody id="pvList"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="confirmTransfer()">Confirm Transfer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deactivation Check Modal -->
+  <div class="modal fade" id="deactivateModal" tabindex="-1" data-bs-theme="dark">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content bg-dark border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title text-white">Deactivation Safety Check</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-light" id="deactBody">
+          Loading...
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    function updateCount() {
+      document.getElementById('selectedCount').innerText = document.querySelectorAll('.lead-chk:checked').length;
+    }
+
+    function toggleAll(source) {
+      const checkboxes = document.querySelectorAll('.lead-chk');
+      for(let i=0; i<checkboxes.length; i++) {
+        checkboxes[i].checked = source.checked;
+      }
+      updateCount();
+    }
+
+    document.querySelectorAll('.lead-chk').forEach(chk => {
+      chk.addEventListener('change', updateCount);
+    });
+
+    let currentPayload = null;
+
+    function previewTransfer() {
+      const selected = document.querySelectorAll('.lead-chk:checked');
+      const target = document.getElementById('targetStaff').value;
+      
+      if(selected.length === 0) {
+        alert("Please select at least one lead.");
+        return;
+      }
+      if(!target) {
+        alert("Please select a target staff member.");
+        return;
+      }
+
+      const phones = Array.from(selected).map(chk => chk.value);
+      const names = Array.from(selected).map(chk => chk.getAttribute('data-name'));
+      
+      currentPayload = { phones: phones, target_staff: target };
+      
+      document.getElementById('pvCount').innerText = phones.length;
+      document.getElementById('pvTarget').innerText = target;
+      
+      const tbody = document.getElementById('pvList');
+      tbody.innerHTML = '';
+      for(let i=0; i<phones.length; i++) {
+        tbody.innerHTML += `<tr><td class="font-monospace text-muted">${phones[i]}</td><td>${names[i] || 'Unknown'}</td></tr>`;
+      }
+      
+      new bootstrap.Modal(document.getElementById('previewModal')).show();
+    }
+
+    function confirmTransfer() {
+      if(!currentPayload) return;
+      const btn = document.querySelector('#previewModal .btn-primary');
+      btn.innerText = "Transferring...";
+      btn.disabled = true;
+
+      fetch("/crm/reassignment-center/confirm", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Key": "{{ key }}"
+        },
+        body: JSON.stringify(currentPayload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        if(data.success) {
+          window.location.reload();
+        } else {
+          alert("Transfer failed: " + (data.error || "Unknown error"));
+          btn.innerText = "Confirm Transfer";
+          btn.disabled = false;
+        }
+      })
+      .catch(err => {
+        alert("Transfer failed: " + err);
+        btn.innerText = "Confirm Transfer";
+        btn.disabled = false;
+      });
+    }
+
+    function checkDeactivation() {
+      const modal = new bootstrap.Modal(document.getElementById('deactivateModal'));
+      const body = document.getElementById('deactBody');
+      body.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Checking safe deactivation conditions...</p></div>';
+      modal.show();
+
+      fetch("/crm/staff-allocation/check-deactivation/{{ staff_name }}?key={{ key }}")
+        .then(res => res.json())
+        .then(data => {
+          if(data.safe) {
+            body.innerHTML = `
+              <div class="alert alert-success border-success">
+                <i class="bi bi-check-circle-fill me-2"></i> <strong>Safe to Deactivate</strong><br>
+                This staff member has 0 active leads and 0 open tasks. You may proceed to Staff Management to deactivate.
+              </div>
+            `;
+          } else {
+            body.innerHTML = `
+              <div class="alert alert-danger border-danger">
+                <i class="bi bi-x-circle-fill me-2"></i> <strong>Cannot Deactivate</strong><br>
+                Reassign ownership first. This staff still owns:
+                <ul class="mt-2 mb-0">
+                  <li><strong>${data.active_leads}</strong> Active Leads</li>
+                  <li><strong>${data.open_tasks}</strong> Open Tasks</li>
+                  <li><strong>${data.admissions}</strong> Admissions</li>
+                  <li><strong>${data.pending_follow_ups}</strong> Pending Follow-Ups</li>
+                </ul>
+              </div>
+            `;
+          }
+        })
+        .catch(err => {
+          body.innerHTML = `<div class="alert alert-warning">Check failed: ${err}</div>`;
+        });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>Staff Allocation Center - Oxford CRM</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #010409; color: #c9d1d9; }
+    .page-header { border-bottom: 1px solid #30363d; padding-bottom: 1rem; margin-bottom: 2rem; }
+    .staff-table-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+    .staff-table { margin-bottom: 0; color: #c9d1d9; }
+    .staff-table th { background: #161b22; color: #8b949e; font-size: 0.75rem; text-transform: uppercase; font-weight: 600; padding: 1rem; border-bottom: 1px solid #30363d; }
+    .staff-table td { padding: 1rem; border-bottom: 1px solid #30363d; vertical-align: middle; }
+    .staff-table tr:last-child td { border-bottom: none; }
+    .staff-name { font-weight: 600; color: #58a6ff; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; }
+    .staff-name:hover { text-decoration: underline; color: #79c0ff; }
+    .status-badge { font-size: 0.7rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 12px; }
+    .status-balanced { background: rgba(35,134,54,0.2); color: #3fb950; border: 1px solid rgba(35,134,54,0.4); }
+    .status-heavy { background: rgba(210,153,34,0.2); color: #d29922; border: 1px solid rgba(210,153,34,0.4); }
+    .status-overloaded { background: rgba(248,81,73,0.2); color: #f85149; border: 1px solid rgba(248,81,73,0.4); }
+    .status-inactive { background: rgba(139,148,158,0.2); color: #8b949e; border: 1px solid rgba(139,148,158,0.4); }
+    .btn-view { font-size: 0.8rem; font-weight: 600; background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 0.4rem 0.8rem; border-radius: 6px; text-decoration: none; transition: 0.2s; }
+    .btn-view:hover { background: #30363d; border-color: #8b949e; color: #fff; }
+    .stat-number { font-family: monospace; font-size: 1.1rem; }
+    .pct-bar-bg { background: #21262d; height: 6px; border-radius: 3px; width: 100%; overflow: hidden; margin-top: 0.4rem; }
+    .pct-bar-fill { background: #58a6ff; height: 100%; }
+  </style>
+</head>
+<body>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
+    <div class="container-fluid px-4 py-4">
+      <div class="page-header d-flex justify-content-between align-items-center">
+        <div>
+          <h2 class="mb-1 fw-bold text-white"><i class="bi bi-diagram-3-fill me-2 text-primary"></i>Staff Allocation Center</h2>
+          <p class="text-muted mb-0 small">Admin overview of workload distribution and lead ownership percentages.</p>
+        </div>
+        <div>
+          <span class="badge bg-secondary">Total CRM Leads: {{ total_crm_leads }}</span>
+        </div>
+      </div>
+
+      <div class="staff-table-card">
+        <div class="table-responsive">
+          <table class="table staff-table table-hover">
+            <thead>
+              <tr>
+                <th>Staff Member</th>
+                <th>Status</th>
+                <th class="text-end">Total Leads</th>
+                <th class="text-end">Ownership %</th>
+                <th class="text-end">HOT Leads</th>
+                <th class="text-end">Admissions</th>
+                <th class="text-end">Open Tasks</th>
+                <th class="text-end">Completed Tasks</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for staff in staff_data %}
+              <tr>
+                <td>
+                  <a href="/crm/staff-allocation/{{ staff.name }}?key={{ key }}" class="staff-name">
+                    <i class="bi bi-person-circle fs-5 text-secondary"></i>
+                    {{ staff.name }}
+                    {% if not staff.active and staff.name != 'Unassigned' %}
+                      <span class="badge bg-secondary ms-1" style="font-size:0.6rem;">Inactive</span>
+                    {% endif %}
+                  </a>
+                </td>
+                <td>
+                  <span class="status-badge 
+                    {% if staff.status == 'Balanced' %}status-balanced
+                    {% elif staff.status == 'Heavy Load' %}status-heavy
+                    {% elif staff.status == 'Overloaded' %}status-overloaded
+                    {% else %}status-inactive{% endif %}">
+                    {{ staff.status }}
+                  </span>
+                </td>
+                <td class="text-end stat-number">{{ staff.total_leads }}</td>
+                <td class="text-end">
+                  <div class="stat-number">{{ staff.ownership_pct }}%</div>
+                  <div class="pct-bar-bg"><div class="pct-bar-fill" style="width: {{ staff.ownership_pct }}%;"></div></div>
+                </td>
+                <td class="text-end stat-number text-warning">{{ staff.hot_leads }}</td>
+                <td class="text-end stat-number text-success">{{ staff.admissions }}</td>
+                <td class="text-end stat-number text-danger">{{ staff.open_tasks }}</td>
+                <td class="text-end stat-number">{{ staff.completed_tasks }}</td>
+                <td class="text-end">
+                  <a href="/crm/staff-allocation/{{ staff.name }}?key={{ key }}" class="btn-view">View Leads</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
