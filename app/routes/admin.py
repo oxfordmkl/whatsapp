@@ -4306,20 +4306,85 @@ from werkzeug.security import check_password_hash
 from datetime import datetime
 
 def check_auth():
-    """Dynamically routes authentication based on the deployment phase."""
+    """
+    Returns True when request is authenticated.
+
+    AUTH_MODE = ADMIN_KEY_ONLY
+        -> require legacy key only
+
+    AUTH_MODE = DUAL
+        -> allow valid session OR ADMIN_KEY
+
+    AUTH_MODE = SESSION_ONLY
+        -> allow session only
+    """
     mode = current_app.config.get("AUTH_MODE", "ADMIN_KEY_ONLY")
     key_valid = request.args.get("key", "") == ADMIN_KEY
     
     if mode == "ADMIN_KEY_ONLY":
-        if key_valid: return None
+        return key_valid
         
     elif mode == "DUAL":
-        if key_valid or current_user.is_authenticated: return None
+        return key_valid or current_user.is_authenticated
             
     elif mode == "SESSION_ONLY":
-        if current_user.is_authenticated: return None
+        return current_user.is_authenticated
             
-    return _deny() # 403 Forbidden
+    return False
+
+def get_current_actor():
+    """
+    Returns the current actor dictionary:
+    {
+        "authenticated": True/False,
+        "username": "...",
+        "role": "...",
+        "source": "SESSION" or "ADMIN_KEY"
+    }
+    """
+    is_session = current_user.is_authenticated
+    is_key = request.args.get("key", "") == ADMIN_KEY
+    mode = current_app.config.get("AUTH_MODE", "ADMIN_KEY_ONLY")
+    
+    # Priority: If mode is SESSION_ONLY, ignore ADMIN_KEY
+    if mode == "SESSION_ONLY" and is_session:
+        return {
+            "authenticated": True,
+            "username": current_user.username,
+            "role": current_user.role,
+            "source": "SESSION"
+        }
+        
+    if mode in ["ADMIN_KEY_ONLY", "DUAL"] and is_key:
+        return {
+            "authenticated": True,
+            "username": "Admin",
+            "role": "ADMIN",
+            "source": "ADMIN_KEY"
+        }
+        
+    if mode == "DUAL" and is_session:
+        return {
+            "authenticated": True,
+            "username": current_user.username,
+            "role": current_user.role,
+            "source": "SESSION"
+        }
+        
+    return {
+        "authenticated": False,
+        "username": None,
+        "role": None,
+        "source": None
+    }
+
+
+@admin_bp.route("/crm/auth-debug", methods=["GET"])
+def auth_debug():
+    actor = get_current_actor()
+    logging.info(f"AUTH source={actor['source']} user={actor['username']}")
+    return jsonify(actor)
+
 
 
 @admin_bp.route("/crm/login", methods=["GET", "POST"])
