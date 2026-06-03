@@ -1306,6 +1306,7 @@ def crm_lead_send(phone):
             )
             # ── Persist manual send to ConversationMessage (CRM timeline) ──
             from app.services.log_service import save_conversation_message, log_lead_event
+            from app.models import ConversationState
             import json
             
             lead = ConversationState.query.filter_by(phone=phone).first()
