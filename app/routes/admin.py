@@ -4088,9 +4088,21 @@ def crm_staff_allocation():
     
     total_crm_leads = sum(row.total_leads for row in lead_stats)
     
+    registry = load_staff_registry()
+    registry_map = {}
+    for code, details in registry.items():
+        disp = details.get("display_name", "").strip()
+        if disp:
+            registry_map[disp.lower()] = disp
+
     aggregated = {}
     for row in lead_stats:
-        s_name = (row.assigned_staff or "").strip() or "Unassigned"
+        raw_name = (row.assigned_staff or "").strip()
+        if not raw_name:
+            s_name = "Unassigned"
+        else:
+            s_name = registry_map.get(raw_name.lower(), raw_name.title())
+            
         if s_name not in aggregated:
             aggregated[s_name] = {"total_leads": 0, "hot_leads": 0, "admissions": 0}
         aggregated[s_name]["total_leads"] += row.total_leads
@@ -4117,10 +4129,12 @@ def crm_staff_allocation():
             tid = data.get("task_id")
             if tid:
                 completed_task_ids.add(tid)
-                s = (data.get("staff") or "").strip() or "Unassigned"
+                raw_name = (data.get("staff") or "").strip()
+                s = registry_map.get(raw_name.lower(), raw_name.title()) if raw_name else "Unassigned"
                 completed_tasks[s] = completed_tasks.get(s, 0) + 1
         elif ev.event_type == "FOLLOW_UP_TASK":
-            s = (data.get("staff") or "").strip() or "Unassigned"
+            raw_name = (data.get("staff") or "").strip()
+            s = registry_map.get(raw_name.lower(), raw_name.title()) if raw_name else "Unassigned"
             tid = data.get("task_id")
             if tid:
                 task_map[tid] = s
@@ -4131,7 +4145,6 @@ def crm_staff_allocation():
             open_tasks[s] = open_tasks.get(s, 0) + 1
 
     # Format output
-    registry = load_staff_registry()
     staff_data = []
     
     for s_name, counts in aggregated.items():
@@ -4216,7 +4229,10 @@ def crm_staff_allocation_detail(staff_name):
             (ConversationState.assigned_staff == None) | (ConversationState.assigned_staff == "")
         ).all()
     else:
-        leads = ConversationState.query.filter_by(assigned_staff=actual_name).all()
+        from sqlalchemy import func
+        leads = ConversationState.query.filter(
+            func.lower(func.trim(ConversationState.assigned_staff)) == actual_name.lower()
+        ).all()
         
     registry = load_staff_registry()
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
@@ -4244,8 +4260,9 @@ def crm_staff_allocation_check(staff_name):
         return jsonify({"safe": False, "reason": "Cannot deactivate Unassigned"})
         
     # 1. Check Leads
-    lead_count = ConversationState.query.filter_by(assigned_staff=staff_name).count()
-    admission_count = ConversationState.query.filter_by(assigned_staff=staff_name, is_admitted=True).count()
+    from sqlalchemy import func
+    lead_count = ConversationState.query.filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower()).count()
+    admission_count = ConversationState.query.filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower(), ConversationState.is_admitted == True).count()
     
     # 2. Check Open Tasks
     events = LeadEvent.query.filter(
