@@ -2235,6 +2235,10 @@ def crm_course_admissions(phone):
     from app.services.log_service import log_lead_event
 
     try:
+        from app.models import ConversationState
+        conversation_state = ConversationState.query.filter_by(phone=phone).first()
+        staff_name = conversation_state.assigned_staff if conversation_state and conversation_state.assigned_staff else ""
+
         # ── 1. Read already-admitted course names (lowercase set for O(1) lookup) ──
         existing_admission_events = (
             LeadEvent.query
@@ -2277,7 +2281,7 @@ def crm_course_admissions(phone):
                 event_type="COURSE_ADMISSION",
                 event_data=json.dumps({
                     "course": course,
-                    "staff": lead.assigned_staff or ""
+                    "staff": staff_name
                 }),
             )
             newly_admitted.append(course)
