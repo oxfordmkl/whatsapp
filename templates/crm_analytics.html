@@ -195,17 +195,8 @@
   </style>
 </head>
 <body>
-
-  <!-- Navbar -->
-  <nav class="crm-nav d-flex align-items-center justify-content-between">
-    <a class="brand" href="/crm/leads?key={{ key }}">
-      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
-      <span class="ms-2">/ Admission Funnel Analytics</span>
-    </a>
-    <a href="/crm/leads?key={{ key }}" class="btn-nav-back">
-      <i class="bi bi-arrow-left"></i>Back to Leads
-    </a>
-  </nav>
+{% include 'crm_sidebar.html' %}
+<div class="crm-main">
 
   <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1000px;">
 
@@ -281,5 +272,6 @@
     </div>
 
   </div>
+</div><!-- /crm-main -->
 </body>
 </html>

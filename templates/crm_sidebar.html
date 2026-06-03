@@ -1,0 +1,502 @@
+<!--
+  crm_sidebar.html — Oxford CRM Unified Navigation Partial
+  Phase 9.7: Workspace Redesign + Marketing Hub Foundation
+
+  Usage: {% include 'crm_sidebar.html' %}
+  Required context var: key (the ADMIN_KEY string)
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  PHASE 10 AUTH PREPARATION — Navigation Visibility Layer    ║
+  ║                                                              ║
+  ║  future_role = "SUPER_ADMIN"  → sees all sections           ║
+  ║  future_role = "ADMIN"        → sees all except raw Settings ║
+  ║  future_role = "STAFF"        → sees HOME, MY LEADS, TASKS  ║
+  ║                                                              ║
+  ║  Implementation: Replace static nav with role-filtered       ║
+  ║  Jinja2 blocks: {% if current_user.role in [...] %}          ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  Future Tenant Scope: Each nav link will carry tenant_id context (Phase 11)
+-->
+
+<style>
+/* ── CRM Design System Tokens ───────────────────────────────────────── */
+:root {
+  --bg-dark:       #0d1117;
+  --bg-card:       #161b22;
+  --bg-card2:      #1c2128;
+  --border:        #30363d;
+  --green:         #25D366;
+  --green-dim:     #1a9b49;
+  --green-glow:    rgba(37,211,102,0.12);
+  --text-main:     #e6edf3;
+  --text-muted:    #8b949e;
+  --blue:          #58a6ff;
+  --yellow:        #d29922;
+  --red:           #f85149;
+  --purple:        #bc8cff;
+  --orange:        #e3813a;
+  --sidebar-width: 240px;
+  --topbar-height: 0px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.875rem;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Sidebar Shell ──────────────────────────────────────────────────── */
+.crm-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 1050;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: transform 0.3s ease;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.crm-sidebar::-webkit-scrollbar { width: 4px; }
+.crm-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Brand Header ───────────────────────────────────────────────────── */
+.crm-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1.1rem 1rem 1rem;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.crm-brand-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--green);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: #0d1117;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(37,211,102,0.25);
+}
+.crm-brand-text {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.crm-brand-name {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.crm-brand-tag {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Nav Sections ───────────────────────────────────────────────────── */
+.crm-nav-body {
+  flex: 1;
+  padding: 0.75rem 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.nav-section {
+  margin-bottom: 0.25rem;
+}
+
+.nav-section-label {
+  padding: 0.6rem 1rem 0.3rem;
+  font-size: 0.63rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.48rem 1rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: 0;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.nav-item:hover {
+  background: rgba(255,255,255,0.04);
+  color: var(--text-main);
+}
+.nav-item.active {
+  background: var(--green-glow);
+  color: var(--green);
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--green);
+  border-radius: 0 2px 2px 0;
+}
+.nav-item i {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+.nav-item .nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Sub-nav divider ────────────────────────────────────────────────── */
+.nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 1rem;
+}
+
+/* ── Settings footer ────────────────────────────────────────────────── */
+.crm-sidebar-footer {
+  padding: 0.75rem 0 0.5rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Main content wrapper ───────────────────────────────────────────── */
+.crm-main {
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Mobile hamburger ───────────────────────────────────────────────── */
+.crm-topbar-mobile {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 1040;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 1rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+.crm-topbar-mobile .brand-mobile {
+  font-weight: 700;
+  color: var(--green);
+  font-size: 0.9rem;
+  flex: 1;
+}
+.btn-hamburger {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.btn-hamburger:hover { color: var(--text-main); }
+
+.crm-sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 1045;
+}
+
+@media (max-width: 900px) {
+  .crm-sidebar {
+    transform: translateX(calc(-1 * var(--sidebar-width)));
+  }
+  .crm-sidebar.open {
+    transform: translateX(0);
+  }
+  .crm-sidebar-overlay.open {
+    display: block;
+  }
+  .crm-main {
+    margin-left: 0;
+  }
+  .crm-topbar-mobile {
+    display: flex;
+  }
+}
+</style>
+
+<!-- ── Sidebar ── -->
+<div class="crm-sidebar" id="crmSidebar">
+
+  <!-- Brand -->
+  <a class="crm-brand" href="/crm/home?key={{ key }}">
+    <div class="crm-brand-icon">O</div>
+    <div class="crm-brand-text">
+      <span class="crm-brand-name">Oxford CRM</span>
+      <span class="crm-brand-tag">Business OS v9.7</span>
+    </div>
+  </a>
+
+  <!-- Nav Body -->
+  <div class="crm-nav-body">
+
+    <!-- HOME — visible to ALL roles -->
+    <!-- future_role: ALL — begin -->
+    <div class="nav-section">
+      <a class="nav-item" href="/crm/home?key={{ key }}" data-path="/crm/home">
+        <i class="bi bi-house-fill"></i>
+        <span class="nav-label">Home</span>
+      </a>
+    </div>
+    <!-- future_role: ALL — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- LEADS — future_role: ADMIN | SUPER_ADMIN | STAFF — begin -->
+    <div class="nav-section">
+      <div class="nav-section-label">Leads</div>
+      <a class="nav-item" href="/crm/leads?key={{ key }}" data-path="/crm/leads">
+        <i class="bi bi-people-fill"></i>
+        <span class="nav-label">All Leads</span>
+      </a>
+      <a class="nav-item" href="/crm/my-leads?key={{ key }}" data-path="/crm/my-leads">
+        <i class="bi bi-person-fill"></i>
+        <span class="nav-label">My Leads</span>
+      </a>
+      <a class="nav-item" href="/crm/leads/unassigned?key={{ key }}" data-path="/crm/leads/unassigned">
+        <i class="bi bi-inbox-fill"></i>
+        <span class="nav-label">Unassigned</span>
+      </a>
+    </div>
+    <!-- future_role: ADMIN | SUPER_ADMIN | STAFF — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- TASKS — future_role: ADMIN | SUPER_ADMIN | STAFF — begin -->
+    <div class="nav-section">
+      <div class="nav-section-label">Tasks</div>
+      <a class="nav-item" href="/crm/tasks/my?key={{ key }}" data-path="/crm/tasks/my">
+        <i class="bi bi-calendar2-check-fill"></i>
+        <span class="nav-label">My Tasks</span>
+      </a>
+      <a class="nav-item" href="/crm/tasks/admin?key={{ key }}" data-path="/crm/tasks/admin">
+        <i class="bi bi-list-check"></i>
+        <span class="nav-label">Admin Tasks</span>
+      </a>
+    </div>
+    <!-- future_role: ADMIN | SUPER_ADMIN | STAFF — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- MARKETING — future_role: ADMIN | SUPER_ADMIN — begin -->
+    <div class="nav-section">
+      <div class="nav-section-label">Marketing</div>
+      <a class="nav-item" href="/crm/marketing?key={{ key }}" data-path="/crm/marketing">
+        <i class="bi bi-megaphone-fill"></i>
+        <span class="nav-label">Marketing Hub</span>
+      </a>
+      <a class="nav-item" href="/crm/campaigns?key={{ key }}" data-path="/crm/campaigns">
+        <i class="bi bi-rocket-fill"></i>
+        <span class="nav-label">Campaign Center</span>
+      </a>
+    </div>
+    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- ANALYTICS — future_role: ADMIN | SUPER_ADMIN — begin -->
+    <div class="nav-section">
+      <div class="nav-section-label">Analytics</div>
+      <a class="nav-item" href="/crm/analytics?key={{ key }}" data-path="/crm/analytics">
+        <i class="bi bi-bar-chart-line-fill"></i>
+        <span class="nav-label">Funnel Analytics</span>
+      </a>
+      <a class="nav-item" href="/crm/revenue-analytics?key={{ key }}" data-path="/crm/revenue-analytics">
+        <i class="bi bi-currency-rupee"></i>
+        <span class="nav-label">Revenue Analytics</span>
+      </a>
+      <a class="nav-item" href="/crm/admission-analytics?key={{ key }}" data-path="/crm/admission-analytics">
+        <i class="bi bi-mortarboard-fill"></i>
+        <span class="nav-label">Admission Analytics</span>
+      </a>
+      <a class="nav-item" href="/crm/source-analytics?key={{ key }}" data-path="/crm/source-analytics">
+        <i class="bi bi-diagram-3-fill"></i>
+        <span class="nav-label">Source Analytics</span>
+      </a>
+    </div>
+    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- OPERATIONS — future_role: ADMIN | SUPER_ADMIN — begin -->
+    <div class="nav-section">
+      <div class="nav-section-label">Operations</div>
+      <a class="nav-item" href="/crm/operations?key={{ key }}" data-path="/crm/operations">
+        <i class="bi bi-speedometer2"></i>
+        <span class="nav-label">Command Center</span>
+      </a>
+      <a class="nav-item" href="/crm/action-center?key={{ key }}" data-path="/crm/action-center">
+        <i class="bi bi-lightning-fill"></i>
+        <span class="nav-label">Action Center</span>
+      </a>
+      <a class="nav-item" href="/crm/staff-workload?key={{ key }}" data-path="/crm/staff-workload">
+        <i class="bi bi-clipboard2-data-fill"></i>
+        <span class="nav-label">Staff Workload</span>
+      </a>
+    </div>
+    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- STAFF — future_role: ADMIN | SUPER_ADMIN — begin -->
+    <div class="nav-section">
+      <div class="nav-section-label">Staff</div>
+      <a class="nav-item" href="/crm/staff-dashboard?key={{ key }}" data-path="/crm/staff-dashboard">
+        <i class="bi bi-person-workspace"></i>
+        <span class="nav-label">Staff Dashboard</span>
+      </a>
+      <a class="nav-item" href="/crm/staff-management?key={{ key }}" data-path="/crm/staff-management">
+        <i class="bi bi-gear-fill"></i>
+        <span class="nav-label">Staff Management</span>
+      </a>
+      <a class="nav-item" href="/crm/reassignment-center?key={{ key }}" data-path="/crm/reassignment-center">
+        <i class="bi bi-arrow-left-right"></i>
+        <span class="nav-label">Reassignment</span>
+      </a>
+      <a class="nav-item" href="/crm/staff-performance?key={{ key }}" data-path="/crm/staff-performance">
+        <i class="bi bi-graph-up-arrow"></i>
+        <span class="nav-label">Performance</span>
+      </a>
+    </div>
+    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
+
+    <div class="nav-divider"></div>
+
+    <!-- SETTINGS — future_role: SUPER_ADMIN — begin (Phase 10 placeholder) -->
+    <div class="nav-section">
+      <div class="nav-section-label">System</div>
+      <a class="nav-item" href="/crm/health?key={{ key }}" data-path="/crm/health">
+        <i class="bi bi-heart-pulse-fill"></i>
+        <span class="nav-label">System Health</span>
+      </a>
+      <!-- Phase 10: Settings route will be added here -->
+      <!-- Phase 11: Tenant management will be added here -->
+      <a class="nav-item" href="/panel?key={{ key }}" data-path="/panel" style="opacity:0.6;" title="Legacy panel — preserved">
+        <i class="bi bi-grid-3x3-gap"></i>
+        <span class="nav-label">Legacy Panel</span>
+      </a>
+    </div>
+    <!-- future_role: SUPER_ADMIN — end -->
+
+  </div><!-- /crm-nav-body -->
+
+  <!-- Footer info -->
+  <div class="crm-sidebar-footer">
+    <div style="padding: 0.5rem 1rem; font-size: 0.65rem; color: var(--text-muted);">
+      <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.2rem;">
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 4px var(--green);"></span>
+        System Online
+      </div>
+      <div>Phase 9.7 · Oxford CRM</div>
+      <!-- Future Tenant Scope: tenant_name will display here (Phase 11) -->
+    </div>
+  </div>
+
+</div><!-- /crm-sidebar -->
+
+<!-- Mobile overlay -->
+<div class="crm-sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- Mobile Topbar -->
+<div class="crm-topbar-mobile" id="mobileTopbar">
+  <button class="btn-hamburger" id="sidebarToggle" aria-label="Toggle navigation">
+    <i class="bi bi-list"></i>
+  </button>
+  <span class="brand-mobile"><i class="bi bi-whatsapp me-1"></i>Oxford CRM</span>
+  <a href="/crm/home?key={{ key }}" style="color:var(--text-muted);font-size:0.8rem;text-decoration:none;">
+    <i class="bi bi-house"></i>
+  </a>
+</div>
+
+<script>
+(function() {
+  // ── Active nav item detection ──────────────────────────────────────
+  var path = window.location.pathname;
+  document.querySelectorAll('.nav-item[data-path]').forEach(function(el) {
+    var p = el.getAttribute('data-path');
+    // Exact match OR prefix match for sub-routes
+    if (path === p || (p !== '/crm/home' && path.startsWith(p + '/')) || (p.length > 6 && path === p)) {
+      el.classList.add('active');
+    }
+    // Special case: /crm/leads/unassigned shouldn't activate /crm/leads
+    if (p === '/crm/leads' && path.startsWith('/crm/leads/')) {
+      el.classList.remove('active');
+    }
+    // /crm/tasks/my and /crm/tasks/admin
+    if (p === '/crm/tasks/my' && path === '/crm/tasks/my') el.classList.add('active');
+    if (p === '/crm/tasks/admin' && path === '/crm/tasks/admin') el.classList.add('active');
+  });
+
+  // ── Mobile sidebar toggle ─────────────────────────────────────────
+  var sidebar  = document.getElementById('crmSidebar');
+  var overlay  = document.getElementById('sidebarOverlay');
+  var toggle   = document.getElementById('sidebarToggle');
+
+  if (toggle) {
+    toggle.addEventListener('click', function() {
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('open');
+    });
+  }
+  if (overlay) {
+    overlay.addEventListener('click', function() {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('open');
+    });
+  }
+})();
+</script>

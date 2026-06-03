@@ -363,20 +363,8 @@
   </style>
 </head>
 <body>
-
-  <!-- Navbar -->
-  <nav class="crm-nav d-flex align-items-center justify-content-between">
-    <a class="brand" href="/crm/leads?key={{ key }}">
-      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
-      <span class="ms-2">/ Revenue Analytics</span>
-    </a>
-    <div class="d-flex align-items-center gap-2">
-      <span class="phase-badge"><i class="bi bi-bar-chart-fill"></i> Phase 8.1</span>
-      <a href="/crm/leads?key={{ key }}" class="btn-nav-back">
-        <i class="bi bi-arrow-left"></i>Back to Leads
-      </a>
-    </div>
-  </nav>
+{% include 'crm_sidebar.html' %}
+<div class="crm-main">
 
   <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1200px;">
 
@@ -611,5 +599,6 @@
 
   </div><!-- /container -->
 
+</div><!-- /crm-main -->
 </body>
 </html>

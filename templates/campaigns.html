@@ -128,21 +128,8 @@
   </style>
 </head>
 <body>
-  <!-- Navbar -->
-  <nav class="crm-nav d-flex align-items-center justify-content-between">
-    <a class="brand" href="/crm/leads?key={{ key }}">
-      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
-      <span class="ms-2">/ Campaigns</span>
-    </a>
-    <div>
-      <a href="/crm/leads?key={{ key }}" class="btn btn-sm btn-outline-secondary text-white border-secondary me-2">
-        <i class="bi bi-people me-1"></i>Leads
-      </a>
-      <a href="/panel?key={{ key }}" class="btn btn-sm btn-outline-secondary text-white border-secondary">
-        <i class="bi bi-grid-3x3-gap me-1"></i>Admin Panel
-      </a>
-    </div>
-  </nav>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
 
   <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1200px;">
   
@@ -340,5 +327,6 @@
       }
     });
   </script>
+  </div><!-- /crm-main -->
 </body>
 </html>

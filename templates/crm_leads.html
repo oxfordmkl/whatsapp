@@ -296,31 +296,8 @@
   </style>
 </head>
 <body>
-
-  <!-- Navbar -->
-  <nav class="crm-nav d-flex align-items-center justify-content-between">
-    <a class="brand" href="/crm/leads?key={{ key }}">
-      <i class="bi bi-whatsapp me-1"></i>Oxford CRM
-      <span class="ms-2">/ Leads</span>
-    </a>
-    <div class="d-flex gap-2">
-      <a href="/crm/admission-analytics?key={{ key }}" class="btn-crm-reset" style="text-decoration:none; padding: 0.35rem 0.85rem;">
-        <i class="bi bi-mortarboard-fill me-1"></i>Admissions
-      </a>
-      <a href="/crm/source-analytics?key={{ key }}" class="btn-crm-reset" style="text-decoration:none; padding: 0.35rem 0.85rem;">
-        <i class="bi bi-diagram-3-fill me-1"></i>Source Analytics
-      </a>
-      <a href="/crm/staff-performance?key={{ key }}" class="btn-crm-reset" style="text-decoration:none; padding: 0.35rem 0.85rem;">
-        <i class="bi bi-people-fill me-1"></i>Staff Performance
-      </a>
-      <a href="/crm/analytics?key={{ key }}" class="btn-crm-reset" style="text-decoration:none; padding: 0.35rem 0.85rem;">
-        <i class="bi bi-bar-chart-fill me-1"></i>Analytics
-      </a>
-      <a href="/panel?key={{ key }}" class="btn-crm-reset" style="text-decoration:none; padding: 0.35rem 0.85rem;">
-        <i class="bi bi-grid-3x3-gap me-1"></i>Admin Panel
-      </a>
-    </div>
-  </nav>
+{% include 'crm_sidebar.html' %}
+<div class="crm-main">
 
   <div class="container-fluid px-3 px-md-4 py-4">
 
@@ -678,5 +655,6 @@
       }
     })();
   </script>
+</div><!-- /crm-main -->
 </body>
 </html>

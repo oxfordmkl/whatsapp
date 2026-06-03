@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketing Hub — Oxford CRM</title>
+  <meta name="description" content="Oxford CRM Marketing Hub — broadcast messaging, contact import, template campaigns and activity logs.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    /*
+      crm_marketing.html — Phase 9.7 Marketing Hub
+      Future Tenant Scope: Per-tenant broadcast configs, contact lists, API keys (Phase 11)
+      Future Auth Scope: ADMIN | SUPER_ADMIN only (Phase 10)
+    */
+
+    .crm-page-header {
+      padding: 1.5rem 2rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+    .crm-page-header h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.2rem;
+    }
+    .crm-page-header p { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+
+    .page-body { padding: 1.5rem 2rem; }
+
+    /* ── Marketing stats row ──────────────────────────────────────────── */
+    .mkt-stat {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      text-align: center;
+    }
+    .mkt-stat-val {
+      font-size: 1.75rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .mkt-stat-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+    }
+
+    /* ── Panel cards (adapted from panel.html design system) ─────────── */
+    .mkt-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+    }
+    .mkt-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .mkt-card-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .mkt-card-badge {
+      font-size: 0.68rem;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.2rem 0.55rem;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+    .mkt-card-body { padding: 1.25rem; }
+
+    /* ── Config bar (server URL + API key) ───────────────────────────── */
+    .config-field label {
+      display: block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+    .config-field input {
+      width: 100%;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      color: var(--text-main);
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .config-field input:focus { border-color: var(--green); }
+    .config-field input::placeholder { color: var(--text-muted); }
+
+    /* ── Connection status ───────────────────────────────────────────── */
+    .conn-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 0.3rem 0.85rem;
+      font-size: 0.72rem;
+      font-family: monospace;
+      color: var(--text-muted);
+    }
+    .conn-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 5px var(--green);
+      animation: pulse-dot 2s infinite;
+    }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Upload zone ─────────────────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--green);
+      background: var(--green-glow);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .upload-zone-icon { font-size: 2rem; margin-bottom: 0.6rem; }
+    .upload-zone h3 { font-size: 0.9rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.25rem; }
+    .upload-zone p { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
+    .format-tags { display: flex; gap: 0.4rem; justify-content: center; margin-top: 0.75rem; flex-wrap: wrap; }
+    .format-tag {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--green);
+      font-family: monospace;
+    }
+
+    /* ── Column mapper ───────────────────────────────────────────────── */
+    .col-map-item label {
+      display: block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+    .col-map-item select {
+      width: 100%;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.45rem 0.65rem;
+      color: var(--text-main);
+      font-size: 0.8rem;
+      outline: none;
+    }
+    .col-map-item select:focus { border-color: var(--green); }
+    .col-map-item select option { background: var(--bg-card2); }
+
+    /* ── Contacts table ──────────────────────────────────────────────── */
+    .contacts-table-wrap {
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .contacts-table-wrap table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .contacts-table-wrap thead th {
+      background: var(--bg-card2);
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.55rem 0.75rem;
+      position: sticky;
+      top: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .contacts-table-wrap tbody td {
+      padding: 0.45rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-main);
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+    .contacts-table-wrap tbody tr:last-child td { border-bottom: none; }
+    .contacts-table-wrap tbody tr:hover td { background: rgba(255,255,255,0.025); }
+
+    /* Status pills */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      font-size: 0.68rem;
+      font-weight: 600;
+    }
+    .pill-pending { background: rgba(210,153,34,0.15); color: var(--yellow); }
+    .pill-sent    { background: rgba(37,211,102,0.15);  color: var(--green); }
+    .pill-failed  { background: rgba(248,81,73,0.15);   color: var(--red); }
+    .pill-skip    { background: rgba(139,148,158,0.1);  color: var(--text-muted); }
+
+    /* ── Textarea composer ───────────────────────────────────────────── */
+    .msg-textarea {
+      width: 100%;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      color: var(--text-main);
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      resize: vertical;
+      min-height: 150px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .msg-textarea:focus { border-color: var(--green); }
+    .msg-textarea::placeholder { color: var(--text-muted); }
+
+    /* Template quick-fill buttons */
+    .tpl-btn {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.3rem 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tpl-btn:hover { border-color: var(--green); color: var(--green); }
+
+    /* ── Rate controls ───────────────────────────────────────────────── */
+    .rate-controls {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1rem;
+    }
+    .rate-item { display: flex; align-items: center; gap: 0.6rem; flex: 1; min-width: 150px; }
+    .rate-item label { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; font-weight: 600; }
+    .rate-item input[type="range"] { flex: 1; accent-color: var(--green); }
+    .rate-val { font-size: 0.78rem; color: var(--green); min-width: 30px; text-align: right; font-weight: 700; font-family: monospace; }
+
+    /* ── Broadcast button ────────────────────────────────────────────── */
+    .btn-broadcast {
+      width: 100%;
+      background: linear-gradient(135deg, #128C7E, var(--green));
+      color: #0d1117;
+      font-weight: 800;
+      font-size: 0.95rem;
+      padding: 0.9rem 1.5rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.25s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      box-shadow: 0 4px 20px rgba(37,211,102,0.2);
+    }
+    .btn-broadcast:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(37,211,102,0.35);
+    }
+    .btn-broadcast:disabled {
+      background: var(--bg-card2);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    /* ── Progress bar ────────────────────────────────────────────────── */
+    .progress-wrap { background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; margin-bottom: 0.5rem; }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #128C7E, var(--green));
+      border-radius: 6px;
+      transition: width 0.4s ease;
+      box-shadow: 0 0 8px rgba(37,211,102,0.4);
+      width: 0%;
+    }
+
+    /* ── Log section ─────────────────────────────────────────────────── */
+    .log-wrap {
+      background: #080e0a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.78rem;
+      line-height: 1.8;
+      scrollbar-width: thin;
+    }
+    .log-line { display: flex; gap: 0.6rem; }
+    .log-time { color: var(--text-muted); min-width: 60px; }
+    .log-ok   { color: var(--green); }
+    .log-err  { color: var(--red); }
+    .log-info { color: var(--blue); }
+    .log-warn { color: var(--yellow); }
+
+    /* ── Alert ───────────────────────────────────────────────────────── */
+    .mkt-alert {
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      display: none;
+      margin-bottom: 0.75rem;
+    }
+    .mkt-alert.show { display: block; }
+    .mkt-alert-warn { background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: var(--yellow); }
+    .mkt-alert-err  { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.3);  color: var(--red); }
+
+    /* ── OR divider ──────────────────────────────────────────────────── */
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.85rem 0;
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Button utilities ────────────────────────────────────────────── */
+    .btn-mkt {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.9rem;
+      border-radius: 7px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .btn-mkt-green { background: var(--green); border: none; color: #0d1117; }
+    .btn-mkt-green:hover { background: #1db954; }
+    .btn-mkt-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .btn-mkt-outline:hover { border-color: var(--green); color: var(--green); }
+    .btn-mkt-danger { background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.2); color: var(--red); }
+    .btn-mkt-danger:hover { background: rgba(248,81,73,0.2); }
+
+    /* ── Spinner ─────────────────────────────────────────────────────── */
+    .mkt-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: #0d1117;
+      border-radius: 50%;
+      animation: spin-mkt 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin-mkt { to { transform: rotate(360deg); } }
+
+    /* ── Progress section hidden by default ──────────────────────────── */
+    #progressSection { display: none; }
+    #progressSection.visible { display: block; }
+
+    /* ── Section heading ─────────────────────────────────────────────── */
+    .section-heading {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    /* ── Responsive ──────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .page-body { padding: 1rem; }
+      .crm-page-header { padding: 1rem 1rem 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+{% include 'crm_sidebar.html' %}
+
+<div class="crm-main">
+
+  <!-- Page Header -->
+  <div class="crm-page-header">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div>
+        <h1><i class="bi bi-megaphone-fill me-2" style="color:var(--purple);"></i>Marketing Hub</h1>
+        <p>Broadcast messaging, contact import, template campaigns and activity logs.</p>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <div class="conn-badge">
+          <span class="conn-dot"></span>
+          <span id="connectionStatus">Configuring...</span>
+        </div>
+        <a href="/crm/campaigns?key={{ key }}" class="btn-mkt btn-mkt-outline">
+          <i class="bi bi-rocket-fill"></i> Campaign Center
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-body">
+
+    <!-- ── Stats Row ──────────────────────────────────────────────────── -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="mkt-stat">
+          <div class="mkt-stat-val" id="statTotal" style="color:var(--text-main);">0</div>
+          <div class="mkt-stat-label">Total Contacts</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="mkt-stat">
+          <div class="mkt-stat-val" id="statSent" style="color:var(--green);">0</div>
+          <div class="mkt-stat-label">Sent ✓</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="mkt-stat">
+          <div class="mkt-stat-val" id="statFail" style="color:var(--red);">0</div>
+          <div class="mkt-stat-label">Failed ✗</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="mkt-stat">
+          <div class="mkt-stat-val" id="statPend" style="color:var(--yellow);">0</div>
+          <div class="mkt-stat-label">Pending</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Server Config ──────────────────────────────────────────────── -->
+    <div class="mkt-card mb-4">
+      <div class="mkt-card-header">
+        <div class="mkt-card-title"><i class="bi bi-server text-info"></i> Server Configuration</div>
+        <span class="mkt-card-badge">Railway Deployment</span>
+      </div>
+      <div class="mkt-card-body">
+        <!-- Future Tenant Scope: server URL and API key will come from per-tenant config (Phase 11) -->
+        <div class="row g-3 align-items-end">
+          <div class="col-12 col-md-6">
+            <div class="config-field">
+              <label>Railway Server URL</label>
+              <input type="text" id="serverUrl" placeholder="https://web-production-d03fb.up.railway.app" value="https://web-production-d03fb.up.railway.app">
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div class="config-field">
+              <label>Broadcast API Key</label>
+              <input type="password" id="apiKey" placeholder="oxford_broadcast_2026" value="oxford_broadcast_2026">
+            </div>
+          </div>
+          <div class="col-12 col-md-2">
+            <button class="btn-mkt btn-mkt-green w-100" onclick="testConnection()">
+              <i class="bi bi-plug-fill"></i> Test
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Main Grid: Import + Contacts ──────────────────────────────── -->
+    <div class="row g-4 mb-4">
+
+      <!-- Import Card -->
+      <div class="col-12 col-lg-6">
+        <div class="mkt-card h-100">
+          <div class="mkt-card-header">
+            <div class="mkt-card-title"><i class="bi bi-folder2-open text-warning"></i> Import Contacts</div>
+            <span class="mkt-card-badge" id="fileNameBadge">No file</span>
+          </div>
+          <div class="mkt-card-body">
+
+            <div class="upload-zone" id="uploadZone">
+              <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)">
+              <div class="upload-zone-icon">📊</div>
+              <h3>Drop Excel / CSV here</h3>
+              <p>or click to browse</p>
+              <div class="format-tags">
+                <span class="format-tag">.xlsx</span>
+                <span class="format-tag">.xls</span>
+                <span class="format-tag">.csv</span>
+              </div>
+            </div>
+
+            <div class="or-divider">or paste Google Sheet ID</div>
+
+            <div class="d-flex gap-2">
+              <input type="text" id="sheetId" class="config-field" style="flex:1;" placeholder="1PauKraxFIBO_zuDR9BOlM5cxJIBO5W49...">
+              <button class="btn-mkt btn-mkt-outline" onclick="loadFromSheet()">
+                <i class="bi bi-table"></i> Load
+              </button>
+            </div>
+
+            <!-- Column mapper -->
+            <div id="colMapper" class="row g-2 mt-2" style="display:none!important;">
+              <div class="col-6">
+                <div class="col-map-item">
+                  <label>📞 Phone Column</label>
+                  <select id="phoneCol"></select>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="col-map-item">
+                  <label>👤 Name Column</label>
+                  <select id="nameCol"></select>
+                </div>
+              </div>
+            </div>
+            <div id="mapApplyRow" class="mt-2 d-flex align-items-center gap-2" style="display:none!important;">
+              <button class="btn-mkt btn-mkt-green" onclick="applyColumnMapping()">
+                <i class="bi bi-check2-all"></i> Apply Mapping
+              </button>
+              <span style="font-size:0.72rem;color:var(--text-muted);" id="mappingHint"></span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Contacts Preview -->
+      <div class="col-12 col-lg-6">
+        <div class="mkt-card h-100">
+          <div class="mkt-card-header">
+            <div class="mkt-card-title"><i class="bi bi-people-fill text-info"></i> Contacts Preview</div>
+            <div class="d-flex gap-2">
+              <button class="btn-mkt btn-mkt-danger" onclick="clearContacts()">
+                <i class="bi bi-trash3"></i> Clear
+              </button>
+              <button class="btn-mkt btn-mkt-outline" onclick="addManual()">
+                <i class="bi bi-plus-lg"></i> Add
+              </button>
+            </div>
+          </div>
+          <div class="mkt-card-body p-0">
+            <div id="contactsWrap">
+              <div class="text-center py-5 text-muted">
+                <i class="bi bi-clipboard2-data" style="font-size:2rem;display:block;margin-bottom:0.5rem;"></i>
+                <small>Import Excel/CSV or Google Sheet<br>to see contacts here</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /main grid -->
+
+    <!-- ── Message Composer ────────────────────────────────────────────── -->
+    <div class="mkt-card mb-4">
+      <div class="mkt-card-header">
+        <div class="mkt-card-title"><i class="bi bi-pencil-square text-success"></i> Message Composer</div>
+        <span class="mkt-card-badge">Use {name} for personalization</span>
+      </div>
+      <div class="mkt-card-body">
+
+        <!-- Template quick-fill -->
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <button class="tpl-btn" onclick="loadTemplate('admission')">🎓 Admission</button>
+          <button class="tpl-btn" onclick="loadTemplate('demo')">📅 Demo Class</button>
+          <button class="tpl-btn" onclick="loadTemplate('followup')">🔔 Follow-up</button>
+          <button class="tpl-btn" onclick="loadTemplate('offer')">🎁 Special Offer</button>
+          <button class="tpl-btn" onclick="loadTemplate('womensday')">🌸 Women's Day</button>
+        </div>
+
+        <div id="alertBox" class="mkt-alert mkt-alert-warn"></div>
+
+        <textarea class="msg-textarea" id="msgText" placeholder="Type your message here...
+Use {name} to personalize — it will be replaced with each contact's name.
+
+Example:
+👋 Hello {name}!
+The Oxford Computers-ൽ നിന്ന്..."></textarea>
+
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <span style="font-size:0.75rem;color:var(--text-muted);font-family:monospace;" id="charCount">0 characters</span>
+          <button class="btn-mkt btn-mkt-outline" onclick="previewMsg()">
+            <i class="bi bi-eye"></i> Preview
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Template Broadcast ──────────────────────────────────────────── -->
+    <div class="mkt-card mb-4">
+      <div class="mkt-card-header">
+        <div class="mkt-card-title"><i class="bi bi-tags-fill text-warning"></i> Template Broadcast</div>
+        <span class="mkt-card-badge">Meta Graph API</span>
+      </div>
+      <div class="mkt-card-body">
+        <div class="row g-3 align-items-end mb-3">
+          <div class="col-12 col-md-5">
+            <div class="config-field">
+              <label>Template Name</label>
+              <input type="text" id="tplName" placeholder="oxford_special_offer">
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div class="config-field">
+              <label>Variable &#123;&#123;1&#125;&#125;</label>
+              <input type="text" value="{name}" disabled style="opacity:0.5;cursor:not-allowed;">
+            </div>
+          </div>
+          <div class="col-12 col-md-3">
+            <div class="config-field">
+              <label>Language</label>
+              <input type="text" id="tplLang" value="en" placeholder="en">
+            </div>
+          </div>
+        </div>
+        <button class="btn-broadcast" id="sendTplBtn" onclick="startTemplateBroadcast()">
+          <div class="mkt-spinner" id="sendTplSpinner"></div>
+          <span id="sendTplBtnText"><i class="bi bi-tags-fill me-1"></i> Start Template Broadcast</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Send Settings + Broadcast ──────────────────────────────────── -->
+    <div class="mkt-card mb-4">
+      <div class="mkt-card-header">
+        <div class="mkt-card-title"><i class="bi bi-sliders text-info"></i> Send Settings</div>
+      </div>
+      <div class="mkt-card-body">
+
+        <div class="rate-controls">
+          <div class="rate-item">
+            <label>Delay (sec)</label>
+            <input type="range" id="delayRange" min="1" max="10" value="3" oninput="document.getElementById('delayVal').textContent=this.value+'s'">
+            <span class="rate-val" id="delayVal">3s</span>
+          </div>
+          <div class="rate-item">
+            <label>Batch size</label>
+            <input type="range" id="batchRange" min="10" max="100" value="50" step="10" oninput="document.getElementById('batchVal').textContent=this.value">
+            <span class="rate-val" id="batchVal">50</span>
+          </div>
+          <div class="rate-item">
+            <label>Batch pause</label>
+            <input type="range" id="pauseRange" min="10" max="120" value="30" step="10" oninput="document.getElementById('pauseVal').textContent=this.value+'s'">
+            <span class="rate-val" id="pauseVal">30s</span>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn-mkt btn-mkt-danger" id="stopBtn" onclick="stopBroadcast()" style="display:none">
+            <i class="bi bi-stop-fill"></i> Stop
+          </button>
+          <button class="btn-broadcast" id="sendBtn" onclick="startBroadcast()">
+            <div class="mkt-spinner" id="sendSpinner"></div>
+            <span id="sendBtnText"><i class="bi bi-megaphone-fill me-1"></i> Start Broadcast</span>
+          </button>
+          <button class="btn-mkt btn-mkt-outline" id="exportBtn" onclick="exportResults()" style="display:none">
+            <i class="bi bi-download"></i> Export Report
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Progress Section ────────────────────────────────────────────── -->
+    <div class="mkt-card mb-4" id="progressSection">
+      <div class="mkt-card-header">
+        <div class="mkt-card-title">
+          <span id="progressEmoji">📤</span>
+          <span id="progressTitle">Broadcasting...</span>
+        </div>
+        <span style="font-family:monospace;font-size:0.8rem;color:var(--text-muted);" id="progressPct">0%</span>
+      </div>
+      <div class="mkt-card-body">
+        <div class="progress-wrap"><div class="progress-fill" id="progressBar"></div></div>
+        <div class="d-flex flex-wrap gap-3 mt-2" style="font-size:0.78rem;font-family:monospace;">
+          <span style="color:var(--text-muted);">Sent: <strong style="color:var(--text-main);" id="pSent">0</strong></span>
+          <span style="color:var(--text-muted);">Failed: <strong style="color:var(--red);" id="pFail">0</strong></span>
+          <span style="color:var(--text-muted);">Remaining: <strong style="color:var(--text-main);" id="pRem">0</strong></span>
+          <span style="color:var(--text-muted);">ETA: <strong style="color:var(--yellow);" id="pEta">—</strong></span>
+          <span style="color:var(--text-muted);">Rate: <strong style="color:var(--green);" id="pRate">—</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Activity Log ────────────────────────────────────────────────── -->
+    <div class="mkt-card mb-4">
+      <div class="mkt-card-header">
+        <div class="mkt-card-title"><i class="bi bi-terminal-fill text-success"></i> Activity Log</div>
+        <div class="d-flex gap-2">
+          <button class="btn-mkt btn-mkt-outline" onclick="exportReport('txt')">
+            <i class="bi bi-file-text"></i> Log File
+          </button>
+          <button class="btn-mkt btn-mkt-outline" onclick="exportReport('csv')">
+            <i class="bi bi-filetype-csv"></i> CSV Report
+          </button>
+          <button class="btn-mkt btn-mkt-outline" onclick="clearLog()">
+            <i class="bi bi-x-lg"></i> Clear
+          </button>
+        </div>
+      </div>
+      <div class="mkt-card-body">
+        <div class="log-wrap" id="logWrap">
+          <div class="log-line">
+            <span class="log-time">00:00:00</span>
+            <span class="log-info">Oxford CRM Marketing Hub ready. Import contacts to begin.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center mt-2" style="color:var(--text-muted);font-size:0.7rem;">
+      Oxford CRM Marketing Hub &nbsp;·&nbsp; Phase 9.7 &nbsp;·&nbsp;
+      <!-- Future Tenant Scope: per-tenant billing limits will display here (Phase 11) -->
+    </p>
+
+  </div><!-- /page-body -->
+</div><!-- /crm-main -->
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STATE — Marketing Hub (isolated scope)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let mktContacts  = [];
+let mktRawHeaders = [];
+let mktIsSending = false;
+let mktStopFlag  = false;
+let mktStartTime = null;
+let mktSentCount = 0;
+let mktFailCount = 0;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TEMPLATES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const MKT_TEMPLATES = {
+  admission: `👋 നമസ്കാരം {name}!\n\n*The Oxford Computers*-ൽ 2025 New Batch ആരംഭിക്കാൻ പോകുന്നു! 🎓\n\nKerala Govt Certified AI-enabled courses:\n📚 MS Office & Tally\n🌐 Web Design & Development\n🐍 Python & AI Tools\n📱 Digital Marketing\n\n✅ Government Certificate\n✅ 100% Placement Assistance\n✅ EMI Facility Available\n\n📍 Malayinkeezhu, Thiruvananthapuram\n🌐 theoxfordedu.com\n\nAdmission details: *FEES* reply ചെയ്യൂ! 💬`,
+  demo: `🎓 {name}, Free Demo Class!\n\n*The Oxford Computers* — Kerala Govt Certified\n\nഈ week Demo Class open ആണ്!\nZero commitment. 100% Free.\n\n⏰ Morning: 9 AM – 11 AM\n⏰ Evening: 5 PM – 7 PM\n\n📍 Malayinkeezhu, Trivandrum\n\nBook ചെയ്യാൻ reply ചെയ്യൂ! 📅`,
+  followup: `👋 {name}, The Oxford Computers here!\n\n🌟 *Student Success Story*\n\nRiya (Attingal) — Web Design course complete ചെയ്ത്\nഇപ്പോൾ ₹25,000/month earn ചെയ്യുന്നു! 💪\n\nതാങ്കൾക്കും possible ആണ്.\nGovernment certified + Placement support.\n\n📅 Next batch starting soon!\n*DEMO* reply ചെയ്ത് seat reserve ചെയ്യൂ! 🙌`,
+  offer: `🎁 Special Offer — {name}!\n\n*The Oxford Computers* — Limited Time\n\nഈ batch-ൽ join ചെയ്യുന്നവർക്ക്:\n✅ Free Registration (₹500 waived!)\n✅ Free Study Materials\n✅ Flexible EMI Option\n\nOffer ends soon! 🔥\n\n📍 Malayinkeezhu, Trivandrum\n🌐 theoxfordedu.com\n\nDetails: *FEES* reply ചെയ്യൂ!`,
+  womensday: `🌸 Happy Women's Day, {name}!\n\n*The Oxford Computers* — Special Offer\n\nWomen's Day Special 🎉\nFree Admission | Free Registration\n\nKerala Govt Certified Computer Courses\n👩‍💻 Web Design | Python | Digital Marketing\n\n💪 Skill up. Earn more. Grow strong.\n\n📍 Malayinkeezhu, Trivandrum\n🌐 theoxfordedu.com | Valid till March 31\n\n*DEMO* reply for free class! 🙌`
+};
+
+// Alias: keep contacts pointing to mktContacts for helper functions
+var contacts = mktContacts;
+
+function loadTemplate(key) {
+  document.getElementById('msgText').value = MKT_TEMPLATES[key];
+  updateCharCount();
+  log('info', `Template loaded: ${key}`);
+}
+
+document.getElementById('msgText').addEventListener('input', updateCharCount);
+function updateCharCount() {
+  const len = document.getElementById('msgText').value.length;
+  document.getElementById('charCount').textContent = `${len} characters`;
+}
+
+function previewMsg() {
+  const msg  = document.getElementById('msgText').value;
+  const name = mktContacts[0]?.name || 'Rahul';
+  alert('📱 WhatsApp Preview:\n\n' + msg.replace(/{name}/g, name));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FILE UPLOAD
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  document.getElementById('fileNameBadge').textContent = file.name;
+  log('info', `File loaded: ${file.name}`);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (rows.length < 2) { showAlert('File seems empty.', 'err'); return; }
+      mktRawHeaders = rows[0].map(String);
+      const dataRows = rows.slice(1).filter(r => r.some(c => c !== ''));
+      showColMapper(mktRawHeaders, dataRows);
+      log('ok', `${dataRows.length} rows found. Select phone & name columns.`);
+    } catch(err) {
+      showAlert('File read error: ' + err.message, 'err');
+      log('err', 'File parse error: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showColMapper(headers, dataRows) {
+  const phoneSelect = document.getElementById('phoneCol');
+  const nameSelect  = document.getElementById('nameCol');
+  phoneSelect.innerHTML = headers.map((h,i) => `<option value="${i}">${escHtml(h)}</option>`).join('');
+  nameSelect.innerHTML  = `<option value="-1">— None —</option>` + headers.map((h,i) => `<option value="${i}">${escHtml(h)}</option>`).join('');
+  headers.forEach((h, i) => {
+    const hl = h.toLowerCase();
+    if (hl.includes('phone') || hl.includes('mobile') || hl.includes('number') || hl.includes('mob') || hl.includes('whatsapp')) phoneSelect.value = i;
+    if (hl.includes('name') || hl.includes('student')) nameSelect.value = i;
+  });
+  document.getElementById('colMapper').style.display = 'grid';
+  document.getElementById('mapApplyRow').style.display = 'flex';
+  document.getElementById('mappingHint').textContent = `${dataRows.length} rows ready`;
+  window._mktRawRows = dataRows;
+}
+
+function applyColumnMapping() {
+  const phoneCol = parseInt(document.getElementById('phoneCol').value);
+  const nameCol  = parseInt(document.getElementById('nameCol').value);
+  const rows     = window._mktRawRows || [];
+  mktContacts = []; contacts = mktContacts;
+  let skipped = 0;
+  rows.forEach((row, idx) => {
+    let phone = String(row[phoneCol] || '').trim().replace(/[\s\-\(\)]/g, '');
+    const name = nameCol >= 0 ? String(row[nameCol] || '').trim() : `Contact ${idx+1}`;
+    if (!phone) { skipped++; return; }
+    phone = phone.replace(/^\+91/, '').replace(/^91/, '').replace(/^0/, '');
+    if (phone.length !== 10 || !/^\d+$/.test(phone)) { skipped++; return; }
+    phone = '91' + phone;
+    mktContacts.push({ name: name || `Contact ${idx+1}`, phone, status: 'pending' });
+  });
+  if (skipped > 0) log('warn', `${skipped} rows skipped (invalid/empty phones)`);
+  log('ok', `${mktContacts.length} valid contacts imported`);
+  renderContacts(); updateStats();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GOOGLE SHEET
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function loadFromSheet() {
+  const sheetId = document.getElementById('sheetId').value.trim();
+  if (!sheetId) { showAlert('Sheet ID enter cheyyuka!', 'warn'); return; }
+  const match = sheetId.match(/\/d\/([\w-]+)/);
+  const id    = match ? match[1] : sheetId;
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`;
+  log('info', 'Loading from Google Sheet...');
+  try {
+    const resp = await fetch(csvUrl);
+    if (!resp.ok) throw new Error('Sheet not accessible. Share publicly (Anyone with link can view).');
+    const text = await resp.text();
+    const rows = text.split('\n').map(r => {
+      const cols = []; let inQuote = false, cur = '';
+      for (const ch of r) {
+        if (ch === '"') { inQuote = !inQuote; }
+        else if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      cols.push(cur.trim()); return cols;
+    }).filter(r => r.some(c => c));
+    if (rows.length < 2) { showAlert('Sheet seems empty!', 'err'); return; }
+    mktRawHeaders = rows[0]; window._mktRawRows = rows.slice(1);
+    showColMapper(mktRawHeaders, window._mktRawRows);
+    log('ok', `Sheet loaded: ${rows.length - 1} rows`);
+  } catch(err) {
+    showAlert('Sheet load failed: ' + err.message, 'err');
+    log('err', err.message);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RENDER CONTACTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function renderContacts() {
+  const wrap = document.getElementById('contactsWrap');
+  if (!mktContacts.length) {
+    wrap.innerHTML = `<div class="text-center py-5 text-muted"><i class="bi bi-clipboard2-data" style="font-size:2rem;display:block;margin-bottom:0.5rem;"></i><small>No contacts loaded</small></div>`;
+    return;
+  }
+  const shown = mktContacts.slice(0, 200);
+  wrap.innerHTML = `
+    <div class="contacts-table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Status</th></tr></thead>
+        <tbody>${shown.map((c, i) => `
+          <tr id="row_${i}">
+            <td>${i+1}</td>
+            <td>${escHtml(c.name)}</td>
+            <td>${c.phone}</td>
+            <td><span class="status-pill pill-${c.status}" id="pill_${i}">${statusLabel(c.status)}</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${mktContacts.length > 200 ? `<p style="font-size:0.72rem;color:var(--text-muted);padding:0.5rem 0.75rem;">Showing first 200 of ${mktContacts.length} contacts</p>` : ''}`;
+}
+
+function statusLabel(s) {
+  return { pending:'⏳ Pending', sent:'✓ Sent', failed:'✗ Failed', skip:'— Skip' }[s] || s;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function clearContacts() {
+  mktContacts = []; contacts = mktContacts; window._mktRawRows = [];
+  document.getElementById('colMapper').style.display = 'none';
+  document.getElementById('mapApplyRow').style.display = 'none';
+  document.getElementById('fileNameBadge').textContent = 'No file';
+  renderContacts(); updateStats(); log('info', 'Contacts cleared');
+}
+function addManual() {
+  const phone = prompt('Phone number (10 digits, without country code):');
+  if (!phone) return;
+  const name = prompt('Name (optional):') || 'Contact';
+  const clean = phone.trim().replace(/\D/g,'');
+  if (clean.length !== 10) { alert('Invalid phone number! Must be 10 digits.'); return; }
+  mktContacts.push({ name, phone: '91' + clean, status: 'pending' });
+  renderContacts(); updateStats();
+  log('ok', `Manual contact added: ${name} — ${clean}`);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STATS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function updateStats() {
+  document.getElementById('statTotal').textContent = mktContacts.length;
+  document.getElementById('statSent').textContent  = mktContacts.filter(c => c.status === 'sent').length;
+  document.getElementById('statFail').textContent  = mktContacts.filter(c => c.status === 'failed').length;
+  document.getElementById('statPend').textContent  = mktContacts.filter(c => c.status === 'pending').length;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BROADCAST
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function startBroadcast() {
+  if (mktIsSending) return;
+  const msgTemplate = document.getElementById('msgText').value.trim();
+  if (!msgTemplate) { showAlert('Message type cheyyuka!', 'warn'); return; }
+  const pending = mktContacts.filter(c => c.status === 'pending');
+  if (!pending.length) { showAlert('No pending contacts! Import contacts first.', 'warn'); return; }
+  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  const apiKey    = document.getElementById('apiKey').value.trim();
+  if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
+  const delay = parseInt(document.getElementById('delayRange').value) * 1000;
+  const batchSize = parseInt(document.getElementById('batchRange').value);
+  const batchPause = parseInt(document.getElementById('pauseRange').value) * 1000;
+  if (!confirm(`📣 Broadcast Confirm:\n\n• ${pending.length} contacts\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Est: ~${Math.ceil(pending.length * delay / 60000)} min\n\nStart?`)) return;
+  mktIsSending = true; mktStopFlag = false; mktStartTime = Date.now(); mktSentCount = 0; mktFailCount = 0;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('sendTplBtn').disabled = true;
+  document.getElementById('sendSpinner').style.display = 'block';
+  document.getElementById('sendBtnText').textContent = 'Broadcasting...';
+  document.getElementById('stopBtn').style.display = 'inline-flex';
+  document.getElementById('progressSection').classList.add('visible');
+  log('info', `🚀 Broadcast started — ${pending.length} contacts`);
+  for (let i = 0; i < pending.length; i++) {
+    if (mktStopFlag) { log('warn', `⏹ Stopped at contact ${i+1}`); break; }
+    const contact = pending[i]; const idx = mktContacts.indexOf(contact);
+    const msg = msgTemplate.replace(/{name}/g, contact.name);
+    updateRowStatus(idx, 'sending');
+    try {
+      const resp = await fetch(`${serverUrl}/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ numbers: [contact.phone], message: msg, delay_seconds: 0 })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success > 0) {
+        contact.status = 'sent'; mktSentCount++; updateRowStatus(idx, 'sent');
+        log('ok', `✓ ${contact.name} (${contact.phone})`);
+      } else {
+        contact.status = 'failed'; mktFailCount++; updateRowStatus(idx, 'failed');
+        log('err', `✗ ${contact.name} — ${JSON.stringify(data)}`);
+      }
+    } catch(err) {
+      contact.status = 'failed'; mktFailCount++; updateRowStatus(idx, 'failed');
+      log('err', `✗ ${contact.name} — Network: ${err.message}`);
+    }
+    const done = i+1, pct = Math.round((done/pending.length)*100);
+    const elapsed = (Date.now() - mktStartTime) / 1000;
+    const rate = (done/elapsed*60).toFixed(1);
+    const remaining = pending.length - done;
+    const etaSecs = remaining * (delay/1000);
+    const eta = etaSecs > 60 ? `${Math.ceil(etaSecs/60)}m` : `${Math.ceil(etaSecs)}s`;
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('pSent').textContent = mktSentCount;
+    document.getElementById('pFail').textContent = mktFailCount;
+    document.getElementById('pRem').textContent  = remaining;
+    document.getElementById('pEta').textContent  = eta;
+    document.getElementById('pRate').textContent = `${rate}/min`;
+    updateStats();
+    if ((i+1) % batchSize === 0 && i < pending.length-1 && !mktStopFlag) {
+      log('warn', `⏸ Batch pause (${batchPause/1000}s)`);
+      await mktSleep(batchPause);
+    } else if (i < pending.length-1) { await mktSleep(delay); }
+  }
+  mktIsSending = false;
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('sendTplBtn').disabled = false;
+  document.getElementById('sendSpinner').style.display = 'none';
+  document.getElementById('sendBtnText').innerHTML = '<i class="bi bi-megaphone-fill me-1"></i> Start Broadcast';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('exportBtn').style.display = 'inline-flex';
+  document.getElementById('progressEmoji').textContent = mktStopFlag ? '⏹' : '✅';
+  document.getElementById('progressTitle').textContent = mktStopFlag ? 'Stopped' : 'Complete!';
+  log('info', `━━━ Broadcast ${mktStopFlag?'stopped':'complete'} ━━━ Sent: ${mktSentCount} | Failed: ${mktFailCount}`);
+}
+
+async function startTemplateBroadcast() {
+  if (mktIsSending) return;
+  const templateName = document.getElementById('tplName').value.trim();
+  if (!templateName) { showAlert('Template Name enter cheyyuka!', 'warn'); return; }
+  const lang = document.getElementById('tplLang').value.trim() || 'en';
+  const pending = mktContacts.filter(c => c.status === 'pending');
+  if (!pending.length) { showAlert('No pending contacts! Import first.', 'warn'); return; }
+  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  const apiKey    = document.getElementById('apiKey').value.trim();
+  if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
+  const delay = parseInt(document.getElementById('delayRange').value) * 1000;
+  const batchSize = parseInt(document.getElementById('batchRange').value);
+  const batchPause = parseInt(document.getElementById('pauseRange').value) * 1000;
+  if (!confirm(`🏷️ Template Broadcast:\n\n• Template: ${templateName}\n• ${pending.length} contacts\n• Est: ~${Math.ceil(pending.length * delay / 60000)} min\n\nStart?`)) return;
+  mktIsSending = true; mktStopFlag = false; mktStartTime = Date.now(); mktSentCount = 0; mktFailCount = 0;
+  document.getElementById('sendTplBtn').disabled = true;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('sendTplSpinner').style.display = 'block';
+  document.getElementById('sendTplBtnText').textContent = 'Broadcasting...';
+  document.getElementById('stopBtn').style.display = 'inline-flex';
+  document.getElementById('progressSection').classList.add('visible');
+  log('info', `🚀 Template Broadcast started — ${pending.length} contacts`);
+  for (let i = 0; i < pending.length; i++) {
+    if (mktStopFlag) { log('warn', `⏹ Stopped at ${i+1}`); break; }
+    const contact = pending[i]; const idx = mktContacts.indexOf(contact);
+    updateRowStatus(idx, 'sending');
+    try {
+      const resp = await fetch(`${serverUrl}/broadcast-template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ numbers: [{ phone: contact.phone, name: contact.name }], template_name: templateName, language: lang, variables: ['{name}'], delay_seconds: 0 })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success > 0) {
+        contact.status = 'sent'; mktSentCount++; updateRowStatus(idx, 'sent');
+        log('ok', `✓ ${contact.name} (${contact.phone})`);
+      } else {
+        contact.status = 'failed'; mktFailCount++; updateRowStatus(idx, 'failed');
+        log('err', `✗ ${contact.name} — ${JSON.stringify(data)}`);
+      }
+    } catch(err) {
+      contact.status = 'failed'; mktFailCount++; updateRowStatus(idx, 'failed');
+      log('err', `✗ ${contact.name} — ${err.message}`);
+    }
+    const done = i+1, pct = Math.round((done/pending.length)*100);
+    const elapsed = (Date.now() - mktStartTime) / 1000;
+    const rate = (done/elapsed*60).toFixed(1);
+    const remaining = pending.length - done;
+    const etaSecs = remaining * (delay/1000);
+    const eta = etaSecs > 60 ? `${Math.ceil(etaSecs/60)}m` : `${Math.ceil(etaSecs)}s`;
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('pSent').textContent = mktSentCount;
+    document.getElementById('pFail').textContent = mktFailCount;
+    document.getElementById('pRem').textContent  = remaining;
+    document.getElementById('pEta').textContent  = eta;
+    document.getElementById('pRate').textContent = `${rate}/min`;
+    updateStats();
+    if ((i+1) % batchSize === 0 && i < pending.length-1 && !mktStopFlag) {
+      log('warn', `⏸ Batch pause (${batchPause/1000}s)`);
+      await mktSleep(batchPause);
+    } else if (i < pending.length-1) { await mktSleep(delay); }
+  }
+  mktIsSending = false;
+  document.getElementById('sendTplBtn').disabled = false;
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('sendTplSpinner').style.display = 'none';
+  document.getElementById('sendTplBtnText').innerHTML = '<i class="bi bi-tags-fill me-1"></i> Start Template Broadcast';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('exportBtn').style.display = 'inline-flex';
+  document.getElementById('progressEmoji').textContent = mktStopFlag ? '⏹' : '✅';
+  document.getElementById('progressTitle').textContent = mktStopFlag ? 'Stopped' : 'Complete!';
+  log('info', `━━━ Template Broadcast ${mktStopFlag?'stopped':'complete'} ━━━ Sent: ${mktSentCount} | Failed: ${mktFailCount}`);
+}
+
+function stopBroadcast() { if (!mktIsSending) return; mktStopFlag = true; log('warn', 'Stop requested...'); }
+
+function updateRowStatus(idx, status) {
+  const pill = document.getElementById(`pill_${idx}`);
+  if (!pill) return;
+  pill.className = `status-pill pill-${status === 'sending' ? 'pending' : status}`;
+  pill.textContent = status === 'sending' ? '📤 Sending...' : statusLabel(status);
+}
+
+function mktSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CONNECTION TEST
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function testConnection() {
+  const url = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  if (!url) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
+  log('info', 'Testing connection...');
+  document.getElementById('connectionStatus').textContent = 'Connecting...';
+  try {
+    const resp = await fetch(url + '/', { signal: AbortSignal.timeout(8000) });
+    const data = await resp.json();
+    if (data.status && data.status.includes('running')) {
+      document.getElementById('connectionStatus').textContent = '✓ Connected';
+      document.querySelector('.conn-dot').style.background = 'var(--green)';
+      log('ok', `Connected! ${data.app}`);
+    } else { throw new Error('Unexpected response'); }
+  } catch(err) {
+    document.getElementById('connectionStatus').textContent = '✗ Offline';
+    document.querySelector('.conn-dot').style.background = 'var(--red)';
+    log('err', 'Connection failed: ' + err.message);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EXPORT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function exportReport(format) {
+  if (format === 'csv') {
+    const rows = [['Name','Phone','Status']];
+    mktContacts.forEach(c => rows.push([c.name, c.phone, c.status]));
+    const csv = rows.map(r => r.join(',')).join('\n');
+    mktDownload('oxford_broadcast_report.csv', csv, 'text/csv');
+    log('ok', 'CSV report downloaded');
+  } else {
+    const txt = document.getElementById('logWrap').innerText;
+    mktDownload('oxford_broadcast_log.txt', txt, 'text/plain');
+    log('ok', 'Log file downloaded');
+  }
+}
+function exportResults() { exportReport('csv'); }
+function mktDownload(filename, content, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = filename; a.click();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LOG
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function log(type, msg) {
+  const wrap = document.getElementById('logWrap');
+  const now  = new Date().toTimeString().slice(0,8);
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${now}</span><span class="log-${type}">${escHtml(msg)}</span>`;
+  wrap.appendChild(line); wrap.scrollTop = wrap.scrollHeight;
+}
+function clearLog() {
+  document.getElementById('logWrap').innerHTML = '';
+  log('info', 'Log cleared');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ALERT + DRAG & DROP
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function showAlert(msg, type = 'warn') {
+  const el = document.getElementById('alertBox');
+  el.textContent = msg;
+  el.className = `mkt-alert mkt-alert-${type} show`;
+  setTimeout(() => { el.className = `mkt-alert mkt-alert-${type}`; }, 4000);
+}
+
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileUpload({ target: { files: [file] } });
+});
+
+// Auto-test on load
+window.addEventListener('load', () => { setTimeout(testConnection, 800); });
+</script>
+
+</body>
+</html>

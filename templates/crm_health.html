@@ -122,23 +122,8 @@
 </head>
 <body>
 
-  <!-- Navigation -->
-  <div class="crm-navbar">
-    <div class="d-flex align-items-center gap-2 me-3">
-      <i class="bi bi-robot" style="font-size: 1.2rem; color: var(--blue);"></i>
-      <span style="font-weight: 700; font-size: 1rem; letter-spacing: -0.02em;">Oxford CRM</span>
-    </div>
-    <div class="d-flex gap-1" style="flex-wrap: wrap;">
-      <a href="/crm/leads?key={{ key }}" class="crm-nav-link">Leads Pipeline</a>
-      <a href="/crm/analytics?key={{ key }}" class="crm-nav-link">Analytics</a>
-      <a href="/crm/source-analytics?key={{ key }}" class="crm-nav-link">Sources</a>
-      <a href="/crm/admission-analytics?key={{ key }}" class="crm-nav-link">Admissions</a>
-      <a href="/crm/staff-performance?key={{ key }}" class="crm-nav-link">Staff</a>
-      <a href="/crm/revenue-analytics?key={{ key }}" class="crm-nav-link">Revenue</a>
-      <a href="/crm/health?key={{ key }}" class="crm-nav-link active">Health</a>
-      <a href="/crm/action-center?key={{ key }}" class="crm-nav-link">Action Center</a>
-    </div>
-  </div>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
 
   <div class="container-fluid p-4" style="max-width: 1400px; margin: 0 auto;">
     
@@ -268,5 +253,6 @@
     </div>
   </div>
 
+  </div><!-- /crm-main -->
 </body>
 </html>

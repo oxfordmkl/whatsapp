@@ -369,6 +369,128 @@ def admin_panel():
         return "templates/panel.html not found in project", 404
 
 
+# ── Phase 9.7: CRM Home Dashboard ──────────────────────────────────────────
+# Future Tenant Scope: tenant_id filtering will be applied here (Phase 11)
+# Future Auth Scope: role-based KPI visibility will be applied here (Phase 10)
+
+def calculate_home_kpis():
+    """
+    Lightweight summary aggregation for the Home Dashboard.
+    Reuses existing model queries — no new DB schema required.
+
+    # Future Tenant Scope: Add .filter_by(tenant_id=current_tenant) to all queries
+    # Future Auth Scope: Scope to staff's assigned leads for STAFF role
+    """
+    from app.models import ConversationState, LeadEvent, ConversationMessage
+    from app.extensions import db
+    from sqlalchemy.sql import func
+    from datetime import datetime
+
+    # Future Tenant Scope: total_leads = ConversationState.query.filter_by(tenant_id=tid).count()
+    total_leads = ConversationState.query.count()
+    admissions  = ConversationState.query.filter_by(is_admitted=True).count()
+
+    # HOT leads: score >= 80 (consistent with EVENT_SCORE_MAP logic in calculate_lead_intelligence)
+    # Using lead_score column as lightweight proxy — full intelligence calc runs on leads page
+    # Future Tenant Scope: .filter_by(tenant_id=tid)
+    hot_leads = ConversationState.query.filter(
+        ConversationState.lead_score >= 80
+    ).count()
+
+    # Needs reply: last message for each phone was incoming
+    # Future Tenant Scope: join tenant_id filter here
+    subq = db.session.query(
+        ConversationMessage.phone,
+        func.max(ConversationMessage.id).label('max_id')
+    ).group_by(ConversationMessage.phone).subquery()
+    needs_reply_count = db.session.query(ConversationMessage).join(
+        subq, ConversationMessage.id == subq.c.max_id
+    ).filter(ConversationMessage.direction == 'incoming').count()
+
+    # Task KPIs — reuse existing get_all_tasks() helper
+    try:
+        open_tasks, _ = get_all_tasks()
+        now = datetime.utcnow()
+        open_task_count = len(open_tasks)
+        overdue_count = sum(
+            1 for t in open_tasks
+            if t.get("due_dt") and t["due_dt"] < now
+        )
+    except Exception:
+        open_task_count = 0
+        overdue_count = 0
+
+    # Staff active count from registry JSON
+    registry = load_staff_registry()
+    staff_active = sum(1 for v in registry.values() if v.get("active"))
+
+    # Recent leads (last 5 by created_at)
+    # Future Tenant Scope: .filter_by(tenant_id=tid)
+    recent_leads = ConversationState.query.order_by(
+        ConversationState.created_at.desc()
+    ).limit(5).all()
+
+    # Recent events (last 10 LeadEvents for activity feed)
+    # Future Tenant Scope: .filter_by(tenant_id=tid)
+    recent_events = LeadEvent.query.order_by(
+        LeadEvent.created_at.desc()
+    ).limit(10).all()
+
+    return {
+        "total_leads":    total_leads,
+        "hot_leads":      hot_leads,
+        "open_tasks":     open_task_count,
+        "overdue_tasks":  overdue_count,
+        "needs_reply":    needs_reply_count,
+        "admissions":     admissions,
+        "staff_active":   staff_active,
+        "recent_leads":   recent_leads,
+        "recent_events":  recent_events,
+    }
+
+
+@admin_bp.route("/crm/home", methods=["GET"])
+def crm_home():
+    """
+    Phase 9.7: CRM Home Dashboard — unified command center landing page.
+
+    # Future Tenant Scope: kpis will be scoped per tenant (Phase 11)
+    # Future Auth Scope: ADMIN | STAFF | SUPER_ADMIN (Phase 10)
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    kpis = calculate_home_kpis()
+
+    return render_template(
+        "crm_home.html",
+        key=request.args.get("key", ""),
+        kpis=kpis,
+    )
+
+
+# ── Phase 9.7: Marketing Hub ────────────────────────────────────────────────
+# Future Tenant Scope: Per-tenant broadcast configs and contact lists (Phase 11)
+# Future Auth Scope: ADMIN | SUPER_ADMIN only (Phase 10)
+
+@admin_bp.route("/crm/marketing", methods=["GET"])
+def crm_marketing():
+    """
+    Phase 9.7: Marketing Hub — unified CRM shell wrapping broadcast functionality.
+    The legacy /panel route is preserved and remains fully functional.
+
+    # Future Tenant Scope: Load per-tenant server URL + broadcast API key here
+    # Future Auth Scope: Check role == ADMIN or SUPER_ADMIN
+    """
+    if request.args.get("key", "") != ADMIN_KEY:
+        return _deny()
+
+    return render_template(
+        "crm_marketing.html",
+        key=request.args.get("key", ""),
+    )
+
+
 @admin_bp.route("/crm/leads", methods=["GET"])
 def crm_leads():
     if request.args.get("key", "") != ADMIN_KEY:
