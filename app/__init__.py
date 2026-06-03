@@ -27,9 +27,19 @@ def create_app():
     # ── Initialise extensions ─────────────────────────────────────────────
     db.init_app(app)
     migrate.init_app(app, db)
+    
+    from flask_login import LoginManager
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = 'admin.crm_login'
+    login_manager.login_message = "Please log in to access the CRM."
 
     # ── Import models so SQLAlchemy registers them with Alembic ───────────
     from app import models  # noqa: F401
+    
+    @login_manager.user_loader
+    def load_user(user_id):
+        return models.User.query.get(int(user_id))
 
     # ── Register Flask blueprints ─────────────────────────────────────────
     from app.routes.webhook import webhook_bp

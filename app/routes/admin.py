@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy import or_
-from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for
+from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for, current_app
 from app.config import ADMIN_KEY
 
 import os
@@ -4300,4 +4300,54 @@ def crm_staff_allocation_check(staff_name):
         "open_tasks": open_tasks_count,
         "pending_follow_ups": open_tasks_count
     })
+
+from flask_login import current_user, login_user, logout_user, login_required
+from werkzeug.security import check_password_hash
+from datetime import datetime
+
+def check_auth():
+    """Dynamically routes authentication based on the deployment phase."""
+    mode = current_app.config.get("AUTH_MODE", "ADMIN_KEY_ONLY")
+    key_valid = request.args.get("key", "") == ADMIN_KEY
+    
+    if mode == "ADMIN_KEY_ONLY":
+        if key_valid: return None
+        
+    elif mode == "DUAL":
+        if key_valid or current_user.is_authenticated: return None
+            
+    elif mode == "SESSION_ONLY":
+        if current_user.is_authenticated: return None
+            
+    return _deny() # 403 Forbidden
+
+
+@admin_bp.route("/crm/login", methods=["GET", "POST"])
+def crm_login():
+    if current_user.is_authenticated:
+        return redirect(url_for("admin.crm_home"))
+        
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        
+        from app.models import User
+        from app.extensions import db
+        user = User.query.filter_by(username=username).first()
+        if user and user.is_active and check_password_hash(user.password_hash, password):
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            login_user(user)
+            return redirect(url_for("admin.crm_home"))
+            
+        flash("Invalid credentials or inactive account.", "danger")
+        
+    return render_template("crm_login.html")
+
+
+@admin_bp.route("/crm/logout", methods=["GET"])
+@login_required
+def crm_logout():
+    logout_user()
+    return redirect(url_for("admin.crm_login"))
 

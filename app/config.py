@@ -20,3 +20,7 @@ if not DATABASE_URL:
 # SQLAlchemy requires postgresql:// not postgres:// (Railway older format fix)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Phase 10: Authentication
+AUTH_MODE = os.environ.get('AUTH_MODE', 'ADMIN_KEY_ONLY')
+

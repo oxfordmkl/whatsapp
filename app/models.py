@@ -1,6 +1,22 @@
 from datetime import datetime
 from app.extensions import db
+from flask_login import UserMixin
 
+
+class User(UserMixin, db.Model):
+    """
+    Phase 10: Authenticated CRM users (Admin/Staff).
+    """
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64), unique=True, index=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='STAFF')
+    is_active = db.Column(db.Boolean, default=True)
+    require_password_change = db.Column(db.Boolean, default=False)
+    tenant_id = db.Column(db.String(36), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime, nullable=True)
 
 class ConversationState(db.Model):
     """
