@@ -2,7 +2,7 @@
   crm_sidebar.html — Oxford CRM Unified Navigation Partial
   Phase 9.7: Workspace Redesign + Marketing Hub Foundation
 
-  Usage: {% include 'crm_sidebar.html' %}
+  Usage: include 'crm_sidebar.html'
   Required context var: key (the ADMIN_KEY string)
 
   ╔══════════════════════════════════════════════════════════════╗
@@ -13,7 +13,7 @@
   ║  future_role = "STAFF"        → sees HOME, MY LEADS, TASKS  ║
   ║                                                              ║
   ║  Implementation: Replace static nav with role-filtered       ║
-  ║  Jinja2 blocks: {% if current_user.role in [...] %}          ║
+  ║  Jinja2 blocks: if current_user.role in [...]                ║
   ╚══════════════════════════════════════════════════════════════╝
 
   Future Tenant Scope: Each nav link will carry tenant_id context (Phase 11)
