@@ -440,6 +440,18 @@ body {
 
   <!-- Footer info -->
   <div class="crm-sidebar-footer">
+    {% if current_user and current_user.is_authenticated %}
+    <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Logged in as:</div>
+      <div style="font-size: 0.85rem; color: var(--text-main); font-weight: 600;">
+        {{ current_user.username }}
+        <span style="font-size: 0.7rem; color: var(--green);">({{ current_user.role }})</span>
+      </div>
+      <div style="margin-top: 0.4rem;">
+        <a href="/crm/logout" style="font-size: 0.75rem; color: var(--red); text-decoration: none;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+      </div>
+    </div>
+    {% endif %}
     <div style="padding: 0.5rem 1rem; font-size: 0.65rem; color: var(--text-muted);">
       <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.2rem;">
         <span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 4px var(--green);"></span>

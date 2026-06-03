@@ -457,8 +457,11 @@ def crm_home():
     # Future Tenant Scope: kpis will be scoped per tenant (Phase 11)
     # Future Auth Scope: ADMIN | STAFF | SUPER_ADMIN (Phase 10)
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    actor = get_current_actor()
+    if not check_auth():
+        logging.warning(f"AUTH_FAILURE username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/home")
         return _deny()
+    logging.info(f"AUTH_SUCCESS username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/home")
 
     kpis = calculate_home_kpis()
 
@@ -3891,8 +3894,11 @@ def crm_admin_tasks():
 
 @admin_bp.route("/crm/staff-dashboard", methods=["GET"])
 def crm_staff_dashboard():
-    if request.args.get("key", "") != ADMIN_KEY:
+    actor = get_current_actor()
+    if not check_auth():
+        logging.warning(f"AUTH_FAILURE username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/staff-dashboard")
         return _deny()
+    logging.info(f"AUTH_SUCCESS username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/staff-dashboard")
     
     staff_name = request.args.get("staff", "").strip()
     registry = load_staff_registry()
