@@ -794,27 +794,7 @@ def crm_staff_management():
     analytics_data = calculate_admission_analytics()
     # analytics_data["staff_rows"] contains {"name": ..., "leads": ..., "admissions": ...}
     stats_map = {row["name"]: {"leads": row["leads"], "admissions": row["admissions"]} for row in analytics_data["staff_rows"]}
-    data = calculate_operations()
-    intel = calculate_intelligence()
     
-    # Phase 9.6
-    from app.models import ConversationState, LeadEvent
-    intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
-    auto_events = LeadEvent.query.filter(LeadEvent.event_type.in_(intel_event_types)).all()
-    leads = ConversationState.query.all()
-    automation = calculate_automation_intelligence(leads, auto_events)
-
-    return render_template(
-        "crm_operations.html",
-        key=request.args.get("key", ""),
-        data=data,
-        intel=intel,
-        automation=automation,
-    )
-
-def calculate_intelligence():
-    pass
-
     staff_list = []
     for code, data in registry.items():
         name = data.get("display_name", "")
