@@ -440,15 +440,50 @@ body {
 
   <!-- Footer info -->
   <div class="crm-sidebar-footer">
-    {% if current_user and current_user.is_authenticated %}
+    {% set actor = get_current_actor() %}
+    {% if actor.authenticated %}
     <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
       <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Logged in as:</div>
-      <div style="font-size: 0.85rem; color: var(--text-main); font-weight: 600;">
-        {{ current_user.username }}
-        <span style="font-size: 0.7rem; color: var(--green);">({{ current_user.role }})</span>
+      <div style="font-size: 0.85rem; color: var(--text-main); font-weight: 600; margin-bottom: 0.4rem;">
+        {{ actor.username }}
       </div>
-      <div style="margin-top: 0.4rem;">
-        <a href="/crm/logout" style="font-size: 0.75rem; color: var(--red); text-decoration: none;"><i class="bi bi-box-arrow-right"></i> Logout</a>
+      
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Role:<br>
+        <span style="color: var(--text-main);">{{ actor.role }}</span>
+      </div>
+
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Access Method:<br>
+        <span style="color: var(--blue);">{% if actor.source == 'SESSION' %}Session Login{% else %}Admin Key Access{% endif %}</span>
+      </div>
+
+      {% if actor.source == 'SESSION' %}
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Account Status:<br>
+        <span style="color: var(--green);">{% if current_user and current_user.is_active %}ACTIVE{% else %}INACTIVE{% endif %}</span>
+      </div>
+      
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Last Login:<br>
+        <span style="color: var(--text-main);">
+          {% if current_user and current_user.last_login %}
+            {{ current_user.last_login.strftime('%d-%b-%Y %H:%M') }}
+          {% else %}
+            Not Available
+          {% endif %}
+        </span>
+      </div>
+      {% endif %}
+
+      <div style="margin-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.4rem;">
+        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+          <a href="#" style="font-size: 0.75rem; color: var(--text-muted); text-decoration: none;" onclick="return false;"><i class="bi bi-person me-1"></i> Profile (placeholder)</a>
+          <a href="#" style="font-size: 0.75rem; color: var(--text-muted); text-decoration: none;" onclick="return false;"><i class="bi bi-shield-lock me-1"></i> Change Password (placeholder)</a>
+          {% if actor.source == 'SESSION' %}
+          <a href="/crm/logout" style="font-size: 0.75rem; color: var(--red); text-decoration: none; margin-top: 0.2rem;"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
+          {% endif %}
+        </div>
       </div>
     </div>
     {% endif %}

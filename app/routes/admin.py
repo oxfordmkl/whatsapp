@@ -319,6 +319,11 @@ def calculate_lead_portfolio(lead, events: list, course_journey: dict) -> dict:
 
 admin_bp = Blueprint("admin", __name__)
 
+@admin_bp.context_processor
+def inject_actor():
+    from app.routes.admin import get_current_actor
+    return dict(get_current_actor=get_current_actor)
+
 
 @admin_bp.route("/trigger-followup", methods=["POST"])
 def trigger_followup():
