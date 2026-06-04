@@ -515,7 +515,7 @@ def crm_leads():
 
     PAGE_SIZE = 25
 
-    # \u2500\u2500 Query params \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # ── Query params ──────────────────────────────────────────────────────────
     page            = max(1, request.args.get("page", 1, type=int))
     search          = request.args.get("search", "").strip()
     stage_filter    = request.args.get("stage", "").strip()
@@ -523,7 +523,17 @@ def crm_leads():
     key             = request.args.get("key", "")
 
     # \u2500\u2500 Build query safely \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    from sqlalchemy.sql import func
+    
     q = ConversationState.query
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    
+    if is_staff:
+        actor_username_normalized = (actor.get("username") or "").strip().lower()
+        q = q.filter(
+            func.lower(func.trim(ConversationState.assigned_staff)) == actor_username_normalized
+        )
 
     if search:
         q = q.filter(
@@ -3812,7 +3822,13 @@ def crm_my_tasks():
     if request.args.get("key", "") != ADMIN_KEY:
         return _deny()
         
-    staff_name = request.args.get("staff", "").strip()
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    
+    if is_staff:
+        staff_name = actor.get("username")
+    else:
+        staff_name = request.args.get("staff", "").strip()
     open_tasks, completed_tasks = get_all_tasks()
     
     if staff_name:
@@ -3977,7 +3993,13 @@ def crm_my_leads():
     if request.args.get("key", "") != ADMIN_KEY:
         return _deny()
         
-    staff_name = request.args.get("staff", "").strip()
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    
+    if is_staff:
+        staff_name = actor.get("username")
+    else:
+        staff_name = request.args.get("staff", "").strip()
     registry = load_staff_registry()
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()
