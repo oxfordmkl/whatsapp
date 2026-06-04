@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy import or_
-from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for, current_app
+from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for, current_app, session
 from app.config import ADMIN_KEY
 
 import os
@@ -4420,5 +4420,21 @@ def crm_login():
 @login_required
 def crm_logout():
     logout_user()
+    session.clear()
     return redirect(url_for("admin.crm_login"))
+
+
+@admin_bp.after_request
+def add_cache_control_headers(response):
+    """
+    Phase 10F.1: Session Hardening
+    Add no-cache headers to CRM routes to prevent back-button access after logout.
+    """
+    if request.path.startswith('/crm/') and not request.path.startswith('/crm/login'):
+        # Do not apply headers to static assets
+        if not request.path.endswith(('.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot')):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+    return response
 
