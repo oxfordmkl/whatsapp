@@ -4041,8 +4041,10 @@ def crm_my_leads():
     from app.models import ConversationState
     
     if staff_name:
+        from sqlalchemy.sql import func
+        staff_name_normalized = staff_name.strip().lower()
         leads = ConversationState.query.filter(
-            ConversationState.assigned_staff == staff_name,
+            func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
             ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
         ).order_by(ConversationState.updated_at.desc()).all()
     else:
