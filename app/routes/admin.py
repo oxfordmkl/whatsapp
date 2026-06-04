@@ -861,7 +861,7 @@ def _not_found(phone):
 
 @admin_bp.route("/crm/lead/<phone>", methods=["GET"])
 def crm_lead_detail(phone):
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     from app.models import ConversationState, MessageLog, ConversationMessage, LeadEvent
@@ -1074,7 +1074,7 @@ def crm_lead_detail(phone):
 
 @admin_bp.route("/crm/lead/<phone>/update", methods=["POST"])
 def crm_lead_update(phone):
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     from app.models import ConversationState
@@ -1289,7 +1289,7 @@ def campaign_send():
 
 @admin_bp.route("/crm/lead/<phone>/send", methods=["POST"])
 def crm_lead_send(phone):
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     from app.models import ConversationState
@@ -2250,7 +2250,7 @@ def crm_course_admissions(phone):
     Query count: 2 reads + N writes (one per newly admitted course, typically 0-3).
     Schema changes: none. Model changes: none. Analytics: unchanged.
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     import json
