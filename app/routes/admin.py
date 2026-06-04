@@ -3044,8 +3044,8 @@ def calculate_intelligence():
             label = f"{s} admitted {lead_name}: {course}"
             icon, color = "bi-mortarboard", "var(--purple)"
         elif ev.event_type == "LEAD_REASSIGNED":
-            from_s = normalize_staff_name(edata.get("from_staff", "?"))
-            to_s = normalize_staff_name(edata.get("to_staff", "?"))
+            from_s = normalize_staff_name(edata.get("from", "?"))
+            to_s = normalize_staff_name(edata.get("to", "?"))
             label = f"Reassigned {lead_name}: {from_s} → {to_s}"
             icon, color = "bi-arrow-left-right", "var(--blue)"
         elif ev.event_type == "MANUAL_MESSAGE":
@@ -3060,11 +3060,11 @@ def calculate_intelligence():
             "label": label, "icon": icon, "color": color,
         })
 
-    # Module 4: Priority Opportunity Queue (score >= 70, not admitted, top 25)
+    # Module 4: Priority Opportunity Queue (score >= 80, not admitted, top 25)
     priority_queue = []
     for lead in leads:
         score = lead.lead_score or 0
-        if score >= 70 and not lead.is_admitted:
+        if score >= 80 and not lead.is_admitted:
             priority_queue.append({
                 "phone": lead.phone,
                 "name": lead.name or "Unknown",
@@ -3866,8 +3866,9 @@ def crm_my_tasks():
     open_tasks, completed_tasks = get_all_tasks()
     
     if staff_name:
-        open_tasks = [t for t in open_tasks if t.get("staff") == staff_name]
-        completed_tasks = [t for t in completed_tasks if t.get("staff") == staff_name]
+        staff_name_normalized = staff_name.strip().lower()
+        open_tasks = [t for t in open_tasks if (t.get("staff") or "").strip().lower() == staff_name_normalized]
+        completed_tasks = [t for t in completed_tasks if (t.get("staff") or "").strip().lower() == staff_name_normalized]
         
     overdue = [t for t in open_tasks if t.get("is_overdue")]
     today = [t for t in open_tasks if t.get("is_today")]
@@ -3966,9 +3967,11 @@ def crm_staff_dashboard():
             return redirect(url_for("admin.crm_staff_dashboard", key=request.args.get("key", ""), staff=staff_name))
             
     from app.models import ConversationState
-    
+    from sqlalchemy.sql import func
+
+    staff_name_normalized = staff_name.strip().lower()
     leads = ConversationState.query.filter(
-        ConversationState.assigned_staff == staff_name,
+        func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
         ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
     ).all()
     
@@ -3976,12 +3979,12 @@ def crm_staff_dashboard():
     hot_leads_count = sum(1 for lead in leads if (lead.lead_score or 0) >= 80)
     
     admissions_count = ConversationState.query.filter(
-        ConversationState.assigned_staff == staff_name,
+        func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
         ConversationState.is_admitted == True
     ).count()
     
     open_tasks, _ = get_all_tasks()
-    follow_ups_due = sum(1 for t in open_tasks if t.get("staff") == staff_name)
+    active_tasks_count = sum(1 for t in open_tasks if (t.get("staff") or "").strip().lower() == staff_name_normalized)
 
     # Phase 9.5: intelligence summary for this staff member
     intel = calculate_intelligence()
@@ -3997,7 +4000,7 @@ def crm_staff_dashboard():
     kpis = {
         "my_leads": my_leads_count,
         "hot_leads": hot_leads_count,
-        "follow_ups": follow_ups_due,
+        "active_tasks": active_tasks_count,
         "admissions": admissions_count
     }
     
