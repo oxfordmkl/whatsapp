@@ -501,14 +501,8 @@ def crm_marketing():
 
 @admin_bp.route("/crm/leads", methods=["GET"])
 def crm_leads():
-    if request.args.get("key", "") != ADMIN_KEY:
-        return (
-            "<html><body style='font-family:sans-serif;text-align:center;"
-            "padding:50px;background:#0a0f0d;color:#25D366'>"
-            "<h2>\U0001f512 Access Denied</h2>"
-            "<p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>"
-            "</body></html>"
-        ), 403
+    if not check_auth():
+        return _deny()
 
     from app.models import ConversationState
     from app.extensions import db
@@ -3819,7 +3813,7 @@ def crm_tasks_complete():
 
 @admin_bp.route("/crm/tasks/my", methods=["GET"])
 def crm_my_tasks():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     actor = get_current_actor()
@@ -3990,7 +3984,7 @@ def crm_staff_dashboard():
 
 @admin_bp.route("/crm/my-leads", methods=["GET"])
 def crm_my_leads():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     actor = get_current_actor()
