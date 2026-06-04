@@ -727,6 +727,7 @@
                 </select>
               </div>
 
+              {% if actor.role != 'STAFF' %}
               <!-- Assigned Staff -->
               <div class="mb-3">
                 <label class="form-label-crm" for="assigned_staff">Assigned Staff</label>
@@ -843,6 +844,7 @@
                 </div>
 
               </div>
+              {% endif %}
 
               <!-- Notes -->
               <div class="mb-4">
@@ -1192,7 +1194,7 @@
     <!-- Checkboxes derived from course_journey.enquiries (read-only list). -->
     <!-- Pre-checked from course_journey.admissions (existing events).      -->
     <!-- Existing Course Journey card above is untouched. Read-only.        -->
-    {% if course_journey and course_journey.enquiries %}
+    {% if course_journey and course_journey.enquiries and actor.role != 'STAFF' %}
     <div class="crm-card mt-3" id="multi-course-admissions-card">
       <div class="crm-card-header">
         <i class="bi bi-patch-check-fill"></i>Multi-Course Admissions

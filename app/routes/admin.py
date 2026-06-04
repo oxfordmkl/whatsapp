@@ -871,6 +871,14 @@ def crm_lead_detail(phone):
     if lead is None:
         return _not_found(phone)
 
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    if is_staff:
+        actor_username_normalized = (actor.get("username") or "").strip().lower()
+        lead_staff_normalized = (lead.assigned_staff or "").strip().lower()
+        if lead_staff_normalized != actor_username_normalized:
+            return _deny()
+
     # ── Fetch message timeline (newest first, capped at 100) ──
     logs = (
         MessageLog.query
@@ -1077,6 +1085,14 @@ def crm_lead_update(phone):
     if lead is None:
         return _not_found(phone)
 
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    if is_staff:
+        actor_username_normalized = (actor.get("username") or "").strip().lower()
+        lead_staff_normalized = (lead.assigned_staff or "").strip().lower()
+        if lead_staff_normalized != actor_username_normalized:
+            return _deny()
+
     import urllib.parse
     qs = ""
     if request.args.get("search"): qs += f"&search={urllib.parse.quote(request.args.get('search'))}"
@@ -1087,16 +1103,19 @@ def crm_lead_update(phone):
         old_staff = lead.assigned_staff
         
         lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
-        lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
         lead.notes          = request.form.get("notes",          "").strip() or None
 
-        score_raw = request.form.get("lead_score", "").strip()
-        if score_raw.isdigit():
-            lead.lead_score = max(0, min(100, int(score_raw)))
+        if not is_staff:
+            lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
+            score_raw = request.form.get("lead_score", "").strip()
+            if score_raw.isdigit():
+                lead.lead_score = max(0, min(100, int(score_raw)))
+            new_admitted  = (request.form.get("is_admitted") == "1")
+        else:
+            new_admitted = lead.is_admitted
 
         # ── Snapshot values before commit for post-commit event firing ──
         new_course    = (lead.course or "").strip()
-        new_admitted  = request.form.get("is_admitted") == "1"
         new_staff     = lead.assigned_staff
 
         # ── Phase 8.2 Gap 2: Hard block — admission requires assigned staff ──────
@@ -1272,6 +1291,19 @@ def campaign_send():
 def crm_lead_send(phone):
     if request.args.get("key", "") != ADMIN_KEY:
         return _deny()
+
+    from app.models import ConversationState
+    lead = ConversationState.query.filter_by(phone=phone).first()
+    if lead is None:
+        return _not_found(phone)
+        
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    if is_staff:
+        actor_username_normalized = (actor.get("username") or "").strip().lower()
+        lead_staff_normalized = (lead.assigned_staff or "").strip().lower()
+        if lead_staff_normalized != actor_username_normalized:
+            return _deny()
 
     key     = request.args.get("key", "")
     message = request.form.get("manual_message", "").strip()
@@ -2229,6 +2261,14 @@ def crm_course_admissions(phone):
     try:
         from app.models import ConversationState
         conversation_state = ConversationState.query.filter_by(phone=phone).first()
+        if conversation_state is None:
+            return _not_found(phone)
+            
+        actor = get_current_actor()
+        is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+        if is_staff:
+            return _deny()
+            
         staff_name = conversation_state.assigned_staff if conversation_state and conversation_state.assigned_staff else ""
 
         # ── 1. Read already-admitted course names (lowercase set for O(1) lookup) ──
