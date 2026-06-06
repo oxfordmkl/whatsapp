@@ -55,6 +55,24 @@ EVENT_SCORE_MAP = {
     "PAYMENT_PENDING": 30
 }
 
+INTELLIGENCE_CONSTANTS = {
+    "THRESHOLD_HOT": 80,
+    "THRESHOLD_WARM": 50,
+}
+
+def get_aging_bucket(days_inactive, mode="health"):
+    """Phase 10N-B Unified Aging Helper. Preserves legacy mathematical behavior."""
+    if mode == "health":
+        if days_inactive <= 2: return "Fresh"
+        if days_inactive <= 6: return "Attention"
+        if days_inactive <= 13: return "Aging"
+        return "Critical"
+    elif mode == "automation":
+        if days_inactive <= 3: return "fresh"
+        if days_inactive <= 7: return "attention"
+        if days_inactive <= 15: return "risk"
+        return "dormant"
+
 
 # ── Phase 7E: Course Journey helpers ───────────────────────────────────────
 from app.bot.constants import normalize_course_name
@@ -163,9 +181,9 @@ def calculate_lead_intelligence(manual_score, events):
     auto_score = sum(EVENT_SCORE_MAP.get(et, 0) for et in unique_event_types)
     final_score = min((manual_score or 0) + auto_score, 100)
     
-    if final_score >= 80:
+    if final_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"]:
         temperature = "HOT"
-    elif final_score >= 50:
+    elif final_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_WARM"]:
         temperature = "WARM"
     else:
         temperature = "COLD"
@@ -178,7 +196,7 @@ def calculate_lead_intelligence(manual_score, events):
         action = "Send Fees"
     elif "PLACEMENT_ASKED" in unique_event_types:
         action = "Discuss Placement"
-    elif final_score >= 80:
+    elif final_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"]:
         action = "Call Today"
     elif "LEAD_CREATED" in unique_event_types and final_score <= 15:
         action = "Qualify Lead"
@@ -203,14 +221,7 @@ def calculate_lead_health(state_updated_at, state_created_at, latest_msg_time, l
     if days_inactive < 0:
         days_inactive = 0
         
-    if days_inactive <= 2:
-        aging_status = "Fresh"
-    elif days_inactive <= 6:
-        aging_status = "Attention"
-    elif days_inactive <= 13:
-        aging_status = "Aging"
-    else:
-        aging_status = "Critical"
+    aging_status = get_aging_bucket(days_inactive, mode="health")
         
     escalation = None
     events_set = intelligence.get("_events", [])
@@ -395,11 +406,11 @@ def calculate_home_kpis():
     total_leads = ConversationState.query.count()
     admissions  = ConversationState.query.filter_by(is_admitted=True).count()
 
-    # HOT leads: score >= 80 (consistent with EVENT_SCORE_MAP logic in calculate_lead_intelligence)
+    # HOT leads: consistent with EVENT_SCORE_MAP logic in calculate_lead_intelligence
     # Using lead_score column as lightweight proxy — full intelligence calc runs on leads page
     # Future Tenant Scope: .filter_by(tenant_id=tid)
     hot_leads = ConversationState.query.filter(
-        ConversationState.lead_score >= 80
+        ConversationState.lead_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"]
     ).count()
 
     # Needs reply: last message for each phone was incoming
@@ -2933,19 +2944,21 @@ def calculate_intelligence():
     completed_ids = set()
     phone_open_tasks = {}
 
+    # Phase 10M-E: Admissions attributed via is_admitted flag (canonical source).
+    # COURSE_ADMISSION events are retained in the event fetch for the Activity Feed only.
+    # They are deliberately NOT used for admission counting here.
+    for lead in leads:
+        s = normalize_staff_name(lead.assigned_staff or "")
+        if lead.is_admitted and s and s != "Unassigned":
+            staff_admissions[s] = staff_admissions.get(s, 0) + 1
+
     for ev in events:
         try:
             edata = json.loads(ev.event_data or "{}")
         except Exception:
             edata = {}
 
-        if ev.event_type == "COURSE_ADMISSION":
-            lead = lead_map.get(ev.phone)
-            s = normalize_staff_name((lead.assigned_staff or "") if lead else "")
-            if s and s != "Unassigned":
-                staff_admissions[s] = staff_admissions.get(s, 0) + 1
-
-        elif ev.event_type == "FOLLOW_UP_TASK":
+        if ev.event_type == "FOLLOW_UP_TASK":
             tid = edata.get("task_id")
             s = normalize_staff_name(edata.get("staff", ""))
             if tid and s and s != "Unassigned":
@@ -3060,11 +3073,11 @@ def calculate_intelligence():
             "label": label, "icon": icon, "color": color,
         })
 
-    # Module 4: Priority Opportunity Queue (score >= 80, not admitted, top 25)
+    # Module 4: Priority Opportunity Queue (score >= HOT, not admitted, top 25)
     priority_queue = []
     for lead in leads:
         score = lead.lead_score or 0
-        if score >= 80 and not lead.is_admitted:
+        if score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"] and not lead.is_admitted:
             priority_queue.append({
                 "phone": lead.phone,
                 "name": lead.name or "Unknown",
@@ -3114,6 +3127,7 @@ def calculate_intelligence():
 
 def get_nurture_health_score(lead, lead_events_list, today):
     """
+    [LEGACY] Phase 10N-A Safety Audit: Preserved for future AI Layer work.
     Weighted scoring for relationship strength.
     Output: Excellent (80+), Good (60-79), Average (40-59), Weak (0-39).
     """
@@ -3150,6 +3164,7 @@ def get_nurture_health_score(lead, lead_events_list, today):
 
 def get_admission_probability(lead, lead_events_list):
     """
+    [LEGACY] Phase 10N-A Safety Audit: Preserved for future AI Layer work.
     High: lead_score >= 80 AND (DEMO_REQUESTED or FEES_REQUESTED)
     Medium: lead_score >= 50
     Low: everything else
@@ -3167,6 +3182,7 @@ def get_admission_probability(lead, lead_events_list):
 
 def get_auto_task_suggestions(lead, lead_events_list, open_task_titles):
     """
+    [LEGACY] Phase 10N-A Safety Audit: Preserved for future AI Layer work.
     Suggests tasks based on signals if not already open.
     """
     suggestions = []
@@ -3204,14 +3220,8 @@ def calculate_automation_intelligence(leads, events):
         if lead.is_admitted or lead.lead_status in ("Enrolled", "Dropped", "Lost"):
             continue
         days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
-        if days <= 3:
-            aging["fresh"] += 1
-        elif days <= 7:
-            aging["attention"] += 1
-        elif days <= 15:
-            aging["risk"] += 1
-        else:
-            aging["dormant"] += 1
+        bucket = get_aging_bucket(days, mode="automation")
+        aging[bucket] += 1
 
     # Track open tasks by phone
     phone_open_tasks = {}
@@ -3253,7 +3263,7 @@ def calculate_automation_intelligence(leads, events):
                         except:
                             pass
 
-    # 2. Recovery Queue (score >= 50, not admitted, silent > 14 days)
+    # 2. Recovery Queue (score >= WARM, not admitted, silent > 14 days)
     recovery_queue = []
     
     # 3. Follow-Up Recommendations
@@ -3266,7 +3276,7 @@ def calculate_automation_intelligence(leads, events):
         days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
         score = lead.lead_score or 0
         
-        if score >= 50 and days > 14:
+        if score >= INTELLIGENCE_CONSTANTS["THRESHOLD_WARM"] and days > 14:
             recovery_queue.append({
                 "phone": lead.phone,
                 "name": lead.name or "Unknown",
@@ -4154,7 +4164,7 @@ def crm_staff_allocation():
     lead_stats = db.session.query(
         ConversationState.assigned_staff,
         func.count(ConversationState.phone).label('total_leads'),
-        func.sum(case((ConversationState.lead_score >= 80, 1), else_=0)).label('hot_leads'),
+        func.sum(case((ConversationState.lead_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"], 1), else_=0)).label('hot_leads'),
         func.sum(case((ConversationState.is_admitted == True, 1), else_=0)).label('admissions')
     ).group_by(ConversationState.assigned_staff).all()
     
