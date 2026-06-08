@@ -571,7 +571,9 @@ def crm_leads():
         ConversationState.phone, 
         ConversationState.lead_score,
         ConversationState.updated_at,
-        ConversationState.created_at
+        ConversationState.created_at,
+        ConversationState.assigned_staff,
+        ConversationState.is_admitted
     ).all()
     all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at).all()
     
@@ -671,7 +673,9 @@ def _calculate_audiences():
         ConversationState.phone, 
         ConversationState.lead_score,
         ConversationState.updated_at,
-        ConversationState.created_at
+        ConversationState.created_at,
+        ConversationState.assigned_staff,
+        ConversationState.is_admitted
     ).all()
     all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at).all()
     
