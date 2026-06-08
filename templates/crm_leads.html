@@ -483,8 +483,13 @@
                 <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                   {{ lead.name or '—' }}
                 </div>
-                <!-- Priority Badges (Phase 6C) -->
+                <!-- Priority Badges (Phase 6C & 10N-D) -->
                 <div>
+                  {% if lead.intelligence and lead.intelligence._health and lead.intelligence._health.escalation %}
+                    <span class="badge-action" style="background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3);">
+                      {{ lead.intelligence._health.escalation }}
+                    </span>
+                  {% endif %}
                   {% if lead.needs_reply %}
                     <span class="badge-action action-reply"><i class="bi bi-chat-dots-fill"></i> Needs Reply</span>
                   {% elif lead.intelligence and lead.intelligence.recommended_action == 'Call Today' %}

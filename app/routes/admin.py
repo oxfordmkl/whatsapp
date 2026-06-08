@@ -210,7 +210,7 @@ def calculate_lead_intelligence(manual_score, events):
         "_events": list(unique_event_types)
     }
 
-def calculate_lead_health(state_updated_at, state_created_at, latest_msg_time, latest_event_time, intelligence, needs_reply):
+def calculate_lead_health(state_updated_at, state_created_at, latest_msg_time, latest_event_time, intelligence, needs_reply, assigned_staff=None, is_admitted=False):
     latest_activity = latest_msg_time or latest_event_time or state_updated_at or state_created_at
     if not latest_activity:
         from datetime import datetime
@@ -229,6 +229,8 @@ def calculate_lead_health(state_updated_at, state_created_at, latest_msg_time, l
         escalation = "🚨 HOT Lead Ignored"
     elif needs_reply and days_inactive >= 1:
         escalation = "💬 Waiting For Reply"
+    elif assigned_staff and assigned_staff != "Unassigned" and days_inactive >= 7 and not is_admitted:
+        escalation = "⚠️ Neglected Lead"
     elif "FEES_REQUESTED" in events_set and days_inactive >= 7:
         escalation = "💰 Fees Follow-up Needed"
     elif "DEMO_REQUESTED" in events_set and days_inactive >= 7:
@@ -614,7 +616,9 @@ def crm_leads():
             latest_msg_time.get(phone),
             latest_event_time.get(phone),
             intel,
-            phone in needs_reply_phones
+            phone in needs_reply_phones,
+            assigned_staff=state.assigned_staff,
+            is_admitted=state.is_admitted
         )
         intel["_health"] = health
         intelligence_cache[phone] = intel
@@ -713,7 +717,9 @@ def _calculate_audiences():
         health = calculate_lead_health(
             state.updated_at, state.created_at, 
             latest_msg_time.get(phone), latest_event_time.get(phone), 
-            intel, phone in needs_reply_phones
+            intel, phone in needs_reply_phones,
+            assigned_staff=state.assigned_staff,
+            is_admitted=state.is_admitted
         )
         
         audiences["All Leads"].add(phone)
@@ -969,7 +975,9 @@ def crm_lead_detail(phone):
         latest_msg_time,
         latest_event_time,
         intelligence,
-        needs_reply
+        needs_reply,
+        assigned_staff=lead.assigned_staff,
+        is_admitted=lead.is_admitted
     )
     intelligence["_health"] = health
 
@@ -3212,6 +3220,7 @@ def calculate_automation_intelligence(leads, events):
 
     # Build maps
     lead_map = {l.phone: l for l in leads}
+    phones_payment_pending = {ev.phone for ev in events if ev.event_type == 'PAYMENT_PENDING'}
     
     # 1. Lead Aging Engine
     aging = {"fresh": 0, "attention": 0, "risk": 0, "dormant": 0}
@@ -3269,13 +3278,37 @@ def calculate_automation_intelligence(leads, events):
     # 3. Follow-Up Recommendations
     recommendations = []
     
+    # Phase 10N-D: Admin Operations Signals
+    unassigned_hot = []
+    stalled_admissions = []
+    
     for lead in leads:
         if lead.is_admitted or lead.lead_status in ("Enrolled", "Dropped", "Lost"):
             continue
             
         days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
         score = lead.lead_score or 0
+        assigned_staff_norm = normalize_staff_name(lead.assigned_staff or "")
         
+        # Admin Signal 1: Unassigned Hot Leads
+        if score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"] and assigned_staff_norm == "Unassigned" and not lead.is_admitted:
+            unassigned_hot.append({
+                "phone": lead.phone,
+                "name": lead.name or "Unknown",
+                "score": score,
+                "days_silent": days
+            })
+            
+        # Admin Signal 2: Stalled Admissions (Payment Pending but not admitted)
+        if not lead.is_admitted and lead.phone in phones_payment_pending:
+            stalled_admissions.append({
+                "phone": lead.phone,
+                "name": lead.name or "Unknown",
+                "staff": assigned_staff_norm,
+                "score": score,
+                "days_silent": days
+            })
+
         if score >= INTELLIGENCE_CONSTANTS["THRESHOLD_WARM"] and days > 14:
             recovery_queue.append({
                 "phone": lead.phone,
@@ -3297,6 +3330,8 @@ def calculate_automation_intelligence(leads, events):
 
     recovery_queue.sort(key=lambda x: x["score"], reverse=True)
     recommendations.sort(key=lambda x: x["days"], reverse=True)
+    unassigned_hot.sort(key=lambda x: x["score"], reverse=True)
+    stalled_admissions.sort(key=lambda x: x["score"], reverse=True)
     
     # Compute completion rates
     for s, data in staff_productivity.items():
@@ -3306,6 +3341,8 @@ def calculate_automation_intelligence(leads, events):
         "aging": aging,
         "recovery_queue": recovery_queue[:20],
         "recommendations": recommendations[:20],
+        "unassigned_hot": unassigned_hot[:20],
+        "stalled_admissions": stalled_admissions[:20],
         "productivity": staff_productivity
     }
 

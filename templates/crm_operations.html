@@ -332,8 +332,89 @@
             {% endif %}
           </div>
         </div>
+        <!-- Phase 10N-D: Unassigned Hot Leads -->
+        <div class="crm-card border-danger" style="margin-bottom: 0;">
+          <div class="crm-card-header text-danger bg-danger bg-opacity-10 border-danger">
+            <i class="bi bi-person-x-fill"></i> Unassigned Hot Leads
+            <span class="badge bg-danger text-white ms-auto rounded-pill">{{ automation.unassigned_hot|length }}</span>
+          </div>
+          <div class="table-container">
+            {% if automation.unassigned_hot %}
+            <table class="issue-table">
+              <thead style="position: sticky; top: 0; z-index: 10;">
+                <tr>
+                  <th>Lead</th>
+                  <th class="text-center">Score</th>
+                  <th class="text-center">Days Silent</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in automation.unassigned_hot %}
+                <tr>
+                  <td>
+                    <div class="fw-medium" style="font-size: 0.9rem;">{{ item.name }}</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">{{ item.phone }}</div>
+                  </td>
+                  <td class="text-center"><span class="score-badge score-hot">{{ item.score }}</span></td>
+                  <td class="text-center text-danger fw-bold">{{ item.days_silent }}</td>
+                  <td>
+                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                      <i class="bi bi-box-arrow-up-right"></i> Open
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="p-5 text-center text-muted">No unassigned hot leads.</div>
+            {% endif %}
+          </div>
+        </div>
 
-        
+        <!-- Phase 10N-D: Stalled Admissions Queue -->
+        <div class="crm-card border-info" style="margin-bottom: 0;">
+          <div class="crm-card-header text-info bg-info bg-opacity-10 border-info">
+            <i class="bi bi-cash-stack"></i> Stalled Admissions (Payment Pending)
+            <span class="badge bg-info text-dark ms-auto rounded-pill">{{ automation.stalled_admissions|length }}</span>
+          </div>
+          <div class="table-container">
+            {% if automation.stalled_admissions %}
+            <table class="issue-table">
+              <thead style="position: sticky; top: 0; z-index: 10;">
+                <tr>
+                  <th>Lead</th>
+                  <th>Assigned Staff</th>
+                  <th class="text-center">Score</th>
+                  <th class="text-center">Days Silent</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in automation.stalled_admissions %}
+                <tr>
+                  <td>
+                    <div class="fw-medium" style="font-size: 0.9rem;">{{ item.name }}</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">{{ item.phone }}</div>
+                  </td>
+                  <td>{{ item.staff if item.staff else '—' }}</td>
+                  <td class="text-center"><span class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">{{ item.score }}</span></td>
+                  <td class="text-center text-danger fw-bold">{{ item.days_silent }}</td>
+                  <td>
+                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                      <i class="bi bi-box-arrow-up-right"></i> Open
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div class="p-5 text-center text-muted">No stalled admissions.</div>
+            {% endif %}
+          </div>
+        </div>
         <!-- Module 4: Lost Lead Recovery Queue -->
         <div class="crm-card border-warning" style="margin-bottom: 0;">
           <div class="crm-card-header text-warning bg-warning bg-opacity-10 border-warning">
