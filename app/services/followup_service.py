@@ -88,40 +88,75 @@ def _followup_worker():
                 scheduler_started = True
 
                 for job in pending:
-                    # Skip if lead was active in the last 6 hours
-                    state_row = ConversationState.query.filter_by(phone=job.phone).first()
-                    if state_row and state_row.last_msg:
-                        try:
-                            last_dt = datetime.fromisoformat(state_row.last_msg)
-                            if (now - last_dt).total_seconds() < 21_600:
-                                job.done = True
-                                db.session.commit()
-                                print(f"⏭️  Follow-up skipped — {job.name} recently active")
-                                continue
-                        except ValueError:
-                            pass  # Malformed datetime — proceed with sending
+                    try:
+                        # Skip if lead was active in the last 6 hours
+                        state_row = ConversationState.query.filter_by(phone=job.phone).first()
+                        
+                        # Phase 11-D1 Task D: Opt-Out Check
+                        if state_row and getattr(state_row, 'is_opted_out', False):
+                            job.done = True
+                            db.session.commit()
+                            print(f"🚫 Follow-up skipped — {job.name} opted out")
+                            continue
 
-                    send_text(job.phone, job.message)
-                    threading.Thread(
-                        target=update_lead_status,
-                        args=(job.phone, f"Follow-up Day {job.day} Sent"),
-                    ).start()
-                    # ── Log outbound followup message ──
-                    from app.services.log_service import log_message
-                    log_message(
-                        phone=job.phone,
-                        direction="outbound",
-                        message_type="followup",
-                        message_text=job.message,
-                        meta_json=f'{{"day": {job.day}}}',
-                    )
-                    job.done = True
-                    db.session.commit()
-                    print(f"\U0001f4e4 Follow-up Day {job.day} \u2192 {job.name}")
+                        if state_row and state_row.last_msg:
+                            try:
+                                last_dt = datetime.fromisoformat(state_row.last_msg)
+                                if (now - last_dt).total_seconds() < 21_600:
+                                    job.done = True
+                                    db.session.commit()
+                                    print(f"⏭️  Follow-up skipped — {job.name} recently active")
+                                    continue
+                            except ValueError:
+                                pass  # Malformed datetime — proceed with sending
 
+                        response = send_text(job.phone, job.message)
+                        if response.status_code != 200:
+                            raise Exception(f"API Error {response.status_code}: {response.text}")
+
+                        threading.Thread(
+                            target=update_lead_status,
+                            args=(job.phone, f"Follow-up Day {job.day} Sent"),
+                        ).start()
+                        # ── Log outbound followup message ──
+                        from app.services.log_service import log_message, save_conversation_message
+                        log_message(
+                            phone=job.phone,
+                            direction="outbound",
+                            message_type="followup",
+                            message_text=job.message,
+                            meta_json=f'{{"day": {job.day}}}',
+                        )
+                        # Phase 10N-G Fix 2: Persist follow-up into CRM conversation timeline.
+                        # App context is active (worker runs inside with _app.app_context()).
+                        # Canonical direction value for conversation_message outbound = "outgoing".
+                        save_conversation_message(
+                            phone=job.phone,
+                            direction="outgoing",
+                            message=job.message,
+                            message_type="text",
+                            source="followup",
+                        )
+                        job.done = True
+                        db.session.commit()
+                        print(f"\U0001f4e4 Follow-up Day {job.day} \u2192 {job.name}")
+                    
+                    except Exception as e:
+                        # Phase 11-D1 Task E: Followup Failure Protection
+                        print(f"⚠️  Follow-up failed for {job.name} ({job.phone}): {e}")
+                        job.done = True # Prevent infinite retry
+                        db.session.commit()
+                        from app.services.log_service import log_message
+                        log_message(
+                            phone=job.phone,
+                            direction="outbound",
+                            message_type="system",
+                            message_text=f"Follow-up Day {job.day} failed: {e}",
+                            meta_json=f'{{"day": {job.day}, "error": "api_failure"}}',
+                        )
 
         except Exception as e:
-            print(f"⚠️  Follow-up worker error: {e}")
+            print(f"⚠️  Follow-up worker outer error: {e}")
 
         time.sleep(300)
 

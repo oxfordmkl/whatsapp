@@ -46,6 +46,9 @@ class ConversationState(db.Model):
     is_admitted    = db.Column(db.Boolean,     nullable=True, default=False)
     notes          = db.Column(db.Text,        nullable=True)
 
+    # ── Phase 11-D1: Opt-Out Safety ──
+    is_opted_out   = db.Column(db.Boolean,     nullable=True, default=False)
+
     def to_dict(self) -> dict:
         return {
             "name":         self.name,

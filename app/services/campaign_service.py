@@ -1,8 +1,9 @@
 import threading
 import time
 from flask import current_app
-from app.services.whatsapp_service import send_whatsapp_message
+from app.services.whatsapp_service import send_text
 from app.services.log_service import save_conversation_message
+from app.models import ConversationState
 
 def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
     """
@@ -16,8 +17,15 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
         # 2. Iterate through phones
         for phone in audience_phones:
             try:
+                # Phase 11-D1 Task D: Opt-Out Check
+                state = ConversationState.query.filter_by(phone=phone).first()
+                if state and getattr(state, 'is_opted_out', False):
+                    print(f"🚫 Campaign skipped — {phone} opted out")
+                    continue
+
                 # Execute send
-                success = send_whatsapp_message(phone, full_message)
+                response = send_text(phone, full_message)
+                success = response.status_code == 200
                 
                 # Log to CRM if successful
                 if success:
@@ -30,6 +38,7 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
                     )
             except Exception as e:
                 # Fail gracefully for individual leads without breaking the campaign
+                print(f"⚠️ Campaign worker error for {phone}: {e}")
                 pass
                 
             # 3. Mandatory 1.5s rate limit

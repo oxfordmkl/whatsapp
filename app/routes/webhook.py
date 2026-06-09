@@ -7,6 +7,8 @@ from app.services.whatsapp_service import send_reply
 from app.services.crm_service import save_lead_to_sheets
 from app.services.followup_service import schedule_followups
 from app.services.log_service import log_message_in_thread, save_conversation_message_in_thread, log_lead_event_in_thread
+from app.models import ConversationMessage, ConversationState
+from app.extensions import db
 
 webhook_bp = Blueprint("webhook", __name__)
 
@@ -41,7 +43,15 @@ def receive_message():
         message      = messages[0]
         from_number  = message.get("from", "")
         msg_type     = message.get("type", "")
+        wamid        = message.get("id", "")
         contact_name = contacts[0].get("profile", {}).get("name", "Student") if contacts else "Student"
+
+        # Phase 11-D1 Task C: Deduplication Protection
+        if wamid:
+            existing = ConversationMessage.query.filter_by(wa_message_id=wamid).first()
+            if existing:
+                print(f"♻️ Webhook deduplicated: {wamid}")
+                return jsonify({"status": "ok", "reason": "duplicate"}), 200
 
         # Parse message text based on type
         if msg_type == "text":
@@ -61,6 +71,17 @@ def receive_message():
             return jsonify({"status": "ok"}), 200
 
         print(f"📱 {contact_name} ({from_number}): {msg_text}")
+
+        # Phase 11-D1 Task D: Opt-Out Infrastructure
+        low_text = msg_text.lower()
+        if low_text in {"stop", "unsubscribe", "cancel"}:
+            state = ConversationState.query.filter_by(phone=from_number).first()
+            if state:
+                state.is_opted_out = True
+                db.session.commit()
+                print(f"🚫 Opt-out triggered for {from_number}")
+                # We can optionally send an opt-out confirmation here, but we just halt workflows
+                return jsonify({"status": "ok"}), 200
 
         is_new_lead = not phone_exists(from_number)
 
@@ -102,6 +123,7 @@ def receive_message():
                 message=msg_text,
                 message_type=msg_type,
                 source="user",
+                wa_message_id=wamid,
             ),
             daemon=True,
         ).start()
