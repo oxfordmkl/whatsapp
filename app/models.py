@@ -82,6 +82,25 @@ class FollowUpJob(db.Model):
     day        = db.Column(db.Integer,     nullable=False)
     done       = db.Column(db.Boolean,     default=False, index=True)
     created_at = db.Column(db.DateTime,    default=datetime.utcnow)
+    
+    # Phase 11-D2C: Retry Metadata
+    retry_count     = db.Column(db.Integer,  default=0)
+    last_attempt_at = db.Column(db.DateTime, nullable=True)
+    failure_reason  = db.Column(db.Text,     nullable=True)
+
+
+class PendingMessage(db.Model):
+    """
+    Phase 11-D3B2: Automation Interceptor Fallback Queue
+    Stores outbound automated messages (Campaigns/Followups) that were intercepted
+    because the 24-hour Meta window closed. Delivered instantly when the user replies.
+    """
+    __tablename__ = "pending_messages"
+
+    id         = db.Column(db.Integer,    primary_key=True)
+    phone      = db.Column(db.String(20), nullable=False, index=True)
+    text       = db.Column(db.Text,       nullable=False)
+    created_at = db.Column(db.DateTime,   default=datetime.utcnow)
 
 
 class MessageLog(db.Model):

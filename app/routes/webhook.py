@@ -141,6 +141,22 @@ def receive_message():
             args=(from_number, contact_name, msg_text, is_new_lead),
         ).start()
 
+        # Phase 11-D3B2: Deliver Pending Messages (Interceptor Fallback)
+        from app.models import PendingMessage
+        from app.services.whatsapp_service import send_text
+        pending_msgs = PendingMessage.query.filter_by(phone=from_number).order_by(PendingMessage.created_at.asc()).all()
+        if pending_msgs:
+            print(f"📦 Delivering {len(pending_msgs)} pending messages to {from_number}")
+            for pm in pending_msgs:
+                send_text(from_number, pm.text)
+                db.session.delete(pm)
+            db.session.commit()
+            
+            # If the user just replied "Yes" to our re-engagement template, 
+            # suppress the AI to avoid confusing double-replies
+            if msg_text.lower().strip() in {"yes", "y", "ok", "okay"}:
+                return jsonify({"status": "ok"}), 200
+
         # ── Generate reply ──
         reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead)
         send_reply(from_number, reply_text, preset)

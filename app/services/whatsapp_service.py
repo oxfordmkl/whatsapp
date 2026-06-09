@@ -74,3 +74,49 @@ def send_template(to: str, template: str, lang: str = "en", components: list | N
     if components:
         payload["template"]["components"] = components
     return requests.post(WHATSAPP_API_URL, headers=_wa_headers(), json=payload)
+
+def send_automation(to: str, text: str, name: str = "Student") -> requests.Response:
+    """
+    Phase 11-D3B2: Automation-only Interceptor
+    Checks the 24-hour window. If closed, queues the text and sends a template fallback.
+    """
+    from app.models import ConversationState, PendingMessage
+    from app.extensions import db
+    from datetime import datetime
+
+    state = ConversationState.query.filter_by(phone=to).first()
+    
+    # Check 24-hour window
+    window_open = False
+    if state and state.last_msg:
+        try:
+            last_dt = datetime.fromisoformat(state.last_msg)
+            if (datetime.utcnow() - last_dt).total_seconds() < 86400:
+                window_open = True
+        except ValueError:
+            pass
+
+    if window_open:
+        return send_text(to, text)
+    else:
+        # Window closed: Queue the original message and send the template
+        pending = PendingMessage(phone=to, text=text)
+        db.session.add(pending)
+        db.session.commit()
+        
+        components = [{
+            "type": "body",
+            "parameters": [{"type": "text", "text": name}]
+        }]
+        
+        response = send_template(to, "oxford_re_engagement_v1", lang="en", components=components)
+        if response.status_code != 200:
+            # If the template fails, rollback the pending message so it isn't orphaned
+            db.session.delete(pending)
+            db.session.commit()
+            print(f"⚠️  Template fallback failed for {to}: HTTP {response.status_code} - {response.text}")
+        else:
+            print(f"🛑 Interceptor active: Template fallback sent to {to}")
+            
+        return response
+

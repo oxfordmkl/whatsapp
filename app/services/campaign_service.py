@@ -1,7 +1,7 @@
 import threading
 import time
 from flask import current_app
-from app.services.whatsapp_service import send_text
+from app.services.whatsapp_service import send_text, send_automation
 from app.services.log_service import save_conversation_message
 from app.models import ConversationState
 
@@ -18,13 +18,15 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
         for phone in audience_phones:
             try:
                 # Phase 11-D1 Task D: Opt-Out Check
-                state = ConversationState.query.filter_by(phone=phone).first()
-                if state and getattr(state, 'is_opted_out', False):
+                state_row = ConversationState.query.filter_by(phone=phone).first()
+                if state_row and getattr(state_row, 'is_opted_out', False):
                     print(f"🚫 Campaign skipped — {phone} opted out")
                     continue
-
-                # Execute send
-                response = send_text(phone, full_message)
+                
+                # Pass the name to send_automation for the template variable fallback
+                name = state_row.name if state_row and state_row.name else "Student"
+                response = send_automation(phone, full_message, name=name)
+                
                 success = response.status_code == 200
                 
                 # Log to CRM if successful
