@@ -1352,28 +1352,28 @@ def crm_lead_send(phone):
                 message_text=message,
             )
             # ── Persist manual send to ConversationMessage (CRM timeline) ──
+            # Phase 10N-G Fix 1: Use authenticated actor identity, not lead owner.
+            # actor is already resolved at line 1323 — no second DB query needed.
             from app.services.log_service import save_conversation_message, log_lead_event
-            from app.models import ConversationState
             import json
-            
-            lead = ConversationState.query.filter_by(phone=phone).first()
-            current_staff = lead.assigned_staff if lead else None
-            
+
+            sender_name = actor.get("username") or "Admin"
+
             save_conversation_message(
                 phone=phone,
                 direction="outgoing",
                 message=message,
                 message_type="text",
                 source="manual",
-                staff_name=current_staff or "Admin",
+                staff_name=sender_name,
                 wa_message_id=None,
             )
-            
+
             # Phase 9.1: MESSAGE_OWNER audit using LeadEvent
             log_lead_event(
                 phone=phone,
                 event_type="MANUAL_MESSAGE",
-                event_data=json.dumps({"staff": current_staff or "Admin"})
+                event_data=json.dumps({"staff": sender_name})
             )
             return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully{qs}")
 
