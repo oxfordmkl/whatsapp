@@ -72,7 +72,7 @@ def receive_message():
 
         print(f"📱 {contact_name} ({from_number}): {msg_text}")
 
-        # Phase 11-D1 Task D: Opt-Out Infrastructure
+        # Phase 11-D1 Task D & Phase 11-D2A: Opt-Out & Opt-In Infrastructure
         low_text = msg_text.lower()
         if low_text in {"stop", "unsubscribe", "cancel"}:
             state = ConversationState.query.filter_by(phone=from_number).first()
@@ -82,6 +82,13 @@ def receive_message():
                 print(f"🚫 Opt-out triggered for {from_number}")
                 # We can optionally send an opt-out confirmation here, but we just halt workflows
                 return jsonify({"status": "ok"}), 200
+        elif low_text in {"start", "resume", "unstop"}:
+            state = ConversationState.query.filter_by(phone=from_number).first()
+            if state and getattr(state, 'is_opted_out', False):
+                state.is_opted_out = False
+                db.session.commit()
+                print(f"✅ Opt-in recovery triggered for {from_number}")
+                # Allow the message to continue processing so AI can reply or workflows can resume
 
         is_new_lead = not phone_exists(from_number)
 
