@@ -1301,7 +1301,7 @@ def campaign_send():
     from app.services.log_service import _get_default_tenant_id
     from app.services.campaign_service import start_campaign
     try:
-        start_campaign(tenant_id=_get_default_tenant_id(), phones, message, name)
+        start_campaign(phones, message, name, tenant_id=_get_default_tenant_id())
         flash(f"Campaign '{name}' started successfully. Sending to {len(phones)} leads. Check dashboard later for results.", "success")
     except Exception as e:
         flash(f"Failed to start campaign: {str(e)}", "danger")
