@@ -45,13 +45,14 @@ FOLLOWUP_TEMPLATES = [
 ]
 
 
-def schedule_followups(phone: str, name: str):
+def schedule_followups(phone: str, name: str, tenant_id: str = None):
     """Write follow-up jobs to DB instead of an in-memory list."""
     from app.models import FollowUpJob
     from app.extensions import db
-    # Phase 12-C1: Resolve tenant_id dynamically — never hardcoded
     from app.services.log_service import _get_default_tenant_id
-    tenant_id = _get_default_tenant_id()
+
+    if tenant_id is None:
+        tenant_id = _get_default_tenant_id()
 
     now = datetime.now()
     for tmpl in FOLLOWUP_TEMPLATES:
@@ -94,7 +95,7 @@ def _followup_worker():
                 for job in pending:
                     try:
                         # Skip if lead was active in the last 6 hours
-                        state_row = ConversationState.query.filter_by(phone=job.phone).first()
+                        state_row = ConversationState.query.filter_by(phone=job.phone, tenant_id=job.tenant_id).first()
                         
                         # Phase 11-D1 Task D: Opt-Out Check
                         if state_row and getattr(state_row, 'is_opted_out', False):
@@ -116,7 +117,7 @@ def _followup_worker():
 
                         # Phase 11-D3B2: Automation Interceptor
                         name_to_use = job.name if job.name else "Student"
-                        response = send_automation(job.phone, job.message, name=name_to_use)
+                        response = send_automation(job.phone, job.message, name=name_to_use, tenant_id=job.tenant_id)
                         if response.status_code != 200:
                             raise Exception(f"API Error {response.status_code}: {response.text}")
 
@@ -132,6 +133,7 @@ def _followup_worker():
                             message_type="followup",
                             message_text=job.message,
                             meta_json=f'{{"day": {job.day}}}',
+                            tenant_id=job.tenant_id,
                         )
                         # Phase 10N-G Fix 2: Persist follow-up into CRM conversation timeline.
                         # App context is active (worker runs inside with _app.app_context()).
@@ -142,6 +144,7 @@ def _followup_worker():
                             message=job.message,
                             message_type="text",
                             source="followup",
+                            tenant_id=job.tenant_id,
                         )
                         job.done = True
                         db.session.commit()
@@ -171,6 +174,7 @@ def _followup_worker():
                             message_type="system",
                             message_text=f"Follow-up Day {job.day} failed: {e}",
                             meta_json=f'{{"day": {job.day}, "error": "api_failure", "retry_count": {job.retry_count}}}',
+                            tenant_id=job.tenant_id,
                         )
 
         except Exception as e:

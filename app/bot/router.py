@@ -20,9 +20,9 @@ GREETING_WORDS = {"hi", "hello", "hai", "hii", "hey", "namaskaram",
                   "നമസ്കാരം", "hy", "helo", "helloo"}
 
 
-def _state(phone: str, name: str):
+def _state(phone: str, name: str, tenant_id: str = None):
     """Load or create DB-backed state. Returns a StateProxy that auto-saves."""
-    return get_or_create_state(phone, name)
+    return get_or_create_state(phone, name, tenant_id=tenant_id)
 
 
 def msg_welcome(name: str) -> tuple[str, str]:
@@ -200,11 +200,15 @@ def msg_exit(name: str) -> tuple[str, str]:
     return text, None
 
 
-def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tuple[str, str | None]:
+def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_id: str = None) -> tuple[str, str | None]:
     raw = msg_text.strip()
     low = raw.lower()
 
-    st = _state(phone, name)
+    if tenant_id is None:
+        from app.services.log_service import _get_default_tenant_id
+        tenant_id = _get_default_tenant_id()
+
+    st = _state(phone, name, tenant_id=tenant_id)
     st["last_msg"]  = datetime.now().isoformat()
     st["last_text"] = raw
     stage   = st["stage"]
@@ -237,7 +241,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
         _app = current_app._get_current_object()
         threading.Thread(
             target=log_lead_event_in_thread,
-            kwargs=dict(app=_app, phone=phone, event_type="DEMO_REQUESTED"),
+            kwargs=dict(app=_app, phone=phone, event_type="DEMO_REQUESTED", tenant_id=tenant_id),
             daemon=True,
         ).start()
         return msg_demo_time_ask()
@@ -282,7 +286,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
         threading.Thread(
             target=log_lead_event_in_thread,
             kwargs=dict(app=_app, phone=phone, event_type="FEES_REQUESTED",
-                        event_data=course or None),
+                        event_data=course or None, tenant_id=tenant_id),
             daemon=True,
         ).start()
         if course and course in COURSE_FEES:
@@ -341,7 +345,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
         _app = current_app._get_current_object()
         threading.Thread(
             target=log_lead_event_in_thread,
-            kwargs=dict(app=_app, phone=phone, event_type="PLACEMENT_ASKED"),
+            kwargs=dict(app=_app, phone=phone, event_type="PLACEMENT_ASKED", tenant_id=tenant_id),
             daemon=True,
         ).start()
         return text, "COURSE"
@@ -397,7 +401,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
                 threading.Thread(
                     target=log_lead_event_in_thread,
                     kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
-                                event_data=c_name),
+                                event_data=c_name, tenant_id=tenant_id),
                     daemon=True,
                 ).start()
                 return msg_course_detail(c_idx)
@@ -443,7 +447,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
             threading.Thread(
                 target=log_lead_event_in_thread,
                 kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
-                            event_data=c_name),
+                            event_data=c_name, tenant_id=tenant_id),
                 daemon=True,
             ).start()
             return msg_course_detail(idx)
@@ -458,7 +462,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool) -> tupl
         threading.Thread(
             target=log_lead_event_in_thread,
             kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
-                        event_data=c_name),
+                        event_data=c_name, tenant_id=tenant_id),
             daemon=True,
         ).start()
         return msg_course_detail(low)

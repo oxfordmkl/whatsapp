@@ -46,6 +46,10 @@ def receive_message():
         wamid        = message.get("id", "")
         contact_name = contacts[0].get("profile", {}).get("name", "Student") if contacts else "Student"
 
+        # Phase 12-D2B: Extract tenant context early
+        from app.services.log_service import _get_default_tenant_id
+        tenant_id = _get_default_tenant_id()
+
         # Phase 11-D1 Task C: Deduplication Protection
         if wamid:
             existing = ConversationMessage.query.filter_by(wa_message_id=wamid).first()
@@ -75,7 +79,7 @@ def receive_message():
         # Phase 11-D1 Task D & Phase 11-D2A: Opt-Out & Opt-In Infrastructure
         low_text = msg_text.lower()
         if low_text in {"stop", "unsubscribe", "cancel"}:
-            state = ConversationState.query.filter_by(phone=from_number).first()
+            state = ConversationState.query.filter_by(phone=from_number, tenant_id=tenant_id).first()
             if state:
                 state.is_opted_out = True
                 db.session.commit()
@@ -83,14 +87,14 @@ def receive_message():
                 # We can optionally send an opt-out confirmation here, but we just halt workflows
                 return jsonify({"status": "ok"}), 200
         elif low_text in {"start", "resume", "unstop"}:
-            state = ConversationState.query.filter_by(phone=from_number).first()
+            state = ConversationState.query.filter_by(phone=from_number, tenant_id=tenant_id).first()
             if state and getattr(state, 'is_opted_out', False):
                 state.is_opted_out = False
                 db.session.commit()
                 print(f"✅ Opt-in recovery triggered for {from_number}")
                 # Allow the message to continue processing so AI can reply or workflows can resume
 
-        is_new_lead = not phone_exists(from_number)
+        is_new_lead = not phone_exists(from_number, tenant_id=tenant_id)
 
         # Capture app ref once in request context — safe to pass to daemon threads
         _app = current_app._get_current_object()
@@ -98,12 +102,12 @@ def receive_message():
         if is_new_lead:
             threading.Thread(
                 target=log_lead_event_in_thread,
-                kwargs=dict(app=_app, phone=from_number, event_type="LEAD_CREATED"),
+                kwargs=dict(app=_app, phone=from_number, event_type="LEAD_CREATED", tenant_id=tenant_id),
                 daemon=True,
             ).start()
             threading.Thread(
                 target=log_lead_event_in_thread,
-                kwargs=dict(app=_app, phone=from_number, event_type="FIRST_MESSAGE_RECEIVED"),
+                kwargs=dict(app=_app, phone=from_number, event_type="FIRST_MESSAGE_RECEIVED", tenant_id=tenant_id),
                 daemon=True,
             ).start()
 
@@ -116,6 +120,7 @@ def receive_message():
                 direction="inbound",
                 message_type="user",
                 message_text=msg_text,
+                tenant_id=tenant_id,
             ),
             daemon=True,
         ).start()
@@ -131,6 +136,7 @@ def receive_message():
                 message_type=msg_type,
                 source="user",
                 wa_message_id=wamid,
+                tenant_id=tenant_id,
             ),
             daemon=True,
         ).start()
@@ -144,7 +150,7 @@ def receive_message():
         # Phase 11-D3B2: Deliver Pending Messages (Interceptor Fallback)
         from app.models import PendingMessage
         from app.services.whatsapp_service import send_text
-        pending_msgs = PendingMessage.query.filter_by(phone=from_number).order_by(PendingMessage.created_at.asc()).all()
+        pending_msgs = PendingMessage.query.filter_by(phone=from_number, tenant_id=tenant_id).order_by(PendingMessage.created_at.asc()).all()
         if pending_msgs:
             print(f"📦 Delivering {len(pending_msgs)} pending messages to {from_number}")
             for pm in pending_msgs:
@@ -158,7 +164,7 @@ def receive_message():
                 return jsonify({"status": "ok"}), 200
 
         # ── Generate reply ──
-        reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead)
+        reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id)
         send_reply(from_number, reply_text, preset)
 
         # ── Log outbound AI reply (MessageLog daemon thread) ──
@@ -170,6 +176,7 @@ def receive_message():
                 direction="outbound",
                 message_type="ai",
                 message_text=reply_text,
+                tenant_id=tenant_id,
             ),
             daemon=True,
         ).start()
@@ -184,6 +191,7 @@ def receive_message():
                 message=reply_text,
                 message_type="text",
                 source="ai",
+                tenant_id=tenant_id,
             ),
             daemon=True,
         ).start()
@@ -191,13 +199,13 @@ def receive_message():
         if is_new_lead:
             threading.Thread(
                 target=log_lead_event_in_thread,
-                kwargs=dict(app=_app, phone=from_number, event_type="AI_RESPONSE_SENT"),
+                kwargs=dict(app=_app, phone=from_number, event_type="AI_RESPONSE_SENT", tenant_id=tenant_id),
                 daemon=True,
             ).start()
 
         # ── Schedule follow-ups for new leads ──
         if is_new_lead:
-            schedule_followups(from_number, contact_name)
+            schedule_followups(from_number, contact_name, tenant_id=tenant_id)
 
     except Exception as e:
         print(f"❌ Webhook error: {e}")

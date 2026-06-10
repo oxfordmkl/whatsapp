@@ -5,7 +5,7 @@ from app.services.whatsapp_service import send_text, send_automation
 from app.services.log_service import save_conversation_message
 from app.models import ConversationState
 
-def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
+def _campaign_worker(app_ref, audience_phones, message_text, campaign_name, tenant_id=None):
     """
     Background worker to send campaigns sequentially with a 1.5s delay.
     Runs inside a dedicated app context.
@@ -18,14 +18,14 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
         for phone in audience_phones:
             try:
                 # Phase 11-D1 Task D: Opt-Out Check
-                state_row = ConversationState.query.filter_by(phone=phone).first()
+                state_row = ConversationState.query.filter_by(phone=phone, tenant_id=tenant_id).first()
                 if state_row and getattr(state_row, 'is_opted_out', False):
                     print(f"🚫 Campaign skipped — {phone} opted out")
                     continue
                 
                 # Pass the name to send_automation for the template variable fallback
                 name = state_row.name if state_row and state_row.name else "Student"
-                response = send_automation(phone, full_message, name=name)
+                response = send_automation(phone, full_message, name=name, tenant_id=tenant_id)
                 
                 success = response.status_code == 200
                 
@@ -36,7 +36,8 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
                         direction="outgoing",
                         message=full_message,
                         message_type="text",
-                        source="campaign"
+                        source="campaign",
+                        tenant_id=tenant_id
                     )
             except Exception as e:
                 # Fail gracefully for individual leads without breaking the campaign
@@ -46,7 +47,7 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name):
             # 3. Mandatory 1.5s rate limit
             time.sleep(1.5)
 
-def start_campaign(audience_phones, message_text, campaign_name):
+def start_campaign(audience_phones, message_text, campaign_name, tenant_id=None):
     """
     Validates audience size and spawns the campaign worker thread.
     """
@@ -55,9 +56,13 @@ def start_campaign(audience_phones, message_text, campaign_name):
         
     app_ref = current_app._get_current_object()
     
+    if tenant_id is None:
+        from app.services.log_service import _get_default_tenant_id
+        tenant_id = _get_default_tenant_id()
+        
     thread = threading.Thread(
         target=_campaign_worker,
-        args=(app_ref, audience_phones, message_text, campaign_name),
+        args=(app_ref, audience_phones, message_text, campaign_name, tenant_id),
         daemon=True
     )
     thread.start()

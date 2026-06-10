@@ -60,6 +60,7 @@ def log_message(
     message_type: str,
     message_text: str,
     meta_json: str = None,
+    tenant_id: str = None,
 ) -> None:
     """
     Append one message event to the message_log table (raw technical log).
@@ -70,13 +71,15 @@ def log_message(
         message_type: "user", "ai", "followup", or "manual"
         message_text: raw message body (truncated to 5000 chars)
         meta_json:    optional JSON string for extra metadata
+        tenant_id:    Tenant context (defaults to default tenant if None)
     """
     try:
         from app.models import MessageLog
         from app.extensions import db
 
-        # Phase 12-C1: Resolve tenant_id before INSERT
-        tenant_id = _get_default_tenant_id()
+        # Phase 12-D2B: Compatibility layer fallback
+        if tenant_id is None:
+            tenant_id = _get_default_tenant_id()
 
         entry = MessageLog(
             phone=phone,
@@ -113,6 +116,7 @@ def save_conversation_message(
     source: str = None,
     staff_name: str = None,
     wa_message_id: str = None,
+    tenant_id: str = None,
 ) -> None:
     """
     Append one structured entry to conversation_message (CRM timeline).
@@ -128,13 +132,15 @@ def save_conversation_message(
         source:        "user" | "ai" | "manual" | "followup" | "system"
         staff_name:    staff name for manual sends — audit trail (nullable)
         wa_message_id: WhatsApp message ID for deduplication (nullable)
+        tenant_id:     Tenant context (defaults to default tenant if None)
     """
     try:
         from app.models import ConversationMessage
         from app.extensions import db
 
-        # Phase 12-C1: Resolve tenant_id before INSERT
-        tenant_id = _get_default_tenant_id()
+        # Phase 12-D2B: Compatibility layer fallback
+        if tenant_id is None:
+            tenant_id = _get_default_tenant_id()
 
         entry = ConversationMessage(
             phone=phone,
@@ -185,6 +191,7 @@ def log_lead_event(
     phone: str,
     event_type: str,
     event_data: str = None,
+    tenant_id: str = None,
 ) -> None:
     """
     Append one named business event to the lead_event table.
@@ -197,13 +204,15 @@ def log_lead_event(
         event_type: e.g. "COURSE_VIEWED", "FEES_REQUESTED",
                     "DEMO_REQUESTED", "PLACEMENT_ASKED"
         event_data: optional context string (e.g. course name)
+        tenant_id:  Tenant context (defaults to default tenant if None)
     """
     try:
         from app.models import LeadEvent
         from app.extensions import db
 
-        # Phase 12-C1: Resolve tenant_id before INSERT
-        tenant_id = _get_default_tenant_id()
+        # Phase 12-D2B: Compatibility layer fallback
+        if tenant_id is None:
+            tenant_id = _get_default_tenant_id()
 
         entry = LeadEvent(
             phone=phone,

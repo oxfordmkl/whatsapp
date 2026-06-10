@@ -21,22 +21,27 @@ class StateProxy(dict):
     exactly like before, just durably.
     """
 
-    def __init__(self, phone: str, data: dict):
+    def __init__(self, phone: str, data: dict, tenant_id: str = None):
         super().__init__(data)
         self._phone = phone
+        self._tenant_id = tenant_id
 
     def __setitem__(self, key, value):
         super().__setitem__(key, value)
-        _db_save(self._phone, self)
+        _db_save(self._phone, self, self._tenant_id)
 
 
 # ── Internal DB persistence ────────────────────────────────────────────────
-def _db_save(phone: str, st: dict):
+def _db_save(phone: str, st: dict, tenant_id: str = None):
     """Write a state dict back to the ConversationState row."""
     from app.models import ConversationState
     from app.extensions import db
+    from app.services.log_service import _get_default_tenant_id
 
-    row = ConversationState.query.filter_by(phone=phone).first()
+    if tenant_id is None:
+        tenant_id = _get_default_tenant_id()
+
+    row = ConversationState.query.filter_by(phone=phone, tenant_id=tenant_id).first()
     if row:
         for key in ("name", "stage", "course", "goal",
                     "batch_time", "offer_course", "last_msg", "last_text"):
@@ -48,7 +53,7 @@ def _db_save(phone: str, st: dict):
 
 
 # ── Public helpers (used by router, webhook, admin, health) ────────────────
-def get_or_create_state(phone: str, name: str) -> StateProxy:
+def get_or_create_state(phone: str, name: str, tenant_id: str = None) -> StateProxy:
     """
     Load conversation state from DB.
     Creates a new row on first contact.
@@ -56,12 +61,13 @@ def get_or_create_state(phone: str, name: str) -> StateProxy:
     """
     from app.models import ConversationState
     from app.extensions import db
-    # Phase 12-C2: Resolve tenant_id dynamically before any INSERT
     from app.services.log_service import _get_default_tenant_id
-
-    row = ConversationState.query.filter_by(phone=phone).first()
-    if row is None:
+    
+    if tenant_id is None:
         tenant_id = _get_default_tenant_id()
+
+    row = ConversationState.query.filter_by(phone=phone, tenant_id=tenant_id).first()
+    if row is None:
         row = ConversationState(
             phone=phone,
             name=name,
@@ -77,13 +83,18 @@ def get_or_create_state(phone: str, name: str) -> StateProxy:
         db.session.add(row)
         db.session.commit()
 
-    return StateProxy(phone, row.to_dict())
+    return StateProxy(phone, row.to_dict(), tenant_id=tenant_id)
 
 
-def phone_exists(phone: str) -> bool:
+def phone_exists(phone: str, tenant_id: str = None) -> bool:
     """True if this phone number has any conversation state in the DB."""
     from app.models import ConversationState
-    return ConversationState.query.filter_by(phone=phone).count() > 0
+    from app.services.log_service import _get_default_tenant_id
+    
+    if tenant_id is None:
+        tenant_id = _get_default_tenant_id()
+        
+    return ConversationState.query.filter_by(phone=phone, tenant_id=tenant_id).count() > 0
 
 
 def count_states() -> int:

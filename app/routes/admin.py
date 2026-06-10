@@ -1160,12 +1160,12 @@ def crm_lead_update(phone):
 
         # ── Phase 7E & 9.1: Fire events AFTER successful commit ──────────
         import json
-        from app.services.log_service import log_lead_event
+        from app.services.log_service import log_lead_event, _get_default_tenant_id
         from app.models import LeadEvent
 
         # Phase 9.1: LEAD_REASSIGNED accountability audit
         if old_staff != new_staff:
-            log_lead_event(
+            log_lead_event(tenant_id=_get_default_tenant_id(), 
                 phone=phone,
                 event_type="LEAD_REASSIGNED",
                 event_data=json.dumps({
@@ -1186,7 +1186,7 @@ def crm_lead_update(phone):
                 if e.event_data
             }
             if new_course.lower() not in already_logged:
-                log_lead_event(
+                log_lead_event(tenant_id=_get_default_tenant_id(), 
                     phone=phone,
                     event_type="COURSE_ENQUIRY",
                     event_data=json.dumps({"course": new_course}),
@@ -1203,7 +1203,7 @@ def crm_lead_update(phone):
                 if e.event_data
             }
             if new_course.lower() not in already_admitted:
-                log_lead_event(
+                log_lead_event(tenant_id=_get_default_tenant_id(), 
                     phone=phone,
                     event_type="COURSE_ADMISSION",
                     event_data=json.dumps({
@@ -1298,9 +1298,10 @@ def campaign_send():
         flash("Campaigns are limited to 100 recipients max. Please split large batches.", "danger")
         return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
         
+    from app.services.log_service import _get_default_tenant_id
     from app.services.campaign_service import start_campaign
     try:
-        start_campaign(phones, message, name)
+        start_campaign(tenant_id=_get_default_tenant_id(), phones, message, name)
         flash(f"Campaign '{name}' started successfully. Sending to {len(phones)} leads. Check dashboard later for results.", "success")
     except Exception as e:
         flash(f"Failed to start campaign: {str(e)}", "danger")
@@ -1344,8 +1345,8 @@ def crm_lead_send(phone):
         r = send_text(phone, message)
         if r.status_code == 200:
             # ── Log manual outbound message (MessageLog — raw technical log) ──
-            from app.services.log_service import log_message
-            log_message(
+            from app.services.log_service import log_message, _get_default_tenant_id
+            log_message(tenant_id=_get_default_tenant_id(), 
                 phone=phone,
                 direction="outbound",
                 message_type="manual",
@@ -1354,12 +1355,12 @@ def crm_lead_send(phone):
             # ── Persist manual send to ConversationMessage (CRM timeline) ──
             # Phase 10N-G Fix 1: Use authenticated actor identity, not lead owner.
             # actor is already resolved at line 1323 — no second DB query needed.
-            from app.services.log_service import save_conversation_message, log_lead_event
+            from app.services.log_service import save_conversation_message, _get_default_tenant_id, log_lead_event
             import json
 
             sender_name = actor.get("username") or "Admin"
 
-            save_conversation_message(
+            save_conversation_message(tenant_id=_get_default_tenant_id(), 
                 phone=phone,
                 direction="outgoing",
                 message=message,
@@ -1370,7 +1371,7 @@ def crm_lead_send(phone):
             )
 
             # Phase 9.1: MESSAGE_OWNER audit using LeadEvent
-            log_lead_event(
+            log_lead_event(tenant_id=_get_default_tenant_id(), 
                 phone=phone,
                 event_type="MANUAL_MESSAGE",
                 event_data=json.dumps({"staff": sender_name})
@@ -2265,7 +2266,7 @@ def crm_course_admissions(phone):
       2. Read existing course enquiries via get_course_enquiries(). (1 query)
       3. For each submitted course:
            - Validate it exists in the enquiry list (prevents injection)
-           - If NOT already in admitted-event history → fire log_lead_event()
+           - If NOT already in admitted-event history → fire log_lead_event(tenant_id=_get_default_tenant_id(), )
            - If ALREADY in admitted-event history → skip silently
       4. NEVER delete or modify existing COURSE_ADMISSION events.
       5. Redirect back to lead detail with msg= on success or err= on failure.
@@ -2279,7 +2280,7 @@ def crm_course_admissions(phone):
     import json
     from app.models import LeadEvent
     from app.extensions import db
-    from app.services.log_service import log_lead_event
+    from app.services.log_service import log_lead_event, _get_default_tenant_id
 
     try:
         from app.models import ConversationState
@@ -2331,7 +2332,7 @@ def crm_course_admissions(phone):
             if course.lower() in already_admitted_lower:
                 continue
             # Append-only: fire one new COURSE_ADMISSION event
-            log_lead_event(
+            log_lead_event(tenant_id=_get_default_tenant_id(), 
                 phone=phone,
                 event_type="COURSE_ADMISSION",
                 event_data=json.dumps({
@@ -3508,7 +3509,7 @@ def crm_unassigned_assign():
         
     from app.models import ConversationState
     from app.extensions import db
-    from app.services.log_service import log_lead_event
+    from app.services.log_service import log_lead_event, _get_default_tenant_id
     import json
     
     lead = ConversationState.query.filter_by(phone=phone).first()
@@ -3516,7 +3517,7 @@ def crm_unassigned_assign():
         old_staff = lead.assigned_staff
         lead.assigned_staff = target_staff
         
-        log_lead_event(
+        log_lead_event(tenant_id=_get_default_tenant_id(), 
             phone=lead.phone,
             event_type="LEAD_REASSIGNED",
             event_data=json.dumps({
@@ -3581,7 +3582,7 @@ def crm_auto_assign_confirm():
         
     from app.models import ConversationState
     from app.extensions import db
-    from app.services.log_service import log_lead_event
+    from app.services.log_service import log_lead_event, _get_default_tenant_id
     import json
     
     updated_count = 0
@@ -3595,7 +3596,7 @@ def crm_auto_assign_confirm():
                 old_staff = lead.assigned_staff
                 lead.assigned_staff = target_staff
                 
-                log_lead_event(
+                log_lead_event(tenant_id=_get_default_tenant_id(), 
                     phone=lead.phone,
                     event_type="LEAD_REASSIGNED",
                     event_data=json.dumps({
@@ -3672,7 +3673,7 @@ def crm_reassignment_confirm():
         
     from app.models import ConversationState
     from app.extensions import db
-    from app.services.log_service import log_lead_event
+    from app.services.log_service import log_lead_event, _get_default_tenant_id
     import json
     
     leads = ConversationState.query.filter(ConversationState.phone.in_(phones)).all()
@@ -3684,7 +3685,7 @@ def crm_reassignment_confirm():
             lead.assigned_staff = target_staff
             updated_count += 1
             # Add LEAD_REASSIGNED event
-            log_lead_event(
+            log_lead_event(tenant_id=_get_default_tenant_id(), 
                 phone=lead.phone,
                 event_type="LEAD_REASSIGNED",
                 event_data=json.dumps({
@@ -3822,7 +3823,7 @@ def crm_tasks_create():
     if not phone or not task_title or not due_date:
         return redirect(url_for("admin.crm_lead_detail", phone=phone, key=key))
         
-    from app.services.log_service import log_lead_event
+    from app.services.log_service import log_lead_event, _get_default_tenant_id
     import uuid
     import json
     
@@ -3839,7 +3840,7 @@ def crm_tasks_create():
     if notes:
         payload["notes"] = notes
         
-    log_lead_event(
+    log_lead_event(tenant_id=_get_default_tenant_id(), 
         phone=phone,
         event_type="FOLLOW_UP_TASK",
         event_data=json.dumps(payload)
@@ -3872,7 +3873,7 @@ def crm_tasks_complete():
             return redirect(url_for("admin.crm_lead_detail", phone=phone, key=request.args.get("key", "")))
             
     from app.models import LeadEvent
-    from app.services.log_service import log_lead_event
+    from app.services.log_service import log_lead_event, _get_default_tenant_id
     import json
     
     # Duplicate completion protection
@@ -3888,7 +3889,7 @@ def crm_tasks_complete():
             pass
             
     if not already_completed:
-        log_lead_event(
+        log_lead_event(tenant_id=_get_default_tenant_id(), 
             phone=phone,
             event_type="FOLLOW_UP_COMPLETED",
             event_data=json.dumps({

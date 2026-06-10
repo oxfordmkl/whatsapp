@@ -75,7 +75,7 @@ def send_template(to: str, template: str, lang: str = "en", components: list | N
         payload["template"]["components"] = components
     return requests.post(WHATSAPP_API_URL, headers=_wa_headers(), json=payload)
 
-def send_automation(to: str, text: str, name: str = "Student") -> requests.Response:
+def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = None) -> requests.Response:
     """
     Phase 11-D3B2: Automation-only Interceptor
     Checks the 24-hour window. If closed, queues the text and sends a template fallback.
@@ -87,7 +87,10 @@ def send_automation(to: str, text: str, name: str = "Student") -> requests.Respo
     # Phase 12-C2: Resolve tenant_id before any INSERT
     from app.services.log_service import _get_default_tenant_id
 
-    state = ConversationState.query.filter_by(phone=to).first()
+    if tenant_id is None:
+        tenant_id = _get_default_tenant_id()
+
+    state = ConversationState.query.filter_by(phone=to, tenant_id=tenant_id).first()
     
     # Check 24-hour window
     window_open = False
@@ -103,7 +106,6 @@ def send_automation(to: str, text: str, name: str = "Student") -> requests.Respo
         return send_text(to, text)
     else:
         # Window closed: Queue the original message and send the template
-        tenant_id = _get_default_tenant_id()  # Phase 12-C2: Required after Phase 12-B
         pending = PendingMessage(phone=to, text=text, tenant_id=tenant_id)
         db.session.add(pending)
         db.session.commit()
