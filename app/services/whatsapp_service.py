@@ -79,10 +79,13 @@ def send_automation(to: str, text: str, name: str = "Student") -> requests.Respo
     """
     Phase 11-D3B2: Automation-only Interceptor
     Checks the 24-hour window. If closed, queues the text and sends a template fallback.
+    Phase 12-C2: Now resolves tenant_id dynamically before PendingMessage INSERT.
     """
     from app.models import ConversationState, PendingMessage
     from app.extensions import db
     from datetime import datetime
+    # Phase 12-C2: Resolve tenant_id before any INSERT
+    from app.services.log_service import _get_default_tenant_id
 
     state = ConversationState.query.filter_by(phone=to).first()
     
@@ -100,7 +103,8 @@ def send_automation(to: str, text: str, name: str = "Student") -> requests.Respo
         return send_text(to, text)
     else:
         # Window closed: Queue the original message and send the template
-        pending = PendingMessage(phone=to, text=text)
+        tenant_id = _get_default_tenant_id()  # Phase 12-C2: Required after Phase 12-B
+        pending = PendingMessage(phone=to, text=text, tenant_id=tenant_id)
         db.session.add(pending)
         db.session.commit()
         

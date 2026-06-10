@@ -56,9 +56,12 @@ def get_or_create_state(phone: str, name: str) -> StateProxy:
     """
     from app.models import ConversationState
     from app.extensions import db
+    # Phase 12-C2: Resolve tenant_id dynamically before any INSERT
+    from app.services.log_service import _get_default_tenant_id
 
     row = ConversationState.query.filter_by(phone=phone).first()
     if row is None:
+        tenant_id = _get_default_tenant_id()
         row = ConversationState(
             phone=phone,
             name=name,
@@ -69,6 +72,7 @@ def get_or_create_state(phone: str, name: str) -> StateProxy:
             offer_course="",
             last_msg=datetime.now().isoformat(),
             last_text="",
+            tenant_id=tenant_id,  # Phase 12-C2: Required after Phase 12-B migration
         )
         db.session.add(row)
         db.session.commit()
