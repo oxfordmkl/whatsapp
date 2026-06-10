@@ -1,6 +1,16 @@
 from datetime import datetime
 from app.extensions import db
 from flask_login import UserMixin
+import uuid
+
+class Tenant(db.Model):
+    """
+    Phase 12: Multi-Tenant Root Architecture
+    """
+    __tablename__ = 'tenants'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: uuid.uuid4().hex)
+    name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class User(UserMixin, db.Model):
@@ -14,7 +24,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), nullable=False, default='STAFF')
     is_active = db.Column(db.Boolean, default=True)
     require_password_change = db.Column(db.Boolean, default=False)
-    tenant_id = db.Column(db.String(36), nullable=True, index=True)
+    tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
 
@@ -26,7 +36,7 @@ class ConversationState(db.Model):
     __tablename__ = "conversation_state"
 
     id           = db.Column(db.Integer, primary_key=True)
-    phone        = db.Column(db.String(20),  unique=True, nullable=False, index=True)
+    phone        = db.Column(db.String(20),  nullable=False, index=True)
     name         = db.Column(db.String(200), default="")
     stage        = db.Column(db.String(50),  default="new")
     course       = db.Column(db.String(200), default="")
@@ -48,6 +58,13 @@ class ConversationState(db.Model):
 
     # ── Phase 11-D1: Opt-Out Safety ──
     is_opted_out   = db.Column(db.Boolean,     nullable=True, default=False)
+
+    # ── Phase 12-B: SaaS Architecture ──
+    tenant_id      = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('phone', 'tenant_id', name='uq_conversation_state_phone_tenant'),
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +100,9 @@ class FollowUpJob(db.Model):
     done       = db.Column(db.Boolean,     default=False, index=True)
     created_at = db.Column(db.DateTime,    default=datetime.utcnow)
     
+    # Phase 12-B: SaaS Architecture
+    tenant_id  = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
+    
     # Phase 11-D2C: Retry Metadata
     retry_count     = db.Column(db.Integer,  default=0)
     last_attempt_at = db.Column(db.DateTime, nullable=True)
@@ -101,6 +121,7 @@ class PendingMessage(db.Model):
     phone      = db.Column(db.String(20), nullable=False, index=True)
     text       = db.Column(db.Text,       nullable=False)
     created_at = db.Column(db.DateTime,   default=datetime.utcnow)
+    tenant_id  = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
 
 
 class MessageLog(db.Model):
@@ -118,6 +139,7 @@ class MessageLog(db.Model):
     message_text = db.Column(db.Text,       nullable=True)
     meta_json    = db.Column(db.Text,       nullable=True)    # optional JSON string
     created_at   = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
+    tenant_id    = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
 
     __table_args__ = (
         db.Index("idx_msg_phone_created", "phone", "created_at"),
@@ -154,6 +176,7 @@ class ConversationMessage(db.Model):
     # WhatsApp message ID from API — for future deduplication
 
     created_at    = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+    tenant_id     = db.Column(db.String(36),  db.ForeignKey('tenants.id'), nullable=False, index=True)
 
     __table_args__ = (
         db.Index("idx_conv_msg_phone_created", "phone", "created_at"),
@@ -175,6 +198,7 @@ class LeadEvent(db.Model):
     event_type = db.Column(db.String(50), nullable=False)
     event_data = db.Column(db.Text,       nullable=True)   # optional context (e.g. course name)
     created_at = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
+    tenant_id  = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
 
     __table_args__ = (
         db.Index("idx_lead_event_phone_created", "phone", "created_at"),
