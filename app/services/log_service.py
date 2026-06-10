@@ -12,11 +12,44 @@ Architecture:
                                           Flask app context; pass app reference
                                           captured via current_app._get_current_object()
   log_message_in_thread()               → thread-safe wrapper for log_message()
+
+Phase 12-C1 Emergency Hotfix:
+  _get_default_tenant_id()              → resolves the active tenant_id from the
+                                          Tenant table dynamically. Required after
+                                          Phase 12-B added nullable=False tenant_id
+                                          FK columns to all INSERT targets.
 """
 import logging
 from datetime import datetime
 
 _MAX_TEXT = 5000   # Prevent oversized DB rows and abuse payloads
+
+
+# ── Phase 12-C1: Tenant Resolution Helper ──────────────────────────────────
+
+def _get_default_tenant_id() -> str:
+    """
+    Resolve the active tenant_id from the Tenant table.
+
+    Strategy:
+      - Query Tenant.query.first() — safe while only one tenant exists.
+      - Returns the tenant's primary-key ID string.
+      - Returns None on failure so the caller's existing except block handles it.
+
+    This function must ONLY be called from within an active Flask app context.
+    It is intentionally not cached at module level so it remains compatible
+    with future multi-tenant routing (Phase 12-C Multi-WhatsApp).
+    """
+    try:
+        from app.models import Tenant
+        tenant = Tenant.query.first()
+        if tenant:
+            return tenant.id
+        logging.error("[log_service] _get_default_tenant_id: No Tenant rows found in DB.")
+        return None
+    except Exception:
+        logging.exception("[log_service] _get_default_tenant_id: Failed to resolve tenant_id.")
+        return None
 
 
 # ── Phase 4D: Raw technical event log ──────────────────────────────────────
@@ -42,6 +75,9 @@ def log_message(
         from app.models import MessageLog
         from app.extensions import db
 
+        # Phase 12-C1: Resolve tenant_id before INSERT
+        tenant_id = _get_default_tenant_id()
+
         entry = MessageLog(
             phone=phone,
             direction=direction,
@@ -49,6 +85,7 @@ def log_message(
             message_text=(message_text or "")[:_MAX_TEXT],
             meta_json=meta_json,
             created_at=datetime.utcnow(),
+            tenant_id=tenant_id,
         )
         db.session.add(entry)
         db.session.commit()
@@ -96,6 +133,9 @@ def save_conversation_message(
         from app.models import ConversationMessage
         from app.extensions import db
 
+        # Phase 12-C1: Resolve tenant_id before INSERT
+        tenant_id = _get_default_tenant_id()
+
         entry = ConversationMessage(
             phone=phone,
             direction=direction,
@@ -105,6 +145,7 @@ def save_conversation_message(
             staff_name=staff_name,
             wa_message_id=wa_message_id,
             created_at=datetime.utcnow(),
+            tenant_id=tenant_id,
         )
         db.session.add(entry)
         db.session.commit()
@@ -161,11 +202,15 @@ def log_lead_event(
         from app.models import LeadEvent
         from app.extensions import db
 
+        # Phase 12-C1: Resolve tenant_id before INSERT
+        tenant_id = _get_default_tenant_id()
+
         entry = LeadEvent(
             phone=phone,
             event_type=event_type,
             event_data=event_data,
             created_at=datetime.utcnow(),
+            tenant_id=tenant_id,
         )
         db.session.add(entry)
         db.session.commit()

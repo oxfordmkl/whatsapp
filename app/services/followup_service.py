@@ -49,6 +49,9 @@ def schedule_followups(phone: str, name: str):
     """Write follow-up jobs to DB instead of an in-memory list."""
     from app.models import FollowUpJob
     from app.extensions import db
+    # Phase 12-C1: Resolve tenant_id dynamically — never hardcoded
+    from app.services.log_service import _get_default_tenant_id
+    tenant_id = _get_default_tenant_id()
 
     now = datetime.now()
     for tmpl in FOLLOWUP_TEMPLATES:
@@ -59,6 +62,7 @@ def schedule_followups(phone: str, name: str):
             message=tmpl["message"].format(name=name),
             day=tmpl["day"],
             done=False,
+            tenant_id=tenant_id,  # Phase 12-C1: Required after Phase 12-B migration
         )
         db.session.add(job)
     db.session.commit()
