@@ -6,20 +6,70 @@ import uuid
 class Tenant(db.Model):
     """
     Phase 12: Multi-Tenant Root Architecture
+    Phase 13-A2B: SaaS Identity Schema Expansion
     """
     __tablename__ = 'tenants'
-    id = db.Column(db.String(36), primary_key=True, default=lambda: uuid.uuid4().hex)
-    name = db.Column(db.String(100), nullable=False)
+
+    # ── Core Identity ──────────────────────────────────────────────────────
+    id         = db.Column(db.String(36), primary_key=True, default=lambda: uuid.uuid4().hex)
+    name       = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ── Phase 13-A2B: SaaS Identity Fields ────────────────────────────────
+    # URL-friendly identifier for tenant routing (/t/<slug>). Immutable after creation.
+    slug       = db.Column(db.String(30), nullable=False, unique=True)
+
+    # Lifecycle state. Controls access to WhatsApp, AI, and campaigns at middleware.
+    # Values: TRIAL | ACTIVE | PAST_DUE | SUSPENDED | CANCELLED | DELETED
+    status     = db.Column(db.String(20), nullable=False, default='ACTIVE')
+
+    # Subscription tier. Controls plan limits enforced in application config.
+    # Values: STARTER | GROWTH | PROFESSIONAL | ENTERPRISE
+    plan       = db.Column(db.String(20), nullable=False, default='ENTERPRISE')
+
+    # Trial expiration timestamp. NULL = no active trial (already paid or grandfathered).
+    trial_ends_at = db.Column(db.DateTime, nullable=True)
+
+    # Billing contact email for invoices and plan-change notifications.
+    billing_email = db.Column(db.String(100), nullable=True)
+
+    # Industry vertical — used for default AI prompts and pipeline templates.
+    # Values: Education | Healthcare | Real Estate | Insurance | Retail | Custom
+    industry   = db.Column(db.String(50), nullable=False, default='Education')
+
+    # ── Phase 13-A2B: Per-Tenant WhatsApp WABA Credentials ────────────────
+    # Meta Phone Number ID for inbound webhook routing and outbound API calls.
+    # NULL until the Tenant Admin completes WABA onboarding (Phase 13-B).
+    waba_phone_number_id       = db.Column(db.String(50), nullable=True)
+
+    # Meta Access Token stored encrypted at rest (Fernet encryption, Phase 13-B).
+    # NULL until WABA onboarding completes.
+    waba_access_token_encrypted = db.Column(db.Text, nullable=True)
+
+    # ── Phase 13-A2B: Per-Tenant AI Persona Fields ────────────────────────
+    # Bot display name shown to leads (e.g., "Aaliza", "Priya", "Rahul").
+    # NULL = system default persona.
+    ai_persona_name    = db.Column(db.String(50), nullable=True)
+
+    # Full custom system prompt override for this tenant's AI bot.
+    # NULL = system default AALIZA_PROMPT from app/bot/prompts.py.
+    ai_prompt_override = db.Column(db.Text, nullable=True)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 class User(UserMixin, db.Model):
     """
     Phase 10: Authenticated CRM users (Admin/Staff).
+    Phase 13-A2B: Added email field; username uniqueness now scoped per-tenant.
     """
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(64), unique=True, index=True, nullable=False)
+    # username uniqueness is now enforced per-tenant via __table_args__ composite constraint.
+    # The unique=True / index=True on this column definition will be removed in the Alembic
+    # migration (Step 6+7). The model reflects the TARGET state post-migration.
+    username = db.Column(db.String(64), nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='STAFF')
     is_active = db.Column(db.Boolean, default=True)
@@ -27,6 +77,16 @@ class User(UserMixin, db.Model):
     tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
+
+    # ── Phase 13-A2B: Email for Tenant Admin login and password reset ──────
+    # nullable=True: Staff may not have emails. Tenant Admins must supply email at registration.
+    email = db.Column(db.String(120), nullable=True, unique=True)
+
+    __table_args__ = (
+        # Phase 13-A2B: Composite uniqueness — username is unique WITHIN a tenant,
+        # not globally. Allows multiple tenants to each have a user named "admin", "kiran", etc.
+        db.UniqueConstraint('tenant_id', 'username', name='uq_users_tenant_username'),
+    )
 
 class ConversationState(db.Model):
     """
