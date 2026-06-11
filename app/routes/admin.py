@@ -44,6 +44,94 @@ def normalize_staff_name(name):
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
 
+# ── Phase 12-D3B2: Tenant Isolation Helpers ──────────────────────────────────
+
+def tenant_query(model, tenant_id=None):
+    """
+    Phase 12-D3: Returns a safely tenant-scoped query object.
+    - If tenant_id is provided, filters by that tenant.
+    - If tenant_id is None, falls back to current_user.tenant_id.
+    - If current_user is a SUPER_ADMIN, returns unfiltered query (future use).
+    - Safe to call outside request context when tenant_id is passed explicitly.
+    """
+    try:
+        from flask_login import current_user as _cu
+        if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
+            return model.query
+        tid = tenant_id or getattr(_cu, 'tenant_id', None)
+    except Exception:
+        tid = tenant_id
+    if tid:
+        return model.query.filter_by(tenant_id=tid)
+    return model.query
+
+
+def tenant_filter(query_obj, model, tenant_id=None):
+    """
+    Phase 12-D3: Appends tenant scoping to a db.session.query(...) chain.
+    - If tenant_id is provided, filters by that tenant.
+    - If tenant_id is None, falls back to current_user.tenant_id.
+    - If current_user is a SUPER_ADMIN, returns the query unchanged (future use).
+    - Safe to call outside request context when tenant_id is passed explicitly.
+    """
+    try:
+        from flask_login import current_user as _cu
+        if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
+            return query_obj
+        tid = tenant_id or getattr(_cu, 'tenant_id', None)
+    except Exception:
+        tid = tenant_id
+    if tid:
+        return query_obj.filter(model.tenant_id == tid)
+    return query_obj
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── Phase 12-D3B2: Tenant Isolation Helpers ──────────────────────────────────
+
+def tenant_query(model, tenant_id=None):
+    """
+    Phase 12-D3: Returns a safely tenant-scoped query object.
+    - If tenant_id is provided, filters by that tenant.
+    - If tenant_id is None, falls back to current_user.tenant_id.
+    - If current_user is a SUPER_ADMIN, returns unfiltered query (future use).
+    - Safe to call outside request context when tenant_id is passed explicitly.
+    """
+    try:
+        from flask_login import current_user as _cu
+        if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
+            return model.query
+        tid = tenant_id or getattr(_cu, 'tenant_id', None)
+    except Exception:
+        tid = tenant_id
+    if tid:
+        return model.query.filter_by(tenant_id=tid)
+    return model.query
+
+
+def tenant_filter(query_obj, model, tenant_id=None):
+    """
+    Phase 12-D3: Appends tenant scoping to a db.session.query(...) chain.
+    - If tenant_id is provided, filters by that tenant.
+    - If tenant_id is None, falls back to current_user.tenant_id.
+    - If current_user is a SUPER_ADMIN, returns the query unchanged (future use).
+    - Safe to call outside request context when tenant_id is passed explicitly.
+    """
+    try:
+        from flask_login import current_user as _cu
+        if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
+            return query_obj
+        tid = tenant_id or getattr(_cu, 'tenant_id', None)
+    except Exception:
+        tid = tenant_id
+    if tid:
+        return query_obj.filter(model.tenant_id == tid)
+    return query_obj
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 EVENT_SCORE_MAP = {
     "LEAD_CREATED": 2,
     "FIRST_MESSAGE_RECEIVED": 3,
@@ -77,7 +165,7 @@ def get_aging_bucket(days_inactive, mode="health"):
 # ── Phase 7E: Course Journey helpers ───────────────────────────────────────
 from app.bot.constants import normalize_course_name
 
-def get_course_enquiries(phone: str) -> list:
+def get_course_enquiries(phone: str, tenant_id=None) -> list:
     """
     Return chronologically-ordered, case-insensitively deduplicated list of
     course names derived from any of the following events for this phone:
@@ -96,7 +184,7 @@ def get_course_enquiries(phone: str) -> list:
     try:
         from app.models import LeadEvent
         events = (
-            LeadEvent.query
+            tenant_query(LeadEvent, tenant_id)
             .filter(
                 LeadEvent.phone == phone,
                 LeadEvent.event_type.in_([
@@ -142,7 +230,7 @@ def get_course_enquiries(phone: str) -> list:
         return []
 
 
-def get_course_admissions(phone: str) -> list:
+def get_course_admissions(phone: str, tenant_id=None) -> list:
     """
     Return deduplicated list of course names for which a COURSE_ADMISSION
     event exists for this phone. Returns [] on any error or empty table.
@@ -153,7 +241,7 @@ def get_course_admissions(phone: str) -> list:
     try:
         from app.models import LeadEvent
         events = (
-            LeadEvent.query
+            tenant_query(LeadEvent, tenant_id)
             .filter_by(phone=phone, event_type="COURSE_ADMISSION")
             .order_by(LeadEvent.created_at.asc())
             .all()
@@ -391,7 +479,7 @@ def admin_panel():
 # Future Tenant Scope: tenant_id filtering will be applied here (Phase 11)
 # Future Auth Scope: role-based KPI visibility will be applied here (Phase 10)
 
-def calculate_home_kpis():
+def calculate_home_kpis(tenant_id=None):
     """
     Lightweight summary aggregation for the Home Dashboard.
     Reuses existing model queries — no new DB schema required.
@@ -405,23 +493,26 @@ def calculate_home_kpis():
     from datetime import datetime
 
     # Future Tenant Scope: total_leads = ConversationState.query.filter_by(tenant_id=tid).count()
-    total_leads = ConversationState.query.count()
-    admissions  = ConversationState.query.filter_by(is_admitted=True).count()
+    total_leads = tenant_query(ConversationState, tenant_id).count()
+    admissions  = tenant_query(ConversationState, tenant_id).filter_by(is_admitted=True).count()
 
     # HOT leads: consistent with EVENT_SCORE_MAP logic in calculate_lead_intelligence
     # Using lead_score column as lightweight proxy — full intelligence calc runs on leads page
-    # Future Tenant Scope: .filter_by(tenant_id=tid)
-    hot_leads = ConversationState.query.filter(
+    hot_leads = tenant_query(ConversationState, tenant_id).filter(
         ConversationState.lead_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"]
     ).count()
 
     # Needs reply: last message for each phone was incoming
     # Future Tenant Scope: join tenant_id filter here
-    subq = db.session.query(
+    _subq_base = db.session.query(
         ConversationMessage.phone,
         func.max(ConversationMessage.id).label('max_id')
-    ).group_by(ConversationMessage.phone).subquery()
-    needs_reply_count = db.session.query(ConversationMessage).join(
+    )
+    _subq_base = tenant_filter(_subq_base, ConversationMessage, tenant_id)
+    subq = _subq_base.group_by(ConversationMessage.phone).subquery()
+    needs_reply_count = tenant_filter(
+        db.session.query(ConversationMessage), ConversationMessage, tenant_id
+    ).join(
         subq, ConversationMessage.id == subq.c.max_id
     ).filter(ConversationMessage.direction == 'incoming').count()
 
@@ -444,13 +535,12 @@ def calculate_home_kpis():
 
     # Recent leads (last 5 by created_at)
     # Future Tenant Scope: .filter_by(tenant_id=tid)
-    recent_leads = ConversationState.query.order_by(
+    recent_leads = tenant_query(ConversationState, tenant_id).order_by(
         ConversationState.created_at.desc()
     ).limit(5).all()
 
     # Recent events (last 10 LeadEvents for activity feed)
-    # Future Tenant Scope: .filter_by(tenant_id=tid)
-    recent_events = LeadEvent.query.order_by(
+    recent_events = tenant_query(LeadEvent, tenant_id).order_by(
         LeadEvent.created_at.desc()
     ).limit(10).all()
 
@@ -532,9 +622,10 @@ def crm_leads():
     # \u2500\u2500 Build query safely \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from sqlalchemy.sql import func
     
-    q = ConversationState.query
     actor = get_current_actor()
     is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    q = tenant_query(ConversationState, _tid)
     
     if is_staff:
         actor_username_normalized = (actor.get("username") or "").strip().lower()
@@ -563,19 +654,19 @@ def crm_leads():
     from app.models import LeadEvent, ConversationMessage, FollowUpJob
     from sqlalchemy.sql import func
     
-    total_leads = ConversationState.query.count()
+    total_leads = tenant_query(ConversationState, _tid).count()
     pending_fu = count_pending_followups()
     
     # 1. Fetch all states and events for intelligence caching
-    all_states = db.session.query(
+    all_states = tenant_filter(db.session.query(
         ConversationState.phone, 
         ConversationState.lead_score,
         ConversationState.updated_at,
         ConversationState.created_at,
         ConversationState.assigned_staff,
         ConversationState.is_admitted
-    ).all()
-    all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at).all()
+    ), ConversationState, _tid).all()
+    all_events = tenant_filter(db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at), LeadEvent, _tid).all()
     
     events_by_phone = {}
     latest_event_time = {}
@@ -590,17 +681,18 @@ def crm_leads():
     intelligence_cache = {}
 
     # 2. Needs Reply logic & Latest Msg
-    subq = db.session.query(
+    _subq_base2 = tenant_filter(db.session.query(
         ConversationMessage.phone,
         func.max(ConversationMessage.id).label('max_id'),
         func.max(ConversationMessage.created_at).label('max_created')
-    ).group_by(ConversationMessage.phone).subquery()
+    ), ConversationMessage, _tid)
+    subq = _subq_base2.group_by(ConversationMessage.phone).subquery()
     
-    latest_msgs = db.session.query(
+    latest_msgs = tenant_filter(db.session.query(
         ConversationMessage.phone, 
         ConversationMessage.direction,
         subq.c.max_created
-    ).join(
+    ), ConversationMessage, _tid).join(
         subq, ConversationMessage.id == subq.c.max_id
     ).all()
     
@@ -633,7 +725,7 @@ def crm_leads():
             critical_count += 1
 
     # 3. Follow-up Due phones for badging
-    pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
+    pending_jobs = tenant_filter(db.session.query(FollowUpJob.phone), FollowUpJob, _tid).filter_by(done=False).all()
     pending_fu_phones = {j.phone for j in pending_jobs}
 
     for lead in pagination.items:
@@ -642,7 +734,7 @@ def crm_leads():
         lead.has_pending_fu = lead.phone in pending_fu_phones
 
     # ── All distinct stages for filter dropdown ──────────────────────────────────
-    stages = [r[0] for r in db.session.query(ConversationState.stage).distinct().all() if r[0]]
+    stages = [r[0] for r in tenant_filter(db.session.query(ConversationState.stage), ConversationState, _tid).distinct().all() if r[0]]
 
     return render_template(
         "crm_leads.html",
@@ -664,20 +756,20 @@ def crm_leads():
 
 
 # ── Phase 6G: Audience Calculation Helper ──
-def _calculate_audiences():
+def _calculate_audiences(tenant_id=None):
     from app.extensions import db
     from app.models import ConversationState, LeadEvent, ConversationMessage
     from sqlalchemy.sql import func
     
-    all_states = db.session.query(
+    all_states = tenant_filter(db.session.query(
         ConversationState.phone, 
         ConversationState.lead_score,
         ConversationState.updated_at,
         ConversationState.created_at,
         ConversationState.assigned_staff,
         ConversationState.is_admitted
-    ).all()
-    all_events = db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at).all()
+    ), ConversationState, tenant_id).all()
+    all_events = tenant_filter(db.session.query(LeadEvent.phone, LeadEvent.event_type, LeadEvent.created_at), LeadEvent, tenant_id).all()
     
     events_by_phone = {}
     latest_event_time = {}
@@ -686,17 +778,18 @@ def _calculate_audiences():
         if e.phone not in latest_event_time or (e.created_at and e.created_at > latest_event_time[e.phone]):
             latest_event_time[e.phone] = e.created_at
             
-    subq = db.session.query(
+    _subq_aud_base = tenant_filter(db.session.query(
         ConversationMessage.phone,
         func.max(ConversationMessage.id).label('max_id'),
         func.max(ConversationMessage.created_at).label('max_created')
-    ).group_by(ConversationMessage.phone).subquery()
+    ), ConversationMessage, tenant_id)
+    subq = _subq_aud_base.group_by(ConversationMessage.phone).subquery()
     
-    latest_msgs = db.session.query(
+    latest_msgs = tenant_filter(db.session.query(
         ConversationMessage.phone, 
         ConversationMessage.direction,
         subq.c.max_created
-    ).join(
+    ), ConversationMessage, tenant_id).join(
         subq, ConversationMessage.id == subq.c.max_id
     ).all()
     
@@ -794,7 +887,7 @@ def crm_staff_management():
                 from app.models import ConversationState
                 staff_name = registry[code].get("display_name", "")
                 norm_name = normalize_staff_name(staff_name)
-                leads_count = ConversationState.query.filter(ConversationState.assigned_staff == norm_name).count()
+                leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
                 if leads_count > 0:
                     err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                     return redirect(url_for("admin.crm_staff_management", key=key, err=err_msg))
@@ -814,7 +907,7 @@ def crm_staff_management():
                     from app.models import ConversationState
                     staff_name = registry[code].get("display_name", "")
                     norm_name = normalize_staff_name(staff_name)
-                    leads_count = ConversationState.query.filter(ConversationState.assigned_staff == norm_name).count()
+                    leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
                     if leads_count > 0:
                         err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                         return redirect(url_for("admin.crm_staff_management", key=key, err=err_msg))
@@ -888,7 +981,8 @@ def crm_lead_detail(phone):
     from app.models import ConversationState, MessageLog, ConversationMessage, LeadEvent
     from datetime import datetime, timedelta
 
-    lead = ConversationState.query.filter_by(phone=phone).first()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
 
@@ -902,7 +996,7 @@ def crm_lead_detail(phone):
 
     # ── Fetch message timeline (newest first, capped at 100) ──
     logs = (
-        MessageLog.query
+        tenant_query(MessageLog, _tid)
         .filter_by(phone=phone)
         .order_by(MessageLog.created_at.desc())
         .limit(100)
@@ -916,7 +1010,7 @@ def crm_lead_detail(phone):
 
     # Note: For future scaling on large datasets, consider PostgreSQL full-text
     # search (tsvector) or pg_trgm (trigram indexing) for ConversationMessage.message
-    query = ConversationMessage.query.filter_by(phone=phone)
+    query = tenant_query(ConversationMessage, _tid).filter_by(phone=phone)
 
     if search_q:
         query = query.filter(ConversationMessage.message.ilike(f"%{search_q}%"))
@@ -957,7 +1051,7 @@ def crm_lead_detail(phone):
     # ── Phase 6A: Lead events (guarded — safe if migration not yet applied) ──
     try:
         events = (
-            LeadEvent.query
+            tenant_query(LeadEvent, _tid)
             .filter_by(phone=phone)
             .order_by(LeadEvent.created_at.asc())
             .all()
@@ -968,7 +1062,7 @@ def crm_lead_detail(phone):
     # ── Phase 6B & 6F: Intelligence and Health ──
     intelligence = calculate_lead_intelligence(lead.lead_score, events)
     
-    latest_msg = ConversationMessage.query.filter_by(phone=phone).order_by(ConversationMessage.created_at.desc()).first()
+    latest_msg = tenant_query(ConversationMessage, _tid).filter_by(phone=phone).order_by(ConversationMessage.created_at.desc()).first()
     latest_msg_time = latest_msg.created_at if latest_msg else None
     latest_event_time = events[-1].created_at if events else None
     needs_reply = (latest_msg.direction == 'incoming') if latest_msg else False
@@ -1104,7 +1198,8 @@ def crm_lead_update(phone):
     from app.extensions import db
 
     key  = request.args.get("key", "")
-    lead = ConversationState.query.filter_by(phone=phone).first()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
 
@@ -1177,7 +1272,7 @@ def crm_lead_update(phone):
 
         # COURSE_ENQUIRY — fire once per unique course name.
         if new_course:
-            existing_enquiry = LeadEvent.query.filter_by(
+            existing_enquiry = tenant_query(LeadEvent, _tid).filter_by(
                 phone=phone, event_type="COURSE_ENQUIRY"
             ).all()
             already_logged = {
@@ -1194,7 +1289,7 @@ def crm_lead_update(phone):
 
         # COURSE_ADMISSION — fire once per unique admitted course name.
         if new_admitted and new_course:
-            existing_admission = LeadEvent.query.filter_by(
+            existing_admission = tenant_query(LeadEvent, _tid).filter_by(
                 phone=phone, event_type="COURSE_ADMISSION"
             ).all()
             already_admitted = {
@@ -1228,7 +1323,8 @@ def campaigns():
     from app.extensions import db
     
     today = date.today()
-    campaign_msgs = ConversationMessage.query.filter(
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    campaign_msgs = tenant_query(ConversationMessage, _tid).filter(
         ConversationMessage.source == 'campaign',
         db.func.date(ConversationMessage.created_at) == today
     ).all()
@@ -1317,7 +1413,8 @@ def crm_lead_send(phone):
         return _deny()
 
     from app.models import ConversationState
-    lead = ConversationState.query.filter_by(phone=phone).first()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
         
@@ -1388,13 +1485,13 @@ def crm_lead_send(phone):
 
 # ── Phase 7A: Funnel Analytics ──
 
-def calculate_funnel_metrics():
+def calculate_funnel_metrics(tenant_id=None):
     from app.models import LeadEvent, ConversationState
     from app.extensions import db
 
     # Bulk queries (Max 1 LeadEvent, 1 ConversationState)
-    events = db.session.query(LeadEvent.phone, LeadEvent.event_type).all()
-    states = db.session.query(ConversationState.phone, ConversationState.is_admitted).all()
+    events = tenant_filter(db.session.query(LeadEvent.phone, LeadEvent.event_type), LeadEvent, tenant_id).all()
+    states = tenant_filter(db.session.query(ConversationState.phone, ConversationState.is_admitted), ConversationState, tenant_id).all()
 
     stages = {
         "LEAD_CREATED": set(),
@@ -1503,7 +1600,7 @@ def crm_analytics():
 
 # ── Phase 7B: Staff Performance ──
 
-def calculate_staff_performance():
+def calculate_staff_performance(tenant_id=None):
     from app.models import ConversationState, LeadEvent, ConversationMessage
     try:
         from app.models import FollowUpJob
@@ -1512,28 +1609,28 @@ def calculate_staff_performance():
     from app.extensions import db
 
     # Bulk queries (Max 1 each)
-    states = db.session.query(
+    states = tenant_filter(db.session.query(
         ConversationState.phone,
         ConversationState.assigned_staff,
         ConversationState.is_admitted,
         ConversationState.lead_score
-    ).all()
+    ), ConversationState, tenant_id).all()
     
-    events = db.session.query(
+    events = tenant_filter(db.session.query(
         LeadEvent.phone, 
         LeadEvent.event_type
-    ).all()
+    ), LeadEvent, tenant_id).all()
     
-    msgs = db.session.query(
+    msgs = tenant_filter(db.session.query(
         ConversationMessage.phone,
         ConversationMessage.direction,
         ConversationMessage.created_at
-    ).all()
+    ), ConversationMessage, tenant_id).all()
 
     # FollowUpJob query for "Follow-up due count"
     pending_fu_phones = set()
     if FollowUpJob:
-        pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
+        pending_jobs = tenant_filter(db.session.query(FollowUpJob.phone), FollowUpJob, tenant_id).filter_by(done=False).all()
         pending_fu_phones = {j.phone for j in pending_jobs}
 
     events_by_phone = {}
@@ -1627,7 +1724,7 @@ def calculate_staff_performance():
 
     return staff_stats, total_staff, total_assigned_leads, total_admissions
 
-def calculate_staff_performance_fixed():
+def calculate_staff_performance_fixed(tenant_id=None):
     from app.models import ConversationState, LeadEvent, ConversationMessage
     try:
         from app.models import FollowUpJob
@@ -1636,24 +1733,24 @@ def calculate_staff_performance_fixed():
     from app.extensions import db
 
     # Bulk queries
-    states = db.session.query(
+    states = tenant_filter(db.session.query(
         ConversationState.phone,
         ConversationState.assigned_staff,
         ConversationState.is_admitted,
         ConversationState.lead_score
-    ).all()
+    ), ConversationState, tenant_id).all()
     
-    events = db.session.query(LeadEvent.phone, LeadEvent.event_type).all()
+    events = tenant_filter(db.session.query(LeadEvent.phone, LeadEvent.event_type), LeadEvent, tenant_id).all()
     
-    msgs = db.session.query(
+    msgs = tenant_filter(db.session.query(
         ConversationMessage.phone,
         ConversationMessage.direction,
         ConversationMessage.created_at
-    ).all()
+    ), ConversationMessage, tenant_id).all()
 
     pending_fu_phones = set()
     if FollowUpJob:
-        pending_jobs = db.session.query(FollowUpJob.phone).filter_by(done=False).all()
+        pending_jobs = tenant_filter(db.session.query(FollowUpJob.phone), FollowUpJob, tenant_id).filter_by(done=False).all()
         pending_fu_phones = {j.phone for j in pending_jobs}
 
     events_by_phone = {}
@@ -1777,7 +1874,7 @@ _WEBSITE_KEYWORDS = (
     "theoxfordedu.com",
 )
 
-def calculate_source_analytics():
+def calculate_source_analytics(tenant_id=None):
     """
     Read-only lead source attribution analytics.
 
@@ -1798,18 +1895,18 @@ def calculate_source_analytics():
     from app.extensions import db
 
     # ── Bulk Query 1: all leads ──────────────────────────────────────────
-    states = db.session.query(
+    states = tenant_filter(db.session.query(
         ConversationState.phone,
         ConversationState.is_admitted,
-    ).all()
+    ), ConversationState, tenant_id).all()
 
     # ── Bulk Query 2: all messages (phone, source, message, created_at) ──
-    messages = db.session.query(
+    messages = tenant_filter(db.session.query(
         ConversationMessage.phone,
         ConversationMessage.source,
         ConversationMessage.message,
         ConversationMessage.created_at,
-    ).all()
+    ), ConversationMessage, tenant_id).all()
 
     # ── Build earliest-message index per phone (in memory) ───────────────
     # earliest_msg[phone] = (source, message_text)
@@ -1896,7 +1993,7 @@ def crm_source_analytics():
 
 # ── Phase 7D: Admission Analytics ──────────────────────────────────────────
 
-def calculate_admission_analytics():
+def calculate_admission_analytics(tenant_id=None):
     """
     Read-only admission analytics.
 
@@ -1917,18 +2014,18 @@ def calculate_admission_analytics():
     from app.extensions import db
 
     # ── Single bulk query ────────────────────────────────────────────────
-    rows = db.session.query(
+    rows = tenant_filter(db.session.query(
         ConversationState.phone,
         ConversationState.is_admitted,
         ConversationState.assigned_staff,
         ConversationState.course,
         ConversationState.offer_course,
-    ).all()
+    ), ConversationState, tenant_id).all()
 
     # ── Bulk query 2: Fetch ADMISSION_OWNER locks (Phase 9.1) ───────────
     from app.models import LeadEvent
     import json
-    admission_events = db.session.query(LeadEvent.phone, LeadEvent.event_data).filter_by(event_type="COURSE_ADMISSION").all()
+    admission_events = tenant_filter(db.session.query(LeadEvent.phone, LeadEvent.event_data), LeadEvent, tenant_id).filter_by(event_type="COURSE_ADMISSION").all()
     admission_staff_map = {}
     for phone_num, ev_data in admission_events:
         try:
@@ -2065,7 +2162,7 @@ def crm_admission_analytics():
 # No database rollback required.
 # ────────────────────────────────────────────────────────────────────────────
 
-def calculate_revenue_analytics():
+def calculate_revenue_analytics(tenant_id=None):
     """
     Phase 8.1: Read-only revenue analytics.
 
@@ -2088,21 +2185,21 @@ def calculate_revenue_analytics():
     from app.extensions import db
 
     # ── Bulk Query 1: ConversationState ─────────────────────────────────
-    states = db.session.query(
+    states = tenant_filter(db.session.query(
         ConversationState.phone,
         ConversationState.is_admitted,
         ConversationState.assigned_staff,
         ConversationState.course,
         ConversationState.offer_course,
         ConversationState.lead_score,
-    ).all()
+    ), ConversationState, tenant_id).all()
 
     # ── Bulk Query 2: LeadEvent (admission + course events only) ─────────
-    events = db.session.query(
+    events = tenant_filter(db.session.query(
         LeadEvent.phone,
         LeadEvent.event_type,
         LeadEvent.event_data,
-    ).filter(
+    ), LeadEvent, tenant_id).filter(
         LeadEvent.event_type.in_([
             "COURSE_VIEWED",
             "COURSE_ENQUIRY",
@@ -2284,7 +2381,8 @@ def crm_course_admissions(phone):
 
     try:
         from app.models import ConversationState
-        conversation_state = ConversationState.query.filter_by(phone=phone).first()
+        _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+        conversation_state = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
         if conversation_state is None:
             return _not_found(phone)
             
@@ -2297,7 +2395,7 @@ def crm_course_admissions(phone):
 
         # ── 1. Read already-admitted course names (lowercase set for O(1) lookup) ──
         existing_admission_events = (
-            LeadEvent.query
+            tenant_query(LeadEvent, _tid)
             .filter_by(phone=phone, event_type="COURSE_ADMISSION")
             .all()
         )
@@ -2372,15 +2470,15 @@ def crm_course_admissions(phone):
 
 # ── Phase 8.5: CRM Health & Data Quality Dashboard ───────────────────────────
 
-def calculate_crm_health():
+def calculate_crm_health(tenant_id=None):
     from app.models import ConversationState, LeadEvent
     from app.bot.constants import normalize_course_name
     from datetime import datetime
     import json
 
     # 2 bulk queries max
-    leads = ConversationState.query.all()
-    events = LeadEvent.query.all()
+    leads = tenant_query(ConversationState, tenant_id).all()
+    events = tenant_query(LeadEvent, tenant_id).all()
 
     admitted_phones = set()
     enquiries_by_phone = {}
@@ -2533,7 +2631,7 @@ def crm_health():
 
 # ── Phase 8.6: CRM Action Center (Read-Only) ─────────────────────────────
 
-def calculate_action_center():
+def calculate_action_center(tenant_id=None):
     from app.models import ConversationState, LeadEvent
     from app.bot.constants import normalize_course_name
     from datetime import datetime, timedelta
@@ -2544,7 +2642,7 @@ def calculate_action_center():
     followup_threshold_date = now - timedelta(days=FOLLOWUP_DAYS)
 
     # 1. Fetch filtered events
-    events = LeadEvent.query.filter(LeadEvent.event_type.in_([
+    events = tenant_query(LeadEvent, tenant_id).filter(LeadEvent.event_type.in_([
         "COURSE_VIEWED",
         "COURSE_ENQUIRY",
         "COURSE_ADMISSION",
@@ -2553,7 +2651,7 @@ def calculate_action_center():
     ])).all()
 
     # 2. Fetch all leads
-    leads = ConversationState.query.all()
+    leads = tenant_query(ConversationState, tenant_id).all()
 
     # Process events in a single O(E) pass
     phone_data = {}
@@ -2728,7 +2826,7 @@ def crm_action_center():
 
 # ── Phase 8.8: CRM Operations Command Center ─────────────────────────────
 
-def calculate_operations():
+def calculate_operations(tenant_id=None):
     from app.models import ConversationState, LeadEvent
     from app.bot.constants import normalize_course_name
     from datetime import datetime, timedelta
@@ -2737,8 +2835,8 @@ def calculate_operations():
     now = datetime.utcnow()
     followup_threshold_date = now - timedelta(days=3)
 
-    events = LeadEvent.query.all()
-    leads = ConversationState.query.all()
+    events = tenant_query(LeadEvent, tenant_id).all()
+    leads = tenant_query(ConversationState, tenant_id).all()
 
     phone_data = {}
     for e in events:
@@ -2905,8 +3003,9 @@ def crm_operations():
     # Phase 9.6
     from app.models import ConversationState, LeadEvent
     intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
-    auto_events = LeadEvent.query.filter(LeadEvent.event_type.in_(intel_event_types)).all()
-    leads = ConversationState.query.all()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    auto_events = tenant_query(LeadEvent, _tid).filter(LeadEvent.event_type.in_(intel_event_types)).all()
+    leads = tenant_query(ConversationState, _tid).all()
     automation = calculate_automation_intelligence(leads, auto_events)
 
     return render_template(
@@ -2922,11 +3021,11 @@ def crm_operations():
 
 # ── Phase 9.5: Operations Intelligence Layer ──────────────────────────
 
-def calculate_intelligence():
+def calculate_intelligence(tenant_id=None):
     """
     Five intelligence modules. Exactly TWO bulk queries total.
     Query 1: LeadEvent filtered to intel types only.
-    Query 2: ConversationState.query.all()
+    Query 2: ConversationState scoped to tenant.
     O(L+E). No N+1. Read-only.
     """
     from app.models import ConversationState, LeadEvent
@@ -2940,11 +3039,11 @@ def calculate_intelligence():
         "FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED",
         "COURSE_ADMISSION", "LEAD_REASSIGNED", "MANUAL_MESSAGE"
     ]
-    events = LeadEvent.query.filter(
+    events = tenant_query(LeadEvent, tenant_id).filter(
         LeadEvent.event_type.in_(intel_event_types)
     ).order_by(LeadEvent.created_at.desc()).all()
 
-    leads = ConversationState.query.all()
+    leads = tenant_query(ConversationState, tenant_id).all()
     lead_map = {l.phone: l for l in leads}
 
     registry = load_staff_registry()
@@ -3355,7 +3454,7 @@ def calculate_automation_intelligence(leads, events):
 
 # ── Phase 9.2B Helpers & Routes ─────────────────────────────────────────────
 
-def calculate_workload_scoring():
+def calculate_workload_scoring(tenant_id=None):
     """
     Returns a dictionary of staff name -> Workload Score.
     Score = (Lead * 1) + (Contacted * 2) + (Interested * 3)
@@ -3368,11 +3467,11 @@ def calculate_workload_scoring():
     active_staff = {normalize_staff_name(data["display_name"]): data["display_name"] 
                     for code, data in registry.items() if data.get("active")}
     
-    workload_query = db.session.query(
+    workload_query = tenant_filter(db.session.query(
         ConversationState.assigned_staff,
         ConversationState.lead_status,
         db.func.count(ConversationState.id)
-    ).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
+    ), ConversationState, tenant_id).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
     
     scores = {norm_name: 0 for norm_name in active_staff.keys()}
     
@@ -3416,11 +3515,12 @@ def crm_staff_workload():
     from app.models import ConversationState
     from app.extensions import db
     
-    workload_query = db.session.query(
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    workload_query = tenant_filter(db.session.query(
         ConversationState.assigned_staff,
         ConversationState.lead_status,
         db.func.count(ConversationState.id)
-    ).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
+    ), ConversationState, _tid).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
     
     registry = load_staff_registry()
     staff_data = {}
@@ -3703,13 +3803,13 @@ def crm_reassignment_confirm():
 
 
 
-def get_all_tasks():
+def get_all_tasks(tenant_id=None):
     from app.models import LeadEvent, ConversationState
     from datetime import datetime
     import json
     
-    events = LeadEvent.query.filter(LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])).all()
-    leads = ConversationState.query.all()
+    events = tenant_query(LeadEvent, tenant_id).filter(LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])).all()
+    leads = tenant_query(ConversationState, tenant_id).all()
     
     lead_map = {l.phone: l for l in leads}
     
@@ -3877,7 +3977,8 @@ def crm_tasks_complete():
     import json
     
     # Duplicate completion protection
-    existing = LeadEvent.query.filter_by(phone=phone, event_type="FOLLOW_UP_COMPLETED").all()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    existing = tenant_query(LeadEvent, _tid).filter_by(phone=phone, event_type="FOLLOW_UP_COMPLETED").all()
     already_completed = False
     for ev in existing:
         try:
@@ -4021,8 +4122,9 @@ def crm_staff_dashboard():
     from app.models import ConversationState
     from sqlalchemy.sql import func
 
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
     staff_name_normalized = staff_name.strip().lower()
-    leads = ConversationState.query.filter(
+    leads = tenant_query(ConversationState, _tid).filter(
         func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
         ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
     ).all()
@@ -4030,12 +4132,12 @@ def crm_staff_dashboard():
     my_leads_count = len(leads)
     hot_leads_count = sum(1 for lead in leads if (lead.lead_score or 0) >= 80)
     
-    admissions_count = ConversationState.query.filter(
+    admissions_count = tenant_query(ConversationState, _tid).filter(
         func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
         ConversationState.is_admitted == True
     ).count()
     
-    open_tasks, _ = get_all_tasks()
+    open_tasks, _ = get_all_tasks(_tid)
     active_tasks_count = sum(1 for t in open_tasks if (t.get("staff") or "").strip().lower() == staff_name_normalized)
 
     # Phase 9.5: intelligence summary for this staff member
@@ -4059,8 +4161,8 @@ def crm_staff_dashboard():
     # Phase 9.6
     from app.models import ConversationState, LeadEvent
     intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
-    auto_events = LeadEvent.query.filter(LeadEvent.event_type.in_(intel_event_types)).all()
-    leads = ConversationState.query.all()
+    auto_events = tenant_query(LeadEvent, _tid).filter(LeadEvent.event_type.in_(intel_event_types)).all()
+    leads = tenant_query(ConversationState, _tid).all()
     automation = calculate_automation_intelligence(leads, auto_events)
     my_productivity = automation["productivity"].get(staff_name, {"created": 0, "completed": 0, "open": 0, "overdue": 0, "completion_rate": 0.0})
 
@@ -4098,7 +4200,8 @@ def crm_my_leads():
     if staff_name:
         from sqlalchemy.sql import func
         staff_name_normalized = staff_name.strip().lower()
-        leads = ConversationState.query.filter(
+        _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+        leads = tenant_query(ConversationState, _tid).filter(
             func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
             ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
         ).order_by(ConversationState.updated_at.desc()).all()
@@ -4125,7 +4228,8 @@ def crm_staff_performance_detail():
     
     from app.models import ConversationState
     
-    leads = ConversationState.query.all()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    leads = tenant_query(ConversationState, _tid).all()
     
     staff_metrics = {}
     for staff in active_staff:
@@ -4203,12 +4307,13 @@ def crm_staff_allocation():
     import json
     
     # 1. Total & HOT Leads & Admissions
-    lead_stats = db.session.query(
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    lead_stats = tenant_filter(db.session.query(
         ConversationState.assigned_staff,
         func.count(ConversationState.phone).label('total_leads'),
         func.sum(case((ConversationState.lead_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"], 1), else_=0)).label('hot_leads'),
         func.sum(case((ConversationState.is_admitted == True, 1), else_=0)).label('admissions')
-    ).group_by(ConversationState.assigned_staff).all()
+    ).group_by(ConversationState.assigned_staff), ConversationState, _tid).all()
     
     total_crm_leads = sum(row.total_leads for row in lead_stats)
     
@@ -4234,7 +4339,7 @@ def crm_staff_allocation():
         aggregated[s_name]["admissions"] += row.admissions or 0
     
     # 2. Task/Admissions mapping from Event logs
-    events = LeadEvent.query.filter(
+    events = tenant_query(LeadEvent, _tid).filter(
         LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])
     ).all()
     
@@ -4348,13 +4453,14 @@ def crm_staff_allocation_detail(staff_name):
     
     actual_name = "" if staff_name == "Unassigned" else staff_name
     
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
     if actual_name == "":
-        leads = ConversationState.query.filter(
+        leads = tenant_query(ConversationState, _tid).filter(
             (ConversationState.assigned_staff == None) | (ConversationState.assigned_staff == "")
         ).all()
     else:
         from sqlalchemy import func
-        leads = ConversationState.query.filter(
+        leads = tenant_query(ConversationState, _tid).filter(
             func.lower(func.trim(ConversationState.assigned_staff)) == actual_name.lower()
         ).all()
         
@@ -4385,11 +4491,12 @@ def crm_staff_allocation_check(staff_name):
         
     # 1. Check Leads
     from sqlalchemy import func
-    lead_count = ConversationState.query.filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower()).count()
-    admission_count = ConversationState.query.filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower(), ConversationState.is_admitted == True).count()
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    lead_count = tenant_query(ConversationState, _tid).filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower()).count()
+    admission_count = tenant_query(ConversationState, _tid).filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower(), ConversationState.is_admitted == True).count()
     
     # 2. Check Open Tasks
-    events = LeadEvent.query.filter(
+    events = tenant_query(LeadEvent, _tid).filter(
         LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])
     ).all()
     
@@ -4522,7 +4629,7 @@ def crm_login():
         
         from app.models import User
         from app.extensions import db
-        user = User.query.filter_by(username=username).first()
+        user = User.query.filter_by(username=username).first()  # User login: no tenant filter needed (cross-tenant auth)  # User login: no tenant filter needed (cross-tenant auth)
         if user and user.is_active and check_password_hash(user.password_hash, password):
             user.last_login = datetime.utcnow()
             db.session.commit()
