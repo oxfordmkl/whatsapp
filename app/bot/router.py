@@ -314,11 +314,11 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return msg_welcome(name)
 
     if any(w in low for w in VISIT_WORDS):
-        threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested")).start()
+        threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested", "", tenant_id)).start()
         return msg_visit()
 
     if any(w in low for w in CALL_WORDS):
-        threading.Thread(target=update_lead_status, args=(phone, "Call Requested")).start()
+        threading.Thread(target=update_lead_status, args=(phone, "Call Requested", "", tenant_id)).start()
         return msg_call_us(name)
 
     if "certificate" in low or "certific" in low:
@@ -395,7 +395,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                 c_name = ALL_COURSES[c_idx][0]
                 st["course"] = c_name
                 st["stage"]  = "course_viewed"
-                threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}")).start()
+                threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}", "", tenant_id)).start()
                 # ── Phase 6A: COURSE_VIEWED event (goal menu path) ──
                 _app = current_app._get_current_object()
                 threading.Thread(
@@ -418,7 +418,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         st["stage"] = "demo_booked"
         bt = st.get("batch_time", "")
         status = f"Demo Booked: {course} | {bt} | {date_text}"
-        threading.Thread(target=update_lead_status, args=(phone, status)).start()
+        threading.Thread(target=update_lead_status, args=(phone, status, "", tenant_id)).start()
         return msg_demo_booked(course, bt, date_text)
 
     if stage == "offer_menu":
@@ -434,7 +434,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         st["stage"] = "enrolled"
         ts = datetime.now().strftime("[%Y-%m-%d %H:%M]")
         note = f"{ts} Payment: {txn} Course: {offer}"
-        threading.Thread(target=update_lead_status, args=(phone, f"Payment Received: {txn}", note)).start()
+        threading.Thread(target=update_lead_status, args=(phone, f"Payment Received: {txn}", note, tenant_id)).start()
         return msg_payment_confirmed(txn, offer, name)
 
     for kw, idx in KEYWORD_TO_COURSE.items():
@@ -456,7 +456,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         c_name = ALL_COURSES[low][0]
         st["course"] = c_name
         st["stage"]  = "course_viewed"
-        threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}")).start()
+        threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}", "", tenant_id)).start()
         # ── Phase 6A: COURSE_VIEWED event (direct match path) ──
         _app = current_app._get_current_object()
         threading.Thread(

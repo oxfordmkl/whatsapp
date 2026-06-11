@@ -144,7 +144,7 @@ def receive_message():
         # ── CRM save (background) ──
         threading.Thread(
             target=save_lead_to_sheets,
-            args=(from_number, contact_name, msg_text, is_new_lead),
+            args=(from_number, contact_name, msg_text, is_new_lead, tenant_id),
         ).start()
 
         # Phase 11-D3B2: Deliver Pending Messages (Interceptor Fallback)

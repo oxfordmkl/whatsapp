@@ -14,7 +14,7 @@ def _get_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(SHEETS_ID)
 
-def save_lead_to_sheets(phone: str, name: str, message: str, is_new: bool):
+def save_lead_to_sheets(phone: str, name: str, message: str, is_new: bool, tenant_id: str = None):
     try:
         if not SHEETS_ID or GOOGLE_CREDENTIALS_JSON == "{}":
             return
@@ -45,7 +45,7 @@ def save_lead_to_sheets(phone: str, name: str, message: str, is_new: bool):
     except Exception as e:
         print(f"⚠️  Sheets save error: {e}")
 
-def update_lead_status(phone: str, status: str, append_note: str = ""):
+def update_lead_status(phone: str, status: str, append_note: str = "", tenant_id: str = None):
     try:
         if not SHEETS_ID or GOOGLE_CREDENTIALS_JSON == "{}":
             return

@@ -123,7 +123,7 @@ def _followup_worker():
 
                         threading.Thread(
                             target=update_lead_status,
-                            args=(job.phone, f"Follow-up Day {job.day} Sent"),
+                            args=(job.phone, f"Follow-up Day {job.day} Sent", "", job.tenant_id),
                         ).start()
                         # ── Log outbound followup message ──
                         from app.services.log_service import log_message, save_conversation_message
