@@ -42,6 +42,31 @@ def create_app():
     def load_user(user_id):
         return models.User.query.get(int(user_id))
 
+    # ── Register CLI Commands ─────────────────────────────────────────────
+    @app.cli.command("seed-superadmin")
+    def seed_superadmin():
+        """Seed the initial Super Admin account."""
+        from werkzeug.security import generate_password_hash
+        import uuid
+        
+        super_admin = models.User.query.filter_by(role="SUPER_ADMIN").first()
+        if super_admin:
+            print("Super Admin already exists.")
+            return
+
+        print("Creating default Super Admin...")
+        user = models.User(
+            username="superadmin",
+            email="super@admin.com",
+            password_hash=generate_password_hash("supersecret"),
+            role="SUPER_ADMIN",
+            tenant_id=None,
+            is_active=True
+        )
+        db.session.add(user)
+        db.session.commit()
+        print("Super Admin created: Email=super@admin.com, Password=supersecret")
+
     # ── Register Flask blueprints ─────────────────────────────────────────
     from app.routes.webhook import webhook_bp
     from app.routes.admin import admin_bp

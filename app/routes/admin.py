@@ -4663,3 +4663,74 @@ def add_cache_control_headers(response):
             response.headers["Expires"] = "0"
     return response
 
+
+# ── Phase 13-A3C: Super Admin Control Center ─────────────────────────────────
+
+from functools import wraps
+from flask import abort
+
+def super_admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('admin.crm_super_login'))
+        if getattr(current_user, 'role', None) != 'SUPER_ADMIN':
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+@admin_bp.route("/crm/super/login", methods=["GET", "POST"])
+def crm_super_login():
+    if current_user.is_authenticated and getattr(current_user, 'role', None) == 'SUPER_ADMIN':
+        return redirect(url_for("admin.crm_super_dashboard"))
+        
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        
+        from app.models import User
+        from app.extensions import db
+        user = User.query.filter_by(email=email, role='SUPER_ADMIN').first()
+        if user and user.is_active and check_password_hash(user.password_hash, password):
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            login_user(user)
+            return redirect(url_for("admin.crm_super_dashboard"))
+            
+        flash("Invalid credentials or unauthorized.", "danger")
+        
+    return render_template("crm_super_login.html")
+
+@admin_bp.route("/crm/super/dashboard", methods=["GET"])
+@login_required
+@super_admin_required
+def crm_super_dashboard():
+    from app.models import Tenant
+    tenants = Tenant.query.order_by(Tenant.created_at.desc()).all()
+    return render_template("crm_super_dashboard.html", tenants=tenants)
+
+@admin_bp.route("/crm/super/tenant/<tenant_id>/suspend", methods=["POST"])
+@login_required
+@super_admin_required
+def crm_super_suspend_tenant(tenant_id):
+    from app.models import Tenant
+    from app.extensions import db
+    tenant = Tenant.query.get_or_404(tenant_id)
+    if tenant.status != 'SUSPENDED':
+        tenant.status = 'SUSPENDED'
+        db.session.commit()
+        flash(f"Tenant '{tenant.name}' has been suspended.", "warning")
+    return redirect(url_for('admin.crm_super_dashboard'))
+
+@admin_bp.route("/crm/super/tenant/<tenant_id>/reactivate", methods=["POST"])
+@login_required
+@super_admin_required
+def crm_super_reactivate_tenant(tenant_id):
+    from app.models import Tenant
+    from app.extensions import db
+    tenant = Tenant.query.get_or_404(tenant_id)
+    if tenant.status != 'ACTIVE':
+        tenant.status = 'ACTIVE'
+        db.session.commit()
+        flash(f"Tenant '{tenant.name}' has been reactivated.", "success")
+    return redirect(url_for('admin.crm_super_dashboard'))

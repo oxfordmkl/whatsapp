@@ -423,6 +423,13 @@ body {
     <!-- SETTINGS — future_role: SUPER_ADMIN — begin (Phase 10 placeholder) -->
     <div class="nav-section">
       <div class="nav-section-label">System</div>
+      {% set actor = get_current_actor() %}
+      {% if actor.role == 'SUPER_ADMIN' %}
+      <a class="nav-item" href="/crm/super/dashboard" data-path="/crm/super/dashboard">
+        <i class="bi bi-shield-lock-fill"></i>
+        <span class="nav-label" style="color: var(--yellow);">Super Dashboard</span>
+      </a>
+      {% endif %}
       <a class="nav-item" href="/crm/health?key={{ key }}" data-path="/crm/health">
         <i class="bi bi-heart-pulse-fill"></i>
         <span class="nav-label">System Health</span>
