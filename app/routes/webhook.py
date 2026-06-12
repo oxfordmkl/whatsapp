@@ -60,8 +60,13 @@ def receive_message():
         else:
             # Grace-period fallback to primary Oxford tenant
             if phone_number_id == current_app.config.get("PHONE_NUMBER_ID"):
-                from app.services.log_service import _get_default_tenant_id
-                tenant_id = _get_default_tenant_id()
+                env_phone_id = str(
+                current_app.config.get("PHONE_NUMBER_ID", "")
+                ).strip()
+                incoming_phone_id = str(phone_number_id).strip()    
+                if env_phone_id and incoming_phone_id == env_phone_id:
+                    tenant_id = current_app.config.get("PRIMARY_TENANT_ID")
+                    print(f"⚠️ Webhook warning: Unregistered WABA Phone ID {phone_number_id}, but matched primary tenant fallback")
             else:
                 print(f"⚠️ Webhook dropped: Unknown WABA Phone ID {phone_number_id}")
                 return jsonify({"status": "ok"}), 200
@@ -170,7 +175,7 @@ def receive_message():
         if pending_msgs:
             print(f"📦 Delivering {len(pending_msgs)} pending messages to {from_number}")
             for pm in pending_msgs:
-                send_text(from_number, pm.text)
+                send_text(from_number, pm.text, tenant_id=tenant_id)
                 db.session.delete(pm)
             db.session.commit()
             
@@ -181,7 +186,12 @@ def receive_message():
 
         # ── Generate reply ──
         reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id)
-        send_reply(from_number, reply_text, preset)
+        send_reply(
+        from_number,
+        reply_text,
+        preset,
+        tenant_id=tenant_id
+        )
 
         # ── Log outbound AI reply (MessageLog daemon thread) ──
         threading.Thread(
