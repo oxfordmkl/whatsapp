@@ -4627,10 +4627,20 @@ def crm_login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         
-        from app.models import User
+        from app.models import User, Tenant
         from app.extensions import db
-        user = User.query.filter_by(username=username).first()  # User login: no tenant filter needed (cross-tenant auth)  # User login: no tenant filter needed (cross-tenant auth)
+        user = User.query.filter_by(username=username).first()  # User login: no tenant filter needed (cross-tenant auth)
         if user and user.is_active and check_password_hash(user.password_hash, password):
+            # ── Phase 13-B2B: Tenant Status Enforcement ─────────────────────────
+            # SUPER_ADMIN has tenant_id=None and is exempt from tenant status checks.
+            # ADMIN_KEY users also bypass this check (handled separately by check_auth).
+            # For all other roles (ADMIN, STAFF), the tenant must be ACTIVE.
+            if user.role != 'SUPER_ADMIN':
+                tenant = Tenant.query.get(user.tenant_id) if user.tenant_id else None
+                if not tenant or tenant.status != 'ACTIVE':
+                    flash("Account awaiting approval. Please contact support.", "warning")
+                    return redirect(url_for("admin.crm_login"))
+            # ── End Enforcement ──────────────────────────────────────────────────
             user.last_login = datetime.utcnow()
             db.session.commit()
             login_user(user)
@@ -4734,3 +4744,20 @@ def crm_super_reactivate_tenant(tenant_id):
         db.session.commit()
         flash(f"Tenant '{tenant.name}' has been reactivated.", "success")
     return redirect(url_for('admin.crm_super_dashboard'))
+
+# ── Phase 13-B2B: Tenant Approval ────────────────────────────────────────────
+@admin_bp.route("/crm/super/tenant/<tenant_id>/approve", methods=["POST"])
+@login_required
+@super_admin_required
+def crm_super_approve_tenant(tenant_id):
+    from app.models import Tenant
+    from app.extensions import db
+    tenant = Tenant.query.get_or_404(tenant_id)
+    if tenant.status == 'PENDING':
+        tenant.status = 'ACTIVE'
+        db.session.commit()
+        flash(f"Tenant '{tenant.name}' has been approved and is now ACTIVE.", "success")
+    else:
+        flash(f"Tenant '{tenant.name}' is already {tenant.status}. No change made.", "info")
+    return redirect(url_for('admin.crm_super_dashboard'))
+

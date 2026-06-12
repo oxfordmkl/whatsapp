@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register Your Business — Oxford CRM</title>
+  <meta name="description" content="Create your Oxford CRM account. Start managing WhatsApp leads, automating follow-ups, and growing your admissions today.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg:         #030712;
+      --bg-card:    #0d1117;
+      --bg-input:   #0a0f1a;
+      --border:     #1f2937;
+      --border-focus: #22c55e;
+      --green:      #22c55e;
+      --green-dim:  #16a34a;
+      --green-glow: rgba(34,197,94,0.15);
+      --text:       #f9fafb;
+      --text-sub:   #9ca3af;
+      --text-muted: #6b7280;
+      --red:        #ef4444;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Left Panel ── */
+    .left-panel {
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      padding: 3rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+    .left-panel::before {
+      content: '';
+      position: absolute;
+      bottom: -100px; left: -100px;
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(34,197,94,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 800;
+      font-size: 1.1rem;
+    }
+    .brand-icon {
+      width: 36px; height: 36px;
+      background: var(--green);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      color: #030712;
+      font-weight: 900;
+      font-size: 1.1rem;
+      box-shadow: 0 0 20px var(--green-glow);
+    }
+    .left-content { padding: 3rem 0; }
+    .left-content h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.25;
+      margin-bottom: 1rem;
+    }
+    .left-content h2 .accent { color: var(--green); }
+    .left-content p { color: var(--text-sub); font-size: 0.95rem; line-height: 1.7; margin-bottom: 2rem; }
+    .benefit-list { list-style: none; display: flex; flex-direction: column; gap: 0.85rem; }
+    .benefit-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-size: 0.9rem;
+      color: var(--text-sub);
+    }
+    .benefit-list li i { color: var(--green); font-size: 0.85rem; flex-shrink: 0; }
+    .left-footer { font-size: 0.8rem; color: var(--text-muted); }
+
+    /* ── Right Panel (Form) ── */
+    .right-panel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem;
+      overflow-y: auto;
+    }
+    .form-container {
+      width: 100%;
+      max-width: 460px;
+    }
+    .form-header {
+      margin-bottom: 2rem;
+    }
+    .form-header h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.4rem; }
+    .form-header p { font-size: 0.9rem; color: var(--text-sub); }
+
+    /* Alerts */
+    .alert {
+      padding: 0.85rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-bottom: 1.25rem;
+      border: 1px solid transparent;
+    }
+    .alert-danger { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
+    .alert-success { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.3); color: #86efac; }
+    .alert-warning { background: rgba(234,179,8,0.1); border-color: rgba(234,179,8,0.3); color: #fde047; }
+
+    /* Form fields */
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .field { margin-bottom: 1.1rem; }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-sub);
+      margin-bottom: 0.4rem;
+      letter-spacing: 0.02em;
+    }
+    label .required { color: var(--green); margin-left: 2px; }
+    input, select {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-family: 'Inter', sans-serif;
+      padding: 0.7rem 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      appearance: none;
+    }
+    input::placeholder { color: var(--text-muted); }
+    input:focus, select:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(34,197,94,0.1);
+    }
+    select option { background: #0d1117; }
+
+    /* Submit button */
+    .btn-submit {
+      width: 100%;
+      padding: 0.85rem;
+      background: var(--green);
+      color: #030712;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .btn-submit:hover {
+      background: var(--green-dim);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(34,197,94,0.25);
+    }
+    .btn-submit:active { transform: none; }
+
+    .form-footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .form-footer a { color: var(--green); text-decoration: none; font-weight: 500; }
+    .form-footer a:hover { text-decoration: underline; }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1.25rem 0;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    @media (max-width: 800px) {
+      body { grid-template-columns: 1fr; }
+      .left-panel { display: none; }
+      .right-panel { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Left Panel -->
+  <div class="left-panel">
+    <a href="/" class="brand-row">
+      <div class="brand-icon">O</div>
+      Oxford CRM
+    </a>
+
+    <div class="left-content">
+      <h2>Your WhatsApp CRM,<br><span class="accent">ready in minutes.</span></h2>
+      <p>Join growing education businesses that use Oxford CRM to capture, nurture, and convert WhatsApp leads at scale.</p>
+      <ul class="benefit-list">
+        <li><i class="bi bi-check-circle-fill"></i> AI-powered lead bot active 24/7</li>
+        <li><i class="bi bi-check-circle-fill"></i> Full CRM pipeline management</li>
+        <li><i class="bi bi-check-circle-fill"></i> WhatsApp broadcast campaigns</li>
+        <li><i class="bi bi-check-circle-fill"></i> Automated follow-up sequences</li>
+        <li><i class="bi bi-check-circle-fill"></i> Staff workload & performance tracking</li>
+        <li><i class="bi bi-check-circle-fill"></i> Real-time analytics dashboard</li>
+      </ul>
+    </div>
+
+    <div class="left-footer">© 2026 Oxford CRM — Secure & Private</div>
+  </div>
+
+  <!-- Right Panel (Form) -->
+  <div class="right-panel">
+    <div class="form-container">
+
+      <div class="form-header">
+        <h1>Create your account</h1>
+        <p>Start your 14-day free trial. No credit card required.</p>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">
+              <i class="bi bi-exclamation-circle me-1"></i> {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form id="register-form" action="/register" method="POST" novalidate>
+
+        <div class="form-row">
+          <div class="field">
+            <label for="business_name">Business Name <span class="required">*</span></label>
+            <input type="text" id="business_name" name="business_name" placeholder="Oxford Computers" required autocomplete="organization">
+          </div>
+          <div class="field">
+            <label for="industry">Industry <span class="required">*</span></label>
+            <select id="industry" name="industry" required>
+              <option value="Education">Education</option>
+              <option value="Healthcare">Healthcare</option>
+              <option value="Real Estate">Real Estate</option>
+              <option value="Insurance">Insurance</option>
+              <option value="Retail">Retail</option>
+              <option value="Custom">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="field">
+            <label for="admin_name">Your Name <span class="required">*</span></label>
+            <input type="text" id="admin_name" name="admin_name" placeholder="Kiran Sharma" required autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" name="phone" placeholder="+91 98765 43210" autocomplete="tel">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="email">Email Address <span class="required">*</span></label>
+          <input type="email" id="email" name="email" placeholder="kiran@oxfordcomputers.com" required autocomplete="email">
+        </div>
+
+        <div class="field">
+          <label for="password">Password <span class="required">*</span></label>
+          <input type="password" id="password" name="password" placeholder="Choose a strong password" required autocomplete="new-password" minlength="8">
+        </div>
+
+        <button type="submit" class="btn-submit" id="register-submit-btn">
+          <i class="bi bi-rocket-takeoff"></i> Create My Account
+        </button>
+
+      </form>
+
+      <div class="divider">or</div>
+
+      <div class="form-footer">
+        Already have an account? <a href="/crm/login">Sign in here</a>
+      </div>
+      <div class="form-footer" style="margin-top:0.5rem;">
+        By registering you agree to our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Prevent double-submit
+    document.getElementById('register-form').addEventListener('submit', function() {
+      var btn = document.getElementById('register-submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating Account…';
+    });
+  </script>
+
+</body>
+</html>

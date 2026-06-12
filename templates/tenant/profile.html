@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company Profile — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <h1><i class="bi bi-building-fill me-2" style="color:var(--blue);"></i>Company Profile</h1>
+    <p>Update your organisation's details. Slug is immutable after registration.</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-info-circle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Read-Only Fields -->
+    <div class="t-card">
+      <div class="t-card-title">Read-Only Fields</div>
+      <div class="t-field-row">
+        <div class="t-field">
+          <label>Tenant ID</label>
+          <input type="text" value="{{ tenant.id }}" readonly style="opacity:0.5;cursor:default;">
+        </div>
+        <div class="t-field">
+          <label>Slug (URL Identifier)</label>
+          <input type="text" value="/t/{{ tenant.slug }}" readonly style="opacity:0.5;cursor:default;font-family:monospace;">
+        </div>
+      </div>
+      <div class="t-field-row">
+        <div class="t-field">
+          <label>Status</label>
+          <input type="text" value="{{ tenant.status }}" readonly style="opacity:0.5;cursor:default;color:{% if tenant.status == 'ACTIVE' %}var(--green){% else %}var(--yellow){% endif %};">
+        </div>
+        <div class="t-field">
+          <label>Registered</label>
+          <input type="text" value="{{ tenant.created_at.strftime('%d %b %Y, %H:%M UTC') }}" readonly style="opacity:0.5;cursor:default;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Editable Fields -->
+    <div class="t-card">
+      <div class="t-card-title">Editable Fields</div>
+      <form action="{{ url_for('tenant.tenant_profile') }}" method="POST" id="profile-form">
+
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="name">Business Name <span style="color:var(--blue);">*</span></label>
+            <input type="text" id="name" name="name" value="{{ tenant.name }}" required placeholder="Your business name">
+          </div>
+          <div class="t-field">
+            <label for="industry">Industry</label>
+            <select id="industry" name="industry">
+              {% for opt in ['Education', 'Healthcare', 'Real Estate', 'Insurance', 'Retail', 'Custom'] %}
+                <option value="{{ opt }}" {% if tenant.industry == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="t-field" style="margin-bottom:1.25rem;">
+          <label for="billing_email">Billing Email</label>
+          <input type="email" id="billing_email" name="billing_email" value="{{ tenant.billing_email or '' }}" placeholder="billing@yourcompany.com">
+        </div>
+
+        <button type="submit" class="btn-t-primary" id="profile-save-btn">
+          <i class="bi bi-check-lg"></i> Save Changes
+        </button>
+
+      </form>
+    </div>
+
+  </div><!-- /t-page-body -->
+</div><!-- /t-main -->
+
+<script>
+document.getElementById('profile-form').addEventListener('submit', function() {
+  var btn = document.getElementById('profile-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving…';
+});
+</script>
+
+</body>
+</html>

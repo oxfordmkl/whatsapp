@@ -1,0 +1,325 @@
+<!--
+  templates/tenant/sidebar.html
+  Phase 13-B3B: Tenant Admin Portal — Sidebar Navigation
+  Isolated from the CRM staff sidebar and the Super Admin sidebar.
+  Include via: {% include 'tenant/sidebar.html' %}
+-->
+<style>
+/* ── Tenant Portal Design Tokens ─────────────────────────────────────────── */
+:root {
+  --bg-dark:       #0d1117;
+  --bg-card:       #161b22;
+  --bg-card2:      #1c2128;
+  --border:        #30363d;
+  --green:         #25D366;
+  --green-glow:    rgba(37,211,102,0.12);
+  --text-main:     #e6edf3;
+  --text-muted:    #8b949e;
+  --blue:          #58a6ff;
+  --yellow:        #d29922;
+  --red:           #f85149;
+  --purple:        #bc8cff;
+  --sidebar-width: 240px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; }
+body {
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.875rem;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Sidebar Shell ──────────────────────────────────────────────────── */
+.t-sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 1050;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.t-sidebar::-webkit-scrollbar { width: 4px; }
+.t-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Brand ──────────────────────────────────────────────────────────── */
+.t-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1.1rem 1rem;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.t-brand-icon {
+  width: 32px; height: 32px;
+  background: var(--blue);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  color: #0d1117;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(88,166,255,0.25);
+}
+.t-brand-text { display: flex; flex-direction: column; overflow: hidden; }
+.t-brand-name { font-size: 0.875rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; line-height: 1.2; }
+.t-brand-tag  { font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* ── Nav ────────────────────────────────────────────────────────────── */
+.t-nav-body { flex: 1; padding: 0.75rem 0; overflow-y: auto; }
+.t-nav-section { margin-bottom: 0.25rem; }
+.t-nav-label {
+  padding: 0.6rem 1rem 0.3rem;
+  font-size: 0.63rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+}
+.t-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.48rem 1rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: 0;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.t-nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text-main); }
+.t-nav-item.active { background: rgba(88,166,255,0.08); color: var(--blue); }
+.t-nav-item.active::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--blue);
+  border-radius: 0 2px 2px 0;
+}
+.t-nav-item i { font-size: 0.95rem; flex-shrink: 0; width: 18px; text-align: center; }
+.t-nav-divider { height: 1px; background: var(--border); margin: 0.5rem 1rem; }
+
+/* ── Footer ─────────────────────────────────────────────────────────── */
+.t-sidebar-footer {
+  padding: 0.75rem 0 0.5rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Main content ───────────────────────────────────────────────────── */
+.t-main {
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.t-page-header {
+  padding: 1.75rem 2rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.t-page-header h1 { font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.03em; margin: 0 0 0.2rem; }
+.t-page-header p  { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.t-page-body { padding: 1.75rem 2rem; }
+
+/* ── Cards ──────────────────────────────────────────────────────────── */
+.t-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.t-card-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+.t-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+@media (max-width: 600px) { .t-field-row { grid-template-columns: 1fr; } }
+.t-field label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; }
+.t-field input,
+.t-field select,
+.t-field textarea {
+  width: 100%;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-size: 0.875rem;
+  font-family: inherit;
+  padding: 0.65rem 0.9rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  resize: vertical;
+}
+.t-field input:focus,
+.t-field select:focus,
+.t-field textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(88,166,255,0.1);
+}
+.t-field input::placeholder { color: var(--text-muted); }
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
+.btn-t-primary {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.65rem 1.25rem;
+  background: var(--blue);
+  color: #0d1117;
+  font-weight: 700; font-size: 0.875rem;
+  border: none; border-radius: 8px; cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.btn-t-primary:hover { background: #4090e0; transform: translateY(-1px); }
+.btn-t-danger {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  background: transparent;
+  color: var(--red); font-weight: 600; font-size: 0.78rem;
+  border: 1px solid rgba(248,81,73,0.4); border-radius: 6px; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-t-danger:hover { background: rgba(248,81,73,0.1); }
+.btn-t-success {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  background: transparent;
+  color: var(--green); font-weight: 600; font-size: 0.78rem;
+  border: 1px solid rgba(37,211,102,0.4); border-radius: 6px; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-t-success:hover { background: rgba(37,211,102,0.1); }
+
+/* ── Alerts ─────────────────────────────────────────────────────────── */
+.t-alert { padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.875rem; margin-bottom: 1rem; border: 1px solid transparent; }
+.t-alert-success { background: rgba(37,211,102,0.1); border-color: rgba(37,211,102,0.3); color: #3fb950; }
+.t-alert-danger  { background: rgba(248,81,73,0.1);  border-color: rgba(248,81,73,0.3);  color: #f85149; }
+.t-alert-warning { background: rgba(210,153,34,0.1); border-color: rgba(210,153,34,0.3); color: var(--yellow); }
+.t-alert-info    { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3); color: var(--blue); }
+
+/* ── Table ──────────────────────────────────────────────────────────── */
+.t-table-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; }
+.t-table { width: 100%; border-collapse: collapse; }
+.t-table thead th { background: var(--bg-card2); border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.9rem 1.25rem; text-align: left; }
+.t-table tbody td { border-bottom: 1px solid rgba(48,54,61,0.5); padding: 0.9rem 1.25rem; vertical-align: middle; font-size: 0.85rem; }
+.t-table tbody tr:last-child td { border-bottom: none; }
+.t-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+/* ── Status badge ───────────────────────────────────────────────────── */
+.t-badge { font-size: 0.68rem; font-weight: 700; padding: 0.25em 0.6em; border-radius: 5px; display: inline-block; }
+.t-badge-active   { background: rgba(37,211,102,0.15); color: var(--green); border: 1px solid rgba(37,211,102,0.3); }
+.t-badge-inactive { background: rgba(139,148,158,0.12); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* ── Mobile ─────────────────────────────────────────────────────────── */
+@media (max-width: 900px) { .t-sidebar { display: none; } .t-main { margin-left: 0; } }
+</style>
+
+<!-- ── Sidebar ── -->
+<div class="t-sidebar" id="tSidebar">
+
+  <a href="{{ url_for('tenant.tenant_home') }}" class="t-brand">
+    <div class="t-brand-icon"><i class="bi bi-building"></i></div>
+    <div class="t-brand-text">
+      <span class="t-brand-name">Tenant Portal</span>
+      <span class="t-brand-tag">Admin Dashboard</span>
+    </div>
+  </a>
+
+  <div class="t-nav-body">
+
+    <div class="t-nav-section">
+      <a class="t-nav-item" href="{{ url_for('tenant.tenant_home') }}" data-path="/tenant/home">
+        <i class="bi bi-grid-1x2-fill"></i>
+        <span>Overview</span>
+      </a>
+    </div>
+
+    <div class="t-nav-divider"></div>
+
+    <div class="t-nav-section">
+      <div class="t-nav-label">Organisation</div>
+      <a class="t-nav-item" href="{{ url_for('tenant.tenant_profile') }}" data-path="/tenant/profile">
+        <i class="bi bi-building-fill"></i>
+        <span>Company Profile</span>
+      </a>
+      <a class="t-nav-item" href="{{ url_for('tenant.tenant_staff') }}" data-path="/tenant/staff">
+        <i class="bi bi-people-fill"></i>
+        <span>Staff Management</span>
+      </a>
+    </div>
+
+    <div class="t-nav-divider"></div>
+
+    <div class="t-nav-section">
+      <div class="t-nav-label">Platform</div>
+      <a class="t-nav-item" href="{{ url_for('tenant.tenant_ai') }}" data-path="/tenant/ai">
+        <i class="bi bi-robot"></i>
+        <span>AI Settings</span>
+      </a>
+      <a class="t-nav-item" href="#" style="opacity:0.5;" title="Coming in Phase 13-B4">
+        <i class="bi bi-whatsapp"></i>
+        <span>WhatsApp Setup</span>
+      </a>
+    </div>
+
+    <div class="t-nav-divider"></div>
+
+    <div class="t-nav-section">
+      <div class="t-nav-label">Account</div>
+      <a class="t-nav-item" href="{{ url_for('tenant.tenant_billing') }}" data-path="/tenant/billing">
+        <i class="bi bi-credit-card-fill"></i>
+        <span>Billing &amp; Plan</span>
+      </a>
+    </div>
+
+  </div><!-- /t-nav-body -->
+
+  <div class="t-sidebar-footer">
+    <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
+      {% if current_user.is_authenticated %}
+      <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.2rem;">Logged in as:</div>
+      <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">{{ current_user.username }}</div>
+      <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem;">{{ current_user.role }}</div>
+      <a href="{{ url_for('admin.crm_logout') }}" style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.75rem;color:var(--red);text-decoration:none;margin-top:0.5rem;">
+        <i class="bi bi-box-arrow-right"></i> Logout
+      </a>
+      {% endif %}
+    </div>
+    <div style="padding: 0.4rem 1rem; font-size: 0.65rem; color: var(--text-muted);">
+      Oxford CRM · Tenant Portal v13-B3
+    </div>
+  </div>
+
+</div><!-- /t-sidebar -->
+
+<script>
+(function() {
+  var path = window.location.pathname;
+  document.querySelectorAll('.t-nav-item[data-path]').forEach(function(el) {
+    if (path === el.getAttribute('data-path') || path.startsWith(el.getAttribute('data-path') + '/')) {
+      el.classList.add('active');
+    }
+  });
+})();
+</script>

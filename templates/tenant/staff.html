@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Management — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 1.25rem; }
+    .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+    .btn-t-cancel {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.6rem 1.1rem;
+      background: transparent; color: var(--text-muted);
+      font-weight: 600; font-size: 0.875rem;
+      border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    }
+    .btn-t-cancel:hover { background: var(--bg-card2); }
+  </style>
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <h1><i class="bi bi-people-fill me-2" style="color:var(--blue);"></i>Staff Management</h1>
+    <p>Manage staff accounts for your organisation. Uses database records — isolated to your tenant.</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-info-circle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Action Bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+      <h5 style="margin:0;font-weight:700;">Staff Members ({{ staff_list | length }})</h5>
+      <button class="btn-t-primary" onclick="document.getElementById('createModal').classList.add('open');">
+        <i class="bi bi-person-plus-fill"></i> Add Staff
+      </button>
+    </div>
+
+    <!-- Staff Table -->
+    <div class="t-table-wrap">
+      <table class="t-table">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for staff in staff_list %}
+          <tr>
+            <td>
+              <span style="font-weight:600;color:var(--text-main);">{{ staff.username }}</span>
+              {% if staff.require_password_change %}
+              <span style="font-size:0.65rem;color:var(--yellow);margin-left:0.4rem;" title="Must change password on first login">⚠ pwd required</span>
+              {% endif %}
+            </td>
+            <td style="color:var(--text-muted);font-size:0.8rem;">{{ staff.email or '—' }}</td>
+            <td>
+              <span class="t-badge t-badge-active" style="background:rgba(88,166,255,0.12);color:var(--blue);border-color:rgba(88,166,255,0.3);">{{ staff.role }}</span>
+            </td>
+            <td>
+              {% if staff.is_active %}
+                <span class="t-badge t-badge-active">ACTIVE</span>
+              {% else %}
+                <span class="t-badge t-badge-inactive">INACTIVE</span>
+              {% endif %}
+            </td>
+            <td style="color:var(--text-muted);font-size:0.8rem;">{{ staff.created_at.strftime('%d %b %Y') }}</td>
+            <td style="text-align:right;">
+              <form action="{{ url_for('tenant.tenant_staff') }}" method="POST" style="display:inline;"
+                {% if staff.is_active %}onsubmit="return confirm('Deactivate {{ staff.username }}? They will lose CRM access immediately.');"{% endif %}>
+                <input type="hidden" name="action" value="toggle">
+                <input type="hidden" name="user_id" value="{{ staff.id }}">
+                {% if staff.is_active %}
+                  <button type="submit" class="btn-t-danger"><i class="bi bi-person-x"></i> Deactivate</button>
+                {% else %}
+                  <button type="submit" class="btn-t-success"><i class="bi bi-person-check"></i> Activate</button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" style="text-align:center;padding:3rem;color:var(--text-muted);">
+              <i class="bi bi-people" style="font-size:2rem;display:block;margin-bottom:0.75rem;color:var(--border);"></i>
+              No staff members yet. Click <strong>Add Staff</strong> to create the first one.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="t-alert t-alert-info" style="font-size:0.8rem;">
+      <i class="bi bi-info-circle me-1"></i>
+      <strong>Note:</strong> This panel manages database-backed staff accounts. The legacy staff registry (staff_master.json) used by the existing CRM is separate and remains untouched.
+    </div>
+
+  </div><!-- /t-page-body -->
+</div><!-- /t-main -->
+
+<!-- Create Staff Modal -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal-box">
+    <div class="modal-title"><i class="bi bi-person-plus-fill me-2" style="color:var(--blue);"></i>Add Staff Member</div>
+    <form action="{{ url_for('tenant.tenant_staff') }}" method="POST" id="create-staff-form">
+      <input type="hidden" name="action" value="create">
+      <div class="t-field" style="margin-bottom:1rem;">
+        <label for="new-username">Username <span style="color:var(--blue);">*</span></label>
+        <input type="text" id="new-username" name="username" placeholder="e.g. kiran.sharma" required autocomplete="off">
+      </div>
+      <div class="t-field" style="margin-bottom:1rem;">
+        <label for="new-email">Email (optional)</label>
+        <input type="email" id="new-email" name="email" placeholder="kiran@yourcompany.com" autocomplete="off">
+      </div>
+      <div class="t-field" style="margin-bottom:0;">
+        <label for="new-password">Password <span style="color:var(--blue);">*</span></label>
+        <input type="password" id="new-password" name="password" placeholder="Temporary password" required minlength="6" autocomplete="new-password">
+      </div>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;">Staff will be required to change password on first login.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-t-cancel" onclick="document.getElementById('createModal').classList.remove('open');">Cancel</button>
+        <button type="submit" class="btn-t-primary" id="create-submit-btn"><i class="bi bi-check-lg"></i> Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Close modal on overlay click
+document.getElementById('createModal').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+// Prevent double submit
+document.getElementById('create-staff-form').addEventListener('submit', function() {
+  var btn = document.getElementById('create-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating…';
+});
+</script>
+
+</body>
+</html>

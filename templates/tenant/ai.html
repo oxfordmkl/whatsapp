@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Settings — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <h1><i class="bi bi-robot me-2" style="color:var(--blue);"></i>AI Settings</h1>
+    <p>Customise your AI counsellor persona and behaviour. Stored per-tenant, applied instantly.</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-info-circle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Current Status -->
+    <div class="t-card" style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;">
+      <div style="width:44px;height:44px;border-radius:12px;background:rgba(88,166,255,0.12);color:var(--blue);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-robot"></i></div>
+      <div>
+        <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Active AI Persona</div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--text-main);">
+          {% if tenant.ai_persona_name %}{{ tenant.ai_persona_name }}{% else %}<span style="color:var(--text-muted);">System Default (Aaliza)</span>{% endif %}
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.15rem;">
+          Prompt: {% if tenant.ai_prompt_override %}<span style="color:var(--green);">Custom override active</span>{% else %}<span>Using system default</span>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Settings Form -->
+    <div class="t-card">
+      <div class="t-card-title">Configure AI Persona</div>
+      <form action="{{ url_for('tenant.tenant_ai') }}" method="POST" id="ai-form">
+
+        <div class="t-field" style="margin-bottom:1.25rem;">
+          <label for="ai_persona_name">Persona Name</label>
+          <input type="text" id="ai_persona_name" name="ai_persona_name"
+            value="{{ tenant.ai_persona_name or '' }}"
+            placeholder="e.g. Aaliza, Priya, Rahul (leave blank to use system default)"
+            maxlength="50">
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;">This name is shown to leads in WhatsApp conversations. Leave blank to use the system default.</div>
+        </div>
+
+        <div class="t-field" style="margin-bottom:1.25rem;">
+          <label for="ai_prompt_override">Custom AI Prompt <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+          <textarea id="ai_prompt_override" name="ai_prompt_override"
+            placeholder="Write a custom system prompt to override the default AI behaviour. Leave blank to use the system default prompt."
+            rows="10" style="font-family: 'Courier New', monospace; font-size: 0.8rem; line-height: 1.6;">{{ tenant.ai_prompt_override or '' }}</textarea>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;">
+            ⚠️ Overriding the AI prompt affects all lead conversations for your organisation. Only edit if you understand the consequences.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:0.75rem;align-items:center;">
+          <button type="submit" class="btn-t-primary" id="ai-save-btn">
+            <i class="bi bi-check-lg"></i> Save AI Settings
+          </button>
+          <button type="button" class="btn-t-cancel"
+            style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.65rem 1.1rem;background:transparent;color:var(--text-muted);font-weight:600;font-size:0.875rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;"
+            onclick="document.getElementById('ai_persona_name').value=''; document.getElementById('ai_prompt_override').value='';">
+            <i class="bi bi-x-circle"></i> Clear (Reset to Default)
+          </button>
+        </div>
+
+      </form>
+    </div>
+
+    <div class="t-alert t-alert-info" style="font-size:0.8rem;">
+      <i class="bi bi-info-circle me-1"></i>
+      <strong>How it works:</strong> If Persona Name is blank, the system uses the platform default name. If Custom Prompt is blank, the platform's default Aaliza prompt is used. Changes take effect immediately for new WhatsApp conversations.
+    </div>
+
+  </div><!-- /t-page-body -->
+</div><!-- /t-main -->
+
+<script>
+document.getElementById('ai-form').addEventListener('submit', function() {
+  var btn = document.getElementById('ai-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving…';
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overview — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <h1><i class="bi bi-grid-1x2-fill me-2" style="color:var(--blue);"></i>Tenant Overview</h1>
+    <p>Your organisation's platform status at a glance.</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-info-circle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- KPI Row -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem;">
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;background:rgba(88,166,255,0.12);color:var(--blue);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-building"></i></div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Business</div>
+          <div style="font-size:1rem;font-weight:700;color:var(--text-main);">{{ tenant.name }}</div>
+        </div>
+      </div>
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;background:rgba(37,211,102,0.12);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-patch-check-fill"></i></div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Status</div>
+          <div style="font-size:1rem;font-weight:700;color:{% if tenant.status == 'ACTIVE' %}var(--green){% elif tenant.status == 'PENDING' %}var(--yellow){% else %}var(--red){% endif %};">{{ tenant.status }}</div>
+        </div>
+      </div>
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;background:rgba(188,140,255,0.12);color:var(--purple);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-award-fill"></i></div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Plan</div>
+          <div style="font-size:1rem;font-weight:700;color:var(--purple);">{{ tenant.plan }}</div>
+        </div>
+      </div>
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;background:rgba(139,148,158,0.12);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-people-fill"></i></div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Staff</div>
+          <div style="font-size:1.6rem;font-weight:800;color:var(--text-main);letter-spacing:-0.03em;">{{ staff_count }}</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Detail Cards -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;">
+
+      <div class="t-card">
+        <div class="t-card-title">Organisation Details</div>
+        <table style="width:100%;font-size:0.875rem;border-collapse:collapse;">
+          <tr><td style="color:var(--text-muted);padding:0.4rem 0;width:40%;">Industry</td><td style="font-weight:500;">{{ tenant.industry }}</td></tr>
+          <tr><td style="color:var(--text-muted);padding:0.4rem 0;">Slug</td><td style="font-family:monospace;font-size:0.8rem;">/t/{{ tenant.slug }}</td></tr>
+          <tr><td style="color:var(--text-muted);padding:0.4rem 0;">Billing Email</td><td>{{ tenant.billing_email or '—' }}</td></tr>
+          <tr><td style="color:var(--text-muted);padding:0.4rem 0;">Registered</td><td>{{ tenant.created_at.strftime('%d %b %Y') }}</td></tr>
+        </table>
+        <a href="{{ url_for('tenant.tenant_profile') }}" class="btn-t-primary" style="margin-top:1rem;"><i class="bi bi-pencil"></i> Edit Profile</a>
+      </div>
+
+      <div class="t-card">
+        <div class="t-card-title">AI & Platform Status</div>
+        <table style="width:100%;font-size:0.875rem;border-collapse:collapse;">
+          <tr>
+            <td style="color:var(--text-muted);padding:0.4rem 0;width:40%;">AI Persona</td>
+            <td style="font-weight:500;">
+              {% if tenant.ai_persona_name %}<span style="color:var(--green);">{{ tenant.ai_persona_name }}</span>{% else %}<span style="color:var(--text-muted);">System Default</span>{% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="color:var(--text-muted);padding:0.4rem 0;">Custom Prompt</td>
+            <td>{% if tenant.ai_prompt_override %}<span style="color:var(--green);">Active</span>{% else %}<span style="color:var(--text-muted);">Using default</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td style="color:var(--text-muted);padding:0.4rem 0;">WhatsApp</td>
+            <td>{% if tenant.waba_phone_number_id %}<span style="color:var(--green);">Connected</span>{% else %}<span style="color:var(--yellow);">Not connected</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <td style="color:var(--text-muted);padding:0.4rem 0;">Staff (Admin)</td>
+            <td>{{ admin_count }}</td>
+          </tr>
+        </table>
+        <a href="{{ url_for('tenant.tenant_ai') }}" class="btn-t-primary" style="margin-top:1rem;"><i class="bi bi-robot"></i> AI Settings</a>
+      </div>
+
+    </div>
+
+  </div><!-- /t-page-body -->
+</div><!-- /t-main -->
+
+</body>
+</html>

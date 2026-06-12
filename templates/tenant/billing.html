@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Billing & Plan — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <h1><i class="bi bi-credit-card-fill me-2" style="color:var(--blue);"></i>Billing &amp; Plan</h1>
+    <p>Your current subscription status. Billing automation is coming soon.</p>
+  </div>
+
+  <div class="t-page-body">
+
+    <!-- Current Plan Summary -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem;">
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;background:rgba(188,140,255,0.12);color:var(--purple);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-award-fill"></i></div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Current Plan</div>
+          <div style="font-size:1.4rem;font-weight:800;color:var(--purple);letter-spacing:-0.03em;">{{ tenant.plan }}</div>
+        </div>
+      </div>
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;
+          {% if tenant.status == 'ACTIVE' %}background:rgba(37,211,102,0.12);color:var(--green);
+          {% elif tenant.status == 'SUSPENDED' %}background:rgba(248,81,73,0.12);color:var(--red);
+          {% else %}background:rgba(210,153,34,0.12);color:var(--yellow);{% endif %}">
+          <i class="bi bi-{% if tenant.status == 'ACTIVE' %}check-circle-fill{% elif tenant.status == 'SUSPENDED' %}x-circle-fill{% else %}clock-fill{% endif %}"></i>
+        </div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Account Status</div>
+          <div style="font-size:1.4rem;font-weight:800;letter-spacing:-0.03em;
+            color:{% if tenant.status == 'ACTIVE' %}var(--green){% elif tenant.status == 'SUSPENDED' %}var(--red){% else %}var(--yellow){% endif %};">
+            {{ tenant.status }}
+          </div>
+        </div>
+      </div>
+
+      <div class="t-card" style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:44px;height:44px;border-radius:12px;background:rgba(88,166,255,0.12);color:var(--blue);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;"><i class="bi bi-calendar-event-fill"></i></div>
+        <div>
+          <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.2rem;">Trial Ends</div>
+          <div style="font-size:0.95rem;font-weight:700;color:var(--text-main);">
+            {% if tenant.trial_ends_at %}
+              {{ tenant.trial_ends_at.strftime('%d %b %Y') }}
+            {% else %}
+              <span style="color:var(--text-muted);">No active trial</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Billing Details Table -->
+    <div class="t-card" style="margin-bottom:1.25rem;">
+      <div class="t-card-title">Subscription Details</div>
+      <table style="width:100%;font-size:0.875rem;border-collapse:collapse;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="color:var(--text-muted);padding:0.65rem 0;width:35%;">Plan</td>
+          <td style="font-weight:600;padding:0.65rem 0;">{{ tenant.plan }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="color:var(--text-muted);padding:0.65rem 0;">Status</td>
+          <td style="padding:0.65rem 0;">
+            <span class="t-badge {% if tenant.status == 'ACTIVE' %}t-badge-active{% else %}t-badge-inactive{% endif %}">{{ tenant.status }}</span>
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="color:var(--text-muted);padding:0.65rem 0;">Billing Email</td>
+          <td style="padding:0.65rem 0;">{{ tenant.billing_email or '—' }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="color:var(--text-muted);padding:0.65rem 0;">Trial Expiry</td>
+          <td style="padding:0.65rem 0;">{{ tenant.trial_ends_at.strftime('%d %b %Y') if tenant.trial_ends_at else '—' }}</td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:0.65rem 0;">Member Since</td>
+          <td style="padding:0.65rem 0;">{{ tenant.created_at.strftime('%d %b %Y') }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Coming Soon Banner -->
+    <div class="t-card" style="background:var(--bg-card2);border:1px dashed var(--border);text-align:center;padding:2.5rem;">
+      <div style="width:56px;height:56px;border-radius:50%;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.2);display:flex;align-items:center;justify-content:center;font-size:1.4rem;color:var(--blue);margin:0 auto 1rem;">
+        <i class="bi bi-hourglass-split"></i>
+      </div>
+      <div style="font-size:1rem;font-weight:700;margin-bottom:0.5rem;">Billing Automation Coming Soon</div>
+      <div style="font-size:0.875rem;color:var(--text-muted);max-width:420px;margin:0 auto 1.5rem;line-height:1.65;">
+        Automated plan upgrades, invoice generation, and Stripe integration will be available in a future release.
+        Contact support to change your plan in the meantime.
+      </div>
+      <a href="#" class="btn-t-primary" style="pointer-events:none;opacity:0.5;">
+        <i class="bi bi-credit-card"></i> Upgrade Plan (Coming Soon)
+      </a>
+    </div>
+
+  </div><!-- /t-page-body -->
+</div><!-- /t-main -->
+
+</body>
+</html>

@@ -73,9 +73,12 @@
       padding: 0.35em 0.65em;
       border-radius: 6px;
     }
-    .badge-active { background: rgba(37,211,102,0.15); color: var(--green); border: 1px solid rgba(37,211,102,0.3); }
-    .badge-suspended { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
-    .badge-trial { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); }
+    .badge-active    { background: rgba(37,211,102,0.15); color: var(--green);  border: 1px solid rgba(37,211,102,0.3); }
+    .badge-suspended { background: rgba(248,81,73,0.15);  color: var(--red);    border: 1px solid rgba(248,81,73,0.3); }
+    .badge-trial     { background: rgba(88,166,255,0.15);  color: var(--blue);  border: 1px solid rgba(88,166,255,0.3); }
+    .badge-pending   { background: rgba(210,153,34,0.15);  color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+    .badge-expired   { background: rgba(139,148,158,0.15); color: var(--text-muted); border: 1px solid rgba(139,148,158,0.3); }
+    .badge-cancelled { background: rgba(248,81,73,0.08);   color: var(--red);   border: 1px dashed rgba(248,81,73,0.3); }
     
     .btn-action {
       font-size: 0.75rem;
@@ -87,6 +90,12 @@
       gap: 0.35rem;
       transition: all 0.2s;
     }
+    .btn-approve {
+      background: transparent;
+      color: var(--green);
+      border: 1px solid rgba(37,211,102,0.4);
+    }
+    .btn-approve:hover { background: rgba(37,211,102,0.1); color: var(--green); }
     .btn-suspend {
       background: transparent;
       color: var(--red);
@@ -145,7 +154,7 @@
     {% endwith %}
 
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h5 class="m-0 text-white fw-bold">Active Tenants</h5>
+      <h5 class="m-0 text-white fw-bold">All Tenants</h5>
       <button class="btn btn-sm btn-primary" disabled><i class="bi bi-plus-lg me-1"></i> Provision Tenant</button>
     </div>
 
@@ -177,16 +186,24 @@
                 <span class="badge badge-status badge-suspended">SUSPENDED</span>
               {% elif tenant.status == 'TRIAL' %}
                 <span class="badge badge-status badge-trial">TRIAL</span>
+              {% elif tenant.status == 'PENDING' %}
+                <span class="badge badge-status badge-pending">PENDING</span>
+              {% elif tenant.status == 'EXPIRED' %}
+                <span class="badge badge-status badge-expired">EXPIRED</span>
+              {% elif tenant.status == 'CANCELLED' %}
+                <span class="badge badge-status badge-cancelled">CANCELLED</span>
               {% else %}
                 <span class="badge badge-status text-muted border border-secondary">{{ tenant.status }}</span>
               {% endif %}
             </td>
             <td class="text-muted">{{ tenant.created_at.strftime('%Y-%m-%d') }}</td>
             <td class="text-end">
-              {% if tenant.status == 'ACTIVE' or tenant.status == 'TRIAL' %}
-                <form action="{{ url_for('admin.crm_super_suspend_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to suspend {{ tenant.name }}? This will halt all system access and WhatsApp activity immediately.');">
-                  <button type="submit" class="btn btn-action btn-suspend"><i class="bi bi-pause-circle"></i> Suspend</button>
+              {% if tenant.status == 'PENDING' %}
+                <form action="{{ url_for('admin.crm_super_approve_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <button type="submit" class="btn btn-action btn-approve"><i class="bi bi-check-circle"></i> Approve</button>
                 </form>
+              {% elif tenant.status == 'ACTIVE' or tenant.status == 'TRIAL' %}
+                <form action="{{ url_for('admin.crm_super_suspend_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Suspend {{ tenant.name }}? This will immediately block all access and WhatsApp activity.');"><button type="submit" class="btn btn-action btn-suspend"><i class="bi bi-pause-circle"></i> Suspend</button></form>
               {% elif tenant.status == 'SUSPENDED' %}
                 <form action="{{ url_for('admin.crm_super_reactivate_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
                   <button type="submit" class="btn btn-action btn-reactivate"><i class="bi bi-play-circle"></i> Reactivate</button>
