@@ -44,23 +44,30 @@ def normalize_staff_name(name):
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
 
-# ── Phase 12-D3B2: Tenant Isolation Helpers ──────────────────────────────────
+# ── Phase 13-B3D: Hardened Tenant Isolation Helpers ──────────────────────────
 
 def tenant_query(model, tenant_id=None):
     """
-    Phase 12-D3: Returns a safely tenant-scoped query object.
-    - If tenant_id is provided, filters by that tenant.
-    - If tenant_id is None, falls back to current_user.tenant_id.
-    - If current_user is a SUPER_ADMIN, returns unfiltered query (future use).
-    - Safe to call outside request context when tenant_id is passed explicitly.
+    Phase 13-B3D: Returns a safely tenant-scoped query object.
+    - If tenant_id is explicitly provided, filters by that tenant.
+    - If SUPER_ADMIN, checks for session['impersonate_tenant_id'] and filters if present.
+      If not impersonating, returns unfiltered query.
+    - Otherwise, falls back to current_user.tenant_id.
     """
     try:
         from flask_login import current_user as _cu
+        from flask import session
+        
         if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
+            impersonate_id = session.get('impersonate_tenant_id')
+            if impersonate_id:
+                return model.query.filter_by(tenant_id=impersonate_id)
             return model.query
+            
         tid = tenant_id or getattr(_cu, 'tenant_id', None)
     except Exception:
         tid = tenant_id
+        
     if tid:
         return model.query.filter_by(tenant_id=tid)
     return model.query
@@ -68,68 +75,25 @@ def tenant_query(model, tenant_id=None):
 
 def tenant_filter(query_obj, model, tenant_id=None):
     """
-    Phase 12-D3: Appends tenant scoping to a db.session.query(...) chain.
-    - If tenant_id is provided, filters by that tenant.
-    - If tenant_id is None, falls back to current_user.tenant_id.
-    - If current_user is a SUPER_ADMIN, returns the query unchanged (future use).
-    - Safe to call outside request context when tenant_id is passed explicitly.
+    Phase 13-B3D: Appends tenant scoping to a db.session.query(...) chain.
     """
     try:
         from flask_login import current_user as _cu
+        from flask import session
+        
         if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
+            impersonate_id = session.get('impersonate_tenant_id')
+            if impersonate_id:
+                return query_obj.filter(model.tenant_id == impersonate_id)
             return query_obj
+            
         tid = tenant_id or getattr(_cu, 'tenant_id', None)
     except Exception:
         tid = tenant_id
+        
     if tid:
         return query_obj.filter(model.tenant_id == tid)
     return query_obj
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-# ── Phase 12-D3B2: Tenant Isolation Helpers ──────────────────────────────────
-
-def tenant_query(model, tenant_id=None):
-    """
-    Phase 12-D3: Returns a safely tenant-scoped query object.
-    - If tenant_id is provided, filters by that tenant.
-    - If tenant_id is None, falls back to current_user.tenant_id.
-    - If current_user is a SUPER_ADMIN, returns unfiltered query (future use).
-    - Safe to call outside request context when tenant_id is passed explicitly.
-    """
-    try:
-        from flask_login import current_user as _cu
-        if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
-            return model.query
-        tid = tenant_id or getattr(_cu, 'tenant_id', None)
-    except Exception:
-        tid = tenant_id
-    if tid:
-        return model.query.filter_by(tenant_id=tid)
-    return model.query
-
-
-def tenant_filter(query_obj, model, tenant_id=None):
-    """
-    Phase 12-D3: Appends tenant scoping to a db.session.query(...) chain.
-    - If tenant_id is provided, filters by that tenant.
-    - If tenant_id is None, falls back to current_user.tenant_id.
-    - If current_user is a SUPER_ADMIN, returns the query unchanged (future use).
-    - Safe to call outside request context when tenant_id is passed explicitly.
-    """
-    try:
-        from flask_login import current_user as _cu
-        if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
-            return query_obj
-        tid = tenant_id or getattr(_cu, 'tenant_id', None)
-    except Exception:
-        tid = tenant_id
-    if tid:
-        return query_obj.filter(model.tenant_id == tid)
-    return query_obj
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 EVENT_SCORE_MAP = {
@@ -419,6 +383,30 @@ def calculate_lead_portfolio(lead, events: list, course_journey: dict) -> dict:
 
 
 admin_bp = Blueprint("admin", __name__)
+
+@admin_bp.before_request
+def admin_security_guard():
+    if not request.path.startswith('/crm/'):
+        return
+        
+    from flask_login import current_user
+    
+    if current_user.is_authenticated:
+        # 1. Require Password Change Enforcement
+        if getattr(current_user, 'require_password_change', False):
+            allowed_paths = ('/crm/setup-password', '/crm/logout')
+            if request.path not in allowed_paths and not request.path.startswith('/static/'):
+                return redirect(url_for('admin.crm_setup_password'))
+                
+        # 2. SUPER_ADMIN CRM Protection
+        if getattr(current_user, 'role', None) == 'SUPER_ADMIN':
+            # Block access to regular CRM routes if not impersonating
+            if request.path.startswith('/crm/') and not request.path.startswith('/crm/super/'):
+                if request.path not in ('/crm/logout', '/crm/setup-password'):
+                    from flask import session
+                    if not session.get('impersonate_tenant_id'):
+                        flash("You must impersonate a tenant to access CRM routes.", "warning")
+                        return redirect(url_for('admin.crm_super_dashboard'))
 
 @admin_bp.context_processor
 def inject_actor():
@@ -4659,6 +4647,29 @@ def crm_logout():
     return redirect(url_for("admin.crm_login"))
 
 
+@admin_bp.route("/crm/setup-password", methods=["GET", "POST"])
+@login_required
+def crm_setup_password():
+    if not getattr(current_user, 'require_password_change', False):
+        return redirect(url_for("admin.crm_home"))
+        
+    if request.method == "POST":
+        new_password = request.form.get("new_password", "")
+        if len(new_password) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+            return redirect(url_for("admin.crm_setup_password"))
+            
+        from werkzeug.security import generate_password_hash
+        from app.extensions import db
+        current_user.password_hash = generate_password_hash(new_password)
+        current_user.require_password_change = False
+        db.session.commit()
+        flash("Password updated successfully. Welcome!", "success")
+        return redirect(url_for("admin.crm_home"))
+        
+    return render_template("crm_setup_password.html")
+
+
 @admin_bp.after_request
 def add_cache_control_headers(response):
     """
@@ -4744,6 +4755,27 @@ def crm_super_reactivate_tenant(tenant_id):
         db.session.commit()
         flash(f"Tenant '{tenant.name}' has been reactivated.", "success")
     return redirect(url_for('admin.crm_super_dashboard'))
+
+# ── Phase 13-B3D: Impersonation ──────────────────────────────────────────────
+@admin_bp.route("/crm/super/impersonate/<tenant_id>", methods=["POST"])
+@login_required
+@super_admin_required
+def crm_super_impersonate(tenant_id):
+    from app.models import Tenant
+    tenant = Tenant.query.get_or_404(tenant_id)
+    session['impersonate_tenant_id'] = tenant.id
+    session['impersonate_tenant_name'] = tenant.name
+    flash(f"Now impersonating tenant: {tenant.name}", "success")
+    return redirect(url_for("admin.crm_home"))
+
+@admin_bp.route("/crm/super/impersonate/exit", methods=["POST"])
+@login_required
+@super_admin_required
+def crm_super_impersonate_exit():
+    session.pop('impersonate_tenant_id', None)
+    session.pop('impersonate_tenant_name', None)
+    flash("Exited impersonation mode.", "info")
+    return redirect(url_for("admin.crm_super_dashboard"))
 
 # ── Phase 13-B2B: Tenant Approval ────────────────────────────────────────────
 @admin_bp.route("/crm/super/tenant/<tenant_id>/approve", methods=["POST"])

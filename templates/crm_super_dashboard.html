@@ -108,6 +108,12 @@
       border: 1px solid rgba(37,211,102,0.4);
     }
     .btn-reactivate:hover { background: rgba(37,211,102,0.1); color: var(--green); }
+    .btn-impersonate {
+      background: rgba(88,166,255,0.1);
+      color: var(--blue);
+      border: 1px solid rgba(88,166,255,0.4);
+    }
+    .btn-impersonate:hover { background: rgba(88,166,255,0.2); }
 
     .tenant-name { font-weight: 600; color: #fff; }
     .tenant-slug { font-family: monospace; color: var(--text-muted); font-size: 0.75rem; }
@@ -203,6 +209,9 @@
                   <button type="submit" class="btn btn-action btn-approve"><i class="bi bi-check-circle"></i> Approve</button>
                 </form>
               {% elif tenant.status == 'ACTIVE' or tenant.status == 'TRIAL' %}
+                <form action="{{ url_for('admin.crm_super_impersonate', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <button type="submit" class="btn btn-action btn-impersonate" title="Login as this tenant"><i class="bi bi-box-arrow-in-right"></i> Impersonate</button>
+                </form>
                 <form action="{{ url_for('admin.crm_super_suspend_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Suspend {{ tenant.name }}? This will immediately block all access and WhatsApp activity.');"><button type="submit" class="btn btn-action btn-suspend"><i class="bi bi-pause-circle"></i> Suspend</button></form>
               {% elif tenant.status == 'SUSPENDED' %}
                 <form action="{{ url_for('admin.crm_super_reactivate_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
