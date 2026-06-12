@@ -25,6 +25,23 @@ def create_app():
         "pool_recycle":  1800,       # Recycle connections every 30 min
     }
 
+    # ── Phase 13-B4B2: WABA Encryption Setup ─────────────────────────────
+    import os
+    app.config["WABA_ENCRYPTION_KEY"] = os.environ.get("WABA_ENCRYPTION_KEY", "")
+    
+    # Fail-fast validation at boot
+    if not app.config["WABA_ENCRYPTION_KEY"]:
+        # Only log a warning here if you don't want to break local dev without WABA yet.
+        # But instructions say "Fail-fast behavior" and "Startup validation".
+        # Let's import the service which handles validation in _get_cipher but wait, we want to validate on startup.
+        try:
+            from cryptography.fernet import Fernet
+            Fernet(app.config["WABA_ENCRYPTION_KEY"].encode('utf-8'))
+        except ValueError as e:
+            raise RuntimeError(f"CRITICAL: WABA_ENCRYPTION_KEY is missing or invalid. It must be a 32-byte base64 URL-safe string. Details: {e}")
+        except Exception as e:
+            raise RuntimeError(f"CRITICAL: Failed to initialize WABA encryption: {e}")
+
     # ── Initialise extensions ─────────────────────────────────────────────
     db.init_app(app)
     migrate.init_app(app, db)
