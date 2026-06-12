@@ -278,3 +278,85 @@ def tenant_billing():
         return redirect(url_for('tenant.tenant_home'))
 
     return render_template('tenant/billing.html', tenant=tenant)
+
+
+@tenant_bp.route('/whatsapp', methods=['GET'])
+@login_required
+@tenant_admin_required
+def tenant_whatsapp():
+    """Phase 13-B4E2: WABA Onboarding UI"""
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+        
+    has_token = bool(tenant.waba_access_token_encrypted)
+    return render_template('tenant/whatsapp.html', tenant=tenant, has_token=has_token)
+
+
+@tenant_bp.route('/whatsapp/save', methods=['POST'])
+@login_required
+@tenant_admin_required
+def tenant_whatsapp_save():
+    from app.services.encryption_service import encrypt_token
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+        
+    phone_number_id = request.form.get('phone_number_id', '').strip()
+    access_token = request.form.get('access_token', '').strip()
+    
+    if not phone_number_id or not phone_number_id.isdigit():
+        flash('Valid numeric Phone Number ID is required.', 'danger')
+        return redirect(url_for('tenant.tenant_whatsapp'))
+        
+    tenant.waba_phone_number_id = phone_number_id
+    
+    if access_token:
+        # Encrypt and save new token
+        try:
+            tenant.waba_access_token_encrypted = encrypt_token(access_token)
+        except Exception as e:
+            flash(f'Encryption failed: {e}', 'danger')
+            return redirect(url_for('tenant.tenant_whatsapp'))
+            
+    try:
+        db.session.commit()
+        flash('WhatsApp settings saved successfully.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to save settings: {e}', 'danger')
+        
+    return redirect(url_for('tenant.tenant_whatsapp'))
+
+
+@tenant_bp.route('/whatsapp/test', methods=['POST'])
+@login_required
+@tenant_admin_required
+def tenant_whatsapp_test():
+    import requests
+    from app.services.encryption_service import decrypt_token
+    
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+        
+    if not tenant.waba_phone_number_id or not tenant.waba_access_token_encrypted:
+        flash('Cannot test: Missing Phone Number ID or Access Token.', 'warning')
+        return redirect(url_for('tenant.tenant_whatsapp'))
+        
+    try:
+        token = decrypt_token(tenant.waba_access_token_encrypted)
+        url = f"https://graph.facebook.com/v21.0/{tenant.waba_phone_number_id}"
+        r = requests.get(url, headers={"Authorization": f"Bearer {token}"})
+        
+        if r.status_code == 200:
+            flash('WhatsApp connection successful! \u2705', 'success')
+        else:
+            flash(f'Meta API Error ({r.status_code}): {r.text}', 'danger')
+    except Exception as e:
+        flash(f'Test connection failed: {e}', 'danger')
+        
+    return redirect(url_for('tenant.tenant_whatsapp'))

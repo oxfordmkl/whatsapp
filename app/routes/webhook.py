@@ -46,9 +46,25 @@ def receive_message():
         wamid        = message.get("id", "")
         contact_name = contacts[0].get("profile", {}).get("name", "Student") if contacts else "Student"
 
-        # Phase 12-D2B: Extract tenant context early
-        from app.services.log_service import _get_default_tenant_id
-        tenant_id = _get_default_tenant_id()
+        # Phase 13-B4D2: Dynamic Webhook Tenant Routing
+        phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
+        tenant_id = None
+        
+        from app.models import Tenant
+        tenant = Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
+        if tenant:
+            if tenant.status not in ["ACTIVE", "TRIAL"]:
+                print(f"⚠️ Webhook dropped: Tenant {tenant.id} is {tenant.status}")
+                return jsonify({"status": "ok"}), 200
+            tenant_id = tenant.id
+        else:
+            # Grace-period fallback to primary Oxford tenant
+            if phone_number_id == current_app.config.get("PHONE_NUMBER_ID"):
+                from app.services.log_service import _get_default_tenant_id
+                tenant_id = _get_default_tenant_id()
+            else:
+                print(f"⚠️ Webhook dropped: Unknown WABA Phone ID {phone_number_id}")
+                return jsonify({"status": "ok"}), 200
 
         # Phase 11-D1 Task C: Deduplication Protection
         if wamid:
