@@ -389,10 +389,24 @@ def check_billing_status():
     Phase 13-B4.1C: Provider-Agnostic SaaS Billing Middleware
     Ensures tenants with blocked statuses cannot access the CRM.
     """
-    from app.routes.tenant import _get_current_tenant
-    from flask import request, redirect, url_for, flash
+    from flask import request, redirect, url_for, flash, session
+    from flask_login import current_user
+    from app.models import Tenant
     
-    tenant = _get_current_tenant()
+    if not current_user.is_authenticated:
+        return None
+        
+    role = getattr(current_user, 'role', None)
+    if role == 'SUPER_ADMIN':
+        # Safely resolve impersonated tenant for Super Admin
+        tid = request.args.get('tenant_id') or session.get('impersonate_tenant_id') or getattr(current_user, 'tenant_id', None)
+    else:
+        tid = getattr(current_user, 'tenant_id', None)
+        
+    if not tid:
+        return None
+        
+    tenant = Tenant.query.get(tid)
     if not tenant or tenant.billing_exempt:
         return None
         
