@@ -389,7 +389,7 @@ def check_billing_status():
     Phase 13-B4.1C: Provider-Agnostic SaaS Billing Middleware
     Ensures tenants with blocked statuses cannot access the CRM.
     """
-    from app.services.log_service import _get_current_tenant
+    from app.routes.tenant import _get_current_tenant
     from flask import request, redirect, url_for, flash
     
     tenant = _get_current_tenant()
