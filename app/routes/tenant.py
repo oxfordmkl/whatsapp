@@ -26,6 +26,25 @@ from app.extensions import db
 
 tenant_bp = Blueprint('tenant', __name__, url_prefix='/tenant')
 
+@tenant_bp.before_request
+def tenant_security_guard():
+    """
+    Phase 13-B4.1C: Provider-Agnostic SaaS Billing Middleware
+    Ensures tenants with blocked statuses cannot access configuration routes.
+    """
+    from app.routes.admin import check_billing_status
+    if request.path.startswith('/tenant/billing'):
+        return
+        
+    # Phase 13-B4.1B: Allow read-only access to WhatsApp page during suspension
+    if request.path == '/tenant/whatsapp' and request.method == 'GET':
+        return
+        
+    billing_redirect = check_billing_status()
+    if billing_redirect:
+        return billing_redirect
+
+
 
 # ── Phase 13-B3B: Decorator ───────────────────────────────────────────────────
 

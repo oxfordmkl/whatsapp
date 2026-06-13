@@ -55,6 +55,16 @@ class Tenant(db.Model):
     # NULL = system default AALIZA_PROMPT from app/bot/prompts.py.
     ai_prompt_override = db.Column(db.Text, nullable=True)
 
+    # ── Phase 13-B4.1: Provider-Agnostic SaaS Billing ─────────────────────
+    billing_provider            = db.Column(db.String(20), nullable=True) # e.g. 'stripe', 'razorpay'
+    billing_customer_id         = db.Column(db.String(100), nullable=True)
+    billing_subscription_id     = db.Column(db.String(100), nullable=True, unique=True)
+    billing_subscription_status = db.Column(db.String(50), nullable=True)
+    current_period_end          = db.Column(db.DateTime, nullable=True)
+    past_due_at                 = db.Column(db.DateTime, nullable=True)
+    billing_exempt              = db.Column(db.Boolean, default=False, nullable=False)
+    currency                    = db.Column(db.String(3), default='USD', nullable=False)
+
     # ── Audit ──────────────────────────────────────────────────────────────
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -263,3 +273,24 @@ class LeadEvent(db.Model):
     __table_args__ = (
         db.Index("idx_lead_event_phone_created", "phone", "created_at"),
     )
+
+class BillingInvoice(db.Model):
+    """
+    Phase 13-B4.1: Subscription Billing Foundation.
+    Immutable ledger for SaaS billing.
+    """
+    __tablename__ = 'billing_invoices'
+    
+    id                   = db.Column(db.Integer, primary_key=True)
+    tenant_id            = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
+    provider             = db.Column(db.String(20), nullable=False) # 'stripe' | 'razorpay'
+    provider_invoice_id  = db.Column(db.String(100), unique=True, nullable=False)
+    amount_paid          = db.Column(db.Integer, nullable=False) # In cents/paise
+    tax_amount           = db.Column(db.Integer, default=0, nullable=False)
+    currency             = db.Column(db.String(3), nullable=False)
+    status               = db.Column(db.String(20), nullable=False) # 'paid', 'failed', 'open'
+    hosted_invoice_url   = db.Column(db.String(500), nullable=True)
+    billing_period_start = db.Column(db.DateTime, nullable=True)
+    billing_period_end   = db.Column(db.DateTime, nullable=True)
+    created_at           = db.Column(db.DateTime, default=datetime.utcnow)
+

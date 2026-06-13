@@ -384,6 +384,26 @@ def calculate_lead_portfolio(lead, events: list, course_journey: dict) -> dict:
 
 admin_bp = Blueprint("admin", __name__)
 
+def check_billing_status():
+    """
+    Phase 13-B4.1C: Provider-Agnostic SaaS Billing Middleware
+    Ensures tenants with blocked statuses cannot access the CRM.
+    """
+    from app.services.log_service import _get_current_tenant
+    from flask import request, redirect, url_for, flash
+    
+    tenant = _get_current_tenant()
+    if not tenant or tenant.billing_exempt:
+        return None
+        
+    if tenant.status in ['SUSPENDED', 'CANCELLED']:
+        flash("Your subscription is suspended. Access is restricted.", "danger")
+        return redirect(url_for('tenant.tenant_billing'))
+    elif tenant.status == 'PAST_DUE':
+        flash("Your account is past due. Please update your billing info to avoid suspension.", "warning")
+        
+    return None
+
 @admin_bp.before_request
 def admin_security_guard():
     if not request.path.startswith('/crm/'):
@@ -407,6 +427,13 @@ def admin_security_guard():
                     if not session.get('impersonate_tenant_id'):
                         flash("You must impersonate a tenant to access CRM routes.", "warning")
                         return redirect(url_for('admin.crm_super_dashboard'))
+                        
+        # 3. Phase 13-B4.1: SaaS Billing Middleware
+        if not request.path.startswith('/crm/super/'):
+            if request.path not in ('/crm/logout', '/crm/setup-password'):
+                billing_redirect = check_billing_status()
+                if billing_redirect:
+                    return billing_redirect
 
 @admin_bp.context_processor
 def inject_actor():
