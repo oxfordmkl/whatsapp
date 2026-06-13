@@ -12,7 +12,7 @@ app = create_app()
 
 with app.app_context():
     print("Looking for Oxford tenant...")
-    oxford_tenant = Tenant.query.filter_by(slug="oxford").first()
+    oxford_tenant = Tenant.query.filter_by(slug="oxford-computers").first()
     
     if oxford_tenant:
         print(f"Found Oxford tenant: ID={oxford_tenant.id}, Name={oxford_tenant.name}")
