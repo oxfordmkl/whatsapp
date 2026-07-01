@@ -979,8 +979,6 @@ def crm_staff_management():
 
 # ── GET /crm/leads ─────────────────────────────────────────────────────────
 
-@admin_bp.route("/crm/leads", methods=["GET"])
-
 def _deny():
     return (
         "<html><body style='font-family:sans-serif;text-align:center;"
@@ -4640,6 +4638,7 @@ def get_current_actor():
 
 
 @admin_bp.route("/crm/auth-debug", methods=["GET"])
+@login_required
 def auth_debug():
     actor = get_current_actor()
     logging.info(f"AUTH source={actor['source']} user={actor['username']}")

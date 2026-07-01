@@ -91,6 +91,7 @@ def create_app():
     from app.routes.health import health_bp
     from app.routes.public import public_bp
     from app.routes.tenant import tenant_bp
+    from app.routes.billing import billing_bp
 
     app.register_blueprint(public_bp)
     app.register_blueprint(webhook_bp)
@@ -98,6 +99,7 @@ def create_app():
     app.register_blueprint(broadcast_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(tenant_bp)
+    app.register_blueprint(billing_bp)
 
     # ── Start follow-up scheduler (needs app ref for DB context) ──────────
     from app.services.followup_service import init_followup_service

@@ -24,3 +24,11 @@ if DATABASE_URL.startswith("postgres://"):
 # Phase 10: Authentication
 AUTH_MODE = os.environ.get('AUTH_MODE', 'ADMIN_KEY_ONLY')
 
+DEBUG = os.environ.get("FLASK_ENV") == "development" or os.environ.get("DEBUG") == "1"
+if not DEBUG:
+    if SECRET_KEY == "oxford-crm-local-dev-key":
+        raise RuntimeError("Production secrets missing: SECRET_KEY is using insecure default.")
+    if ADMIN_KEY == "oxford_admin_2026":
+        raise RuntimeError("Production secrets missing: ADMIN_KEY is using insecure default.")
+    if BROADCAST_API_KEY == "oxford_broadcast_2026":
+        raise RuntimeError("Production secrets missing: BROADCAST_API_KEY is using insecure default.")
