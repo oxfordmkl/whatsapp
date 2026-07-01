@@ -4649,6 +4649,9 @@ def auth_debug():
 @admin_bp.route("/crm/login", methods=["GET", "POST"])
 def crm_login():
     if current_user.is_authenticated:
+        next_page = request.args.get('next')
+        if next_page and next_page.startswith('/'):
+            return redirect(next_page)
         return redirect(url_for("admin.crm_home"))
         
     if request.method == "POST":
@@ -4672,6 +4675,9 @@ def crm_login():
             user.last_login = datetime.utcnow()
             db.session.commit()
             login_user(user)
+            next_page = request.args.get('next')
+            if next_page and next_page.startswith('/'):
+                return redirect(next_page)
             return redirect(url_for("admin.crm_home"))
             
         flash("Invalid credentials or inactive account.", "danger")
@@ -4743,6 +4749,9 @@ def super_admin_required(f):
 @admin_bp.route("/crm/super/login", methods=["GET", "POST"])
 def crm_super_login():
     if current_user.is_authenticated and getattr(current_user, 'role', None) == 'SUPER_ADMIN':
+        next_page = request.args.get('next')
+        if next_page and next_page.startswith('/'):
+            return redirect(next_page)
         return redirect(url_for("admin.crm_super_dashboard"))
         
     if request.method == "POST":
@@ -4756,6 +4765,9 @@ def crm_super_login():
             user.last_login = datetime.utcnow()
             db.session.commit()
             login_user(user)
+            next_page = request.args.get('next')
+            if next_page and next_page.startswith('/'):
+                return redirect(next_page)
             return redirect(url_for("admin.crm_super_dashboard"))
             
         flash("Invalid credentials or unauthorized.", "danger")
