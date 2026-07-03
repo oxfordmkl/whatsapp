@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "description": "Oxford CRM machine-readable project state snapshot. Synchronized with PROJECT_STATE.md. Update both files together.",
+    "format": "JSON — AI-optimized flat structure",
+    "last_updated": "2026-07-02",
+    "update_rule": "Update after every phase completion, deployment, or migration"
+  },
+
+  "project": {
+    "name": "Oxford CRM",
+    "client": "Oxford Computers",
+    "business_type": "Rutronix Authorised Training Centre",
+    "location": "Kerala, India",
+    "framework": "Python Flask",
+    "database": "PostgreSQL",
+    "orm": "SQLAlchemy",
+    "hosting": "Railway",
+    "ai_engine": "Google Gemini",
+    "messaging": "WhatsApp Cloud API (Meta)",
+    "payment": "Razorpay",
+    "stripe": "EXPLICITLY_DEFERRED"
+  },
+
+  "version": {
+    "documentation": "15.1",
+    "phase": "15B",
+    "release": "Kerala Production Candidate v1.0",
+    "next_version": "15.2"
+  },
+
+  "status": {
+    "overall": "CONDITIONAL_GO",
+    "architecture_score": 90,
+    "security_score": 95,
+    "isolation_score": 95,
+    "production_live": true,
+    "critical_blockers": 0
+  },
+
+  "systems": {
+    "authentication": {
+      "status": "COMPLETE",
+      "phase_completed": "14B.3",
+      "roles": ["SUPER_ADMIN", "ADMIN", "STAFF"],
+      "planned_roles": ["READ_ONLY"],
+      "deep_link_fixed": true,
+      "frameworks": ["Flask-Login"]
+    },
+    "tenant_isolation": {
+      "status": "COMPLETE",
+      "phase_completed": "13-B4D2",
+      "score": 95,
+      "pattern": "tenant_query(Model, tenant_id)"
+    },
+    "whatsapp": {
+      "status": "COMPLETE",
+      "phase_completed": "13-B4D2",
+      "routing": "dynamic_via_waba_phone_number_id",
+      "encryption": "Fernet",
+      "live_traffic": true
+    },
+    "ai": {
+      "status": "COMPLETE",
+      "phase_completed": "10N",
+      "engine": "Google Gemini",
+      "per_tenant_persona": true,
+      "per_tenant_prompt": true
+    },
+    "billing": {
+      "status": "FOUNDATION_ONLY",
+      "phase_completed": "13-B4.1C",
+      "provider": "razorpay",
+      "live_subscriptions": false,
+      "stripe": "DEFERRED",
+      "oxford_exempt": true
+    },
+    "lead_management": {
+      "status": "COMPLETE",
+      "phase_completed": "10"
+    },
+    "marketing": {
+      "status": "COMPLETE",
+      "phase_completed": "11"
+    },
+    "automation": {
+      "status": "COMPLETE",
+      "phase_completed": "12",
+      "follow_up_engine": "active"
+    },
+    "tenant_portal": {
+      "status": "COMPLETE",
+      "phase_completed": "13-B3B",
+      "sidebar_link_fixed": "14B.3"
+    },
+    "super_admin": {
+      "status": "PARTIAL",
+      "implemented": ["view_tenants", "approve", "suspend", "reactivate", "impersonate"],
+      "missing": ["delete", "archive", "create_tenant"]
+    },
+    "documentation": {
+      "status": "IN_PROGRESS",
+      "phase": "15B",
+      "folders_created": 18,
+      "folders_complete": 3
+    }
+  },
+
+  "deployment": {
+    "platform": "Railway",
+    "region": "India",
+    "scope": "single_tenant",
+    "active_tenant": "oxford_computers",
+    "tenant_slug": "oxford",
+    "payment_provider": "razorpay",
+    "international": false,
+    "last_deploy": "2026-07-01"
+  },
+
+  "database": {
+    "engine": "PostgreSQL",
+    "status": "STABLE",
+    "last_migration": "5a4dedcee918_add_provider_agnostic_billing_columns",
+    "last_migration_date": "2026-06-13",
+    "pending_migrations": 0,
+    "tables": [
+      "tenants",
+      "users",
+      "conversation_state",
+      "conversation_message",
+      "message_log",
+      "lead_event",
+      "follow_up_jobs",
+      "pending_messages",
+      "billing_invoices"
+    ]
+  },
+
+  "risks": {
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 4,
+    "items": [
+      {"id": "R-001", "severity": "MEDIUM", "description": "admin.py mega-file 4800+ lines"},
+      {"id": "R-002", "severity": "MEDIUM", "description": "No DELETE/ARCHIVE tenant endpoint"},
+      {"id": "R-003", "severity": "LOW", "description": "No READ_ONLY role"},
+      {"id": "R-004", "severity": "LOW", "description": "_get_default_tenant_id() single-tenant assumption"},
+      {"id": "R-005", "severity": "LOW", "description": "WABA_ENCRYPTION_KEY dev-mode issue"},
+      {"id": "R-006", "severity": "LOW", "description": "next URL post-login reveals destination"}
+    ]
+  },
+
+  "technical_debt": {
+    "count": 3,
+    "items": [
+      {"id": "TD-001", "item": "admin.py mega-file", "risk": "MEDIUM", "resolution_phase": "16"},
+      {"id": "TD-002", "item": "No DELETE/ARCHIVE tenant UI", "risk": "MEDIUM", "resolution_phase": "15C"},
+      {"id": "TD-003", "item": "No READ_ONLY role", "risk": "LOW", "resolution_phase": "15C"}
+    ]
+  },
+
+  "next_phase": {
+    "id": "15C",
+    "name": "Super Admin Platform",
+    "status": "PLANNED",
+    "approved": false,
+    "deliverables": ["delete_tenant_route", "archive_tenant_route", "create_tenant_ui"]
+  },
+
+  "never_do": [
+    "recreate_database",
+    "drop_tables",
+    "rename_production_columns",
+    "rewrite_authentication",
+    "bypass_tenant_isolation",
+    "create_duplicate_routes",
+    "implement_stripe_without_approval",
+    "modify_unrelated_modules",
+    "code_without_user_approval",
+    "touch_working_whatsapp_webhook",
+    "mass_format_or_refactor",
+    "invent_architecture",
+    "assume_without_reading_source",
+    "skip_documentation_after_implementation",
+    "treat_this_as_new_project"
+  ],
+
+  "critical_files": {
+    "app/__init__.py": "App factory and blueprint registration",
+    "app/models.py": "All database models",
+    "app/config.py": "Environment variables and validation",
+    "app/routes/admin.py": "Main CRM routes (4800+ lines — caution)",
+    "app/routes/tenant.py": "Tenant portal routes",
+    "app/routes/webhook.py": "WhatsApp inbound webhook",
+    "app/bot/router.py": "AI conversation engine",
+    "app/services/followup_service.py": "Follow-up automation",
+    "app/services/whatsapp_service.py": "WhatsApp API send layer",
+    "templates/crm_sidebar.html": "Main navigation sidebar"
+  }
+}
