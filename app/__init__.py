@@ -62,27 +62,54 @@ def create_app():
     # ── Register CLI Commands ─────────────────────────────────────────────
     @app.cli.command("seed-superadmin")
     def seed_superadmin():
-        """Seed the initial Super Admin account."""
+        """Seed the initial Super Admin account securely."""
+        import click
         from werkzeug.security import generate_password_hash
-        import uuid
+        import sqlalchemy.exc
         
         super_admin = models.User.query.filter_by(role="SUPER_ADMIN").first()
         if super_admin:
-            print("Super Admin already exists.")
+            click.echo("A Super Admin account already exists. No changes were made.")
             return
 
-        print("Creating default Super Admin...")
-        user = models.User(
-            username="superadmin",
-            email="super@admin.com",
-            password_hash=generate_password_hash("supersecret"),
-            role="SUPER_ADMIN",
-            tenant_id=None,
-            is_active=True
-        )
-        db.session.add(user)
-        db.session.commit()
-        print("Super Admin created: Email=super@admin.com, Password=supersecret")
+        email = click.prompt("Email", type=str).strip()
+        if not email:
+            click.echo("Email cannot be empty. Aborting.")
+            return
+
+        if models.User.query.filter_by(email=email).first():
+            click.echo("Email is already in use. Aborting.")
+            return
+
+        username = click.prompt("Username", type=str).strip()
+        if not username:
+            click.echo("Username cannot be empty. Aborting.")
+            return
+
+        if models.User.query.filter_by(username=username, tenant_id=None).first():
+            click.echo("Username is already in use by another platform account. Aborting.")
+            return
+
+        password = click.prompt("Password", type=str, hide_input=True, confirmation_prompt=True)
+        if len(password) < 8:
+            click.echo("Password must be at least 8 characters long. Aborting.")
+            return
+
+        try:
+            user = models.User(
+                username=username,
+                email=email,
+                password_hash=generate_password_hash(password),
+                role="SUPER_ADMIN",
+                tenant_id=None,
+                is_active=True
+            )
+            db.session.add(user)
+            db.session.commit()
+            click.echo("Super Admin account created successfully.")
+        except sqlalchemy.exc.SQLAlchemyError:
+            db.session.rollback()
+            click.echo("An error occurred while creating the Super Admin. No changes were made.")
 
     # ── Register Flask blueprints ─────────────────────────────────────────
     from app.routes.webhook import webhook_bp
