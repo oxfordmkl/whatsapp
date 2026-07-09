@@ -59,6 +59,20 @@ None.
 
 ---
 
+#### R-007 — No Verified Privileged Password Recovery
+| Field | Value |
+|-------|-------|
+| **ID** | R-007 |
+| **Severity** | MEDIUM |
+| **Description** | No verified privileged password recovery/reset workflow exists. Passwords are hashed and cannot be retrieved by design. |
+| **Impact** | OPERATIONAL ACCESS RECOVERY RISK — Loss of credentials requires direct CLI/DB intervention. |
+| **Mitigation** | Securely store the single set of provisioned Super Admin credentials offline. |
+| **Resolution** | Implement a separately audited secure privileged password-reset CLI or equivalent approved recovery flow in a future hardening phase. Do not recreate accounts as default recovery. |
+| **Owner** | Engineering Team |
+| **Phase Identified** | Phase 15C.1 |
+
+---
+
 ### 🟢 LOW Risks
 
 #### R-003 — No READ_ONLY Role

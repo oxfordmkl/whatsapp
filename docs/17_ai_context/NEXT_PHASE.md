@@ -1,8 +1,8 @@
 # Oxford CRM — Next Phase
-## Phase 15C — Super Admin Platform
+## Phase 15C.2 — Super Admin Dashboard Discovery
 
-> **Version:** 15.1 | **Phase:** 15B | **Owner:** Engineering Team
-> **Last Updated:** 2026-07-02 | **Status:** PLANNED — Awaiting Approval
+> **Version:** 15.1 | **Phase:** 15C.1 (Completed) | **Owner:** Engineering Team
+> **Last Updated:** 2026-07-09 | **Status:** DISCOVERY — Awaiting Approval
 > **Update Rule:** Fully rewrite this document after every phase completion
 
 ---
@@ -11,30 +11,28 @@
 
 | Field | Value |
 |-------|-------|
-| **Phase ID** | 15C |
-| **Phase Name** | Super Admin Platform |
-| **Status** | PLANNED — Not yet approved |
+| **Phase ID** | 15C.2 |
+| **Phase Name** | Super Admin Dashboard Discovery |
+| **Status** | DISCOVERY — Not yet approved |
 | **Priority** | HIGH |
-| **Prerequisite** | Phase 15B (Documentation) completion |
-| **Risk Level** | MEDIUM |
+| **Prerequisite** | Phase 15C.1 (Authentication) completion |
+| **Risk Level** | LOW (Audit Only) |
 
 ---
 
 ## Why This Phase Is Needed
 
-The current Super Admin system (implemented through Phase 15A) supports:
-- ✅ View all tenants
-- ✅ Approve PENDING tenants
-- ✅ Suspend tenants
-- ✅ Reactivate tenants
-- ✅ Impersonate tenants
+The current Super Admin system (implemented through Phase 15A) supports a "Platform Control Center" dashboard.
+Before any new dashboard features are implemented, we must determine:
+- What dashboard capability already exists.
+- What Phase 15C requirements already exist.
+- What is partial.
+- What is missing.
+- What should remain untouched.
 
-It is **missing:**
-- ❌ Delete Tenant (soft-delete to `DELETED` status)
-- ❌ Archive Tenant (soft-archive to `ARCHIVED` status)
-- ❌ Create New Tenant (without public registration)
+**NO IMPLEMENTATION UNTIL AUDIT AND APPROVAL.**
 
-Without delete/archive, removing a test tenant or decommissioning a client requires direct database intervention — which is dangerous in production.
+Do not assume the dashboard must be newly built because an existing Platform Control Center already exists.
 
 ---
 
@@ -42,10 +40,9 @@ Without delete/archive, removing a test tenant or decommissioning a client requi
 
 | # | Deliverable | Type | Risk |
 |---|-------------|------|------|
-| 1 | `DELETE /crm/super/tenant/<id>/delete` route | Route addition | LOW |
-| 2 | `DELETE /crm/super/tenant/<id>/archive` route | Route addition | LOW |
-| 3 | Super Admin dashboard UI buttons for delete/archive | Template update | LOW |
-| 4 | Confirmation modal before delete/archive | Template update | LOW |
+| 1 | Existing Platform Control Center Audit | Discovery | LOW |
+| 2 | Existing Features Gap Analysis | Discovery | LOW |
+| 3 | Phase 15C.3 Implementation Plan | Artifact | LOW |
 
 ---
 
@@ -53,81 +50,31 @@ Without delete/archive, removing a test tenant or decommissioning a client requi
 
 | Dependency | Status |
 |-----------|--------|
-| Phase 15B documentation complete | In Progress |
-| No new database schema required | Confirmed |
-| `Tenant.status` already supports `DELETED` value | ✅ Confirmed in `app/models.py` |
-| `admin_bp` already has Super Admin section | ✅ Confirmed (lines 4765–4836) |
+| Phase 15C.1 authentication verification complete | ✅ Completed |
+| Production SUPER_ADMIN count verified | ✅ Confirmed at 1 |
 
 ---
 
-## Risk Analysis
-
-| Risk | Severity | Mitigation |
-|------|---------|-----------|
-| Editing `admin.py` (4,800+ lines) | MEDIUM | Surgical edits to Super Admin section only |
-| Accidental tenant deletion | MEDIUM | Soft-delete only (status = 'DELETED', data preserved) |
-| Template regression | LOW | Only modify Super Admin dashboard template |
-
-**No database schema changes required.** `Tenant.status` already supports `DELETED`.
-
----
-
-## Rollback Plan
-
-| Step | Action |
-|------|--------|
-| 1 | Remove the two new route functions from `admin.py` |
-| 2 | Remove the two UI buttons from `crm_super_dashboard.html` |
-| 3 | No database rollback needed (no migration) |
-| **Time to rollback** | < 2 minutes |
-
----
-
-## Testing Plan
-
-After implementation, verify:
-
-| Test | Expected Result |
-|------|----------------|
-| SUPER_ADMIN login | ✅ Still works |
-| Super Admin dashboard loads | ✅ Still works |
-| Existing approve/suspend/reactivate | ✅ Still works |
-| Impersonation flow | ✅ Still works |
-| Delete tenant (test) | ✅ Status changes to DELETED |
-| Archive tenant (test) | ✅ Status changes to ARCHIVED |
-| Deleted tenant cannot log in | ✅ Login blocked by tenant status check |
-| ADMIN/STAFF login unaffected | ✅ No changes to login flow |
-
----
-
-## Estimated Implementation Order
+## Estimated Execution Order
 
 ```
-Step 1: Read app/routes/admin.py — Super Admin section (lines 4765–4836)
-Step 2: Read templates/crm_super_dashboard.html
-Step 3: Write implementation plan artifact
-Step 4: Await user approval ← MANDATORY
-Step 5: Add crm_super_delete_tenant() route to admin.py
-Step 6: Add crm_super_archive_tenant() route to admin.py
-Step 7: Update crm_super_dashboard.html with new buttons + confirmation modal
-Step 8: Run py_compile verification
-Step 9: Regression test matrix
-Step 10: Update documentation
+Step 1: Read templates/crm_super_dashboard.html
+Step 2: Read app/routes/admin.py (Super Admin sections)
+Step 3: Document existing capabilities and gaps
+Step 4: Prepare Phase 15C.3 Implementation Plan
+Step 5: Await user approval ← MANDATORY
 ```
 
 ---
 
-## What Comes After Phase 15C
+## What Comes After Phase 15C.2
 
-**Phase 16 — Subscription Engine**
-
-- Activate live Razorpay subscription processing
-- Auto-create subscriptions when Super Admin creates a tenant
-- Webhook processing for payment events
-- Trial-to-paid conversion flow
+**Phase 15C.3 — Super Admin Implementation**
+- Implement targeted missing capabilities (e.g. Delete/Archive/Create Tenant).
+- Only execute approved surgical updates.
 
 ---
 
 *Oxford CRM Documentation — docs/17_ai_context/NEXT_PHASE.md*
-*Cross-references: `PROJECT_STATE.md` · `ACTIVE_TASKS.md` · `01_project/ROADMAP.md`*
+*Cross-references: `PROJECT_STATE.md` · `ACTIVE_TASKS.md` · `19_chat_memory/08_NEXT_SESSION.md`*
 *This document is fully rewritten after every phase completion.*
