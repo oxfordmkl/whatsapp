@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Oxford CRM machine-readable project state snapshot. Synchronized with PROJECT_STATE.md. Update both files together.",
     "format": "JSON — AI-optimized flat structure",
-    "last_updated": "2026-07-02",
+    "last_updated": "2026-07-10",
     "update_rule": "Update after every phase completion, deployment, or migration"
   },
 
@@ -23,7 +23,7 @@
 
   "version": {
     "documentation": "15.1",
-    "phase": "15C.1",
+    "phase": "15C.2",
     "release": "Kerala Production Candidate v1.0",
     "next_version": "15.2"
   },
@@ -93,11 +93,12 @@
       "sidebar_link_fixed": "14B.3"
     },
     "super_admin": {
-      "status": "AUTHENTICATED",
+      "status": "DASHBOARD_VERIFIED",
       "implemented": ["view_tenants", "approve", "suspend", "reactivate", "impersonate"],
       "missing": ["delete", "archive", "create_tenant"],
       "authentication": "VERIFIED_AT_1",
-      "bootstrap": "SECURE_CLI_REMEDIATED"
+      "bootstrap": "SECURE_CLI_REMEDIATED",
+      "dashboard_discovery": "EXISTING_CAPABILITY_NO_CODE_CHANGE"
     },
     "documentation": {
       "status": "IN_PROGRESS",
@@ -162,11 +163,13 @@
   },
 
   "next_phase": {
-    "id": "15C.2",
-    "name": "Super Admin Dashboard Discovery",
+    "id": "15C.3",
+    "name": "Tenant Management Discovery",
     "status": "DISCOVERY",
     "approved": false,
-    "deliverables": ["audit_existing_capabilities", "gap_analysis"]
+    "mode": "DISCOVERY_ONLY",
+    "warning": "Hard-delete semantics must be audited before any implementation. Existing lifecycle routes must not be duplicated.",
+    "deliverables": ["lifecycle_semantics_audit", "data_permanence_audit", "gap_analysis"]
   },
 
   "never_do": [

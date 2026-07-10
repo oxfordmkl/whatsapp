@@ -33,17 +33,22 @@ This file is the literal baton pass from the previous AI session to you. It defi
 
 ## 3. The Immediate Next Task
 
-**Task:** Initiate Phase 15C.2 (Super Admin Dashboard Discovery).
+**Task:** Initiate Phase 15C.3 (Tenant Management Discovery).
 
-**Context:** Phase 15C.1 (Authentication) has been successfully completed, and the production SUPER_ADMIN count is verified at 1. The next phase is explicitly Phase 15C.2, which is DISCOVERY and GAP ANALYSIS only. Do NOT redesign the existing Platform Control Center. You must determine what capability already exists and what is missing before proceeding to Phase 15C.3 (Implementation).
+**Context:** Phase 15C.2 (Dashboard Discovery) has been closed with NO CODE CHANGE. The existing Platform Control Center at `/crm/super/dashboard` already satisfies the Phase 15C.2 responsibility. Do NOT duplicate or rebuild it. The next phase is Phase 15C.3 — Tenant Management — and it must begin with DISCOVERY ONLY.
 
-**Warning:** NO IMPLEMENTATION UNTIL AUDIT AND APPROVAL. Do not assume the dashboard must be newly built because an existing Platform Control Center already exists.
+**Critical warnings:**
+- Hard delete must NOT be assumed safe. The production database contains live tenant-linked lead, message, user, and billing data. Discover FK behavior before any implementation decision.
+- Existing lifecycle routes (Approve, Suspend, Reactivate, Impersonate) must NOT be rebuilt or duplicated.
+- Create/Archive/Delete are the candidate actions for 15C.3 — but only after the audit confirms feasibility.
+
+**Warning:** NO IMPLEMENTATION UNTIL AUDIT AND APPROVAL.
 
 ---
 
 ## 4. Blocked Tasks
 
-- Phase 15C.3 (Implementation) is blocked pending Phase 15C.2 discovery and approval.
+- Phase 15C.3 implementation is blocked pending discovery audit and explicit user approval.
 
 ---
 

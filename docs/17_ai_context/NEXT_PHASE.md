@@ -1,8 +1,8 @@
 # Oxford CRM — Next Phase
-## Phase 15C.2 — Super Admin Dashboard Discovery
+## Phase 15C.3 — Tenant Management Discovery
 
-> **Version:** 15.1 | **Phase:** 15C.1 (Completed) | **Owner:** Engineering Team
-> **Last Updated:** 2026-07-09 | **Status:** DISCOVERY — Awaiting Approval
+> **Version:** 15.1 | **Phase:** 15C.2 (Completed) | **Owner:** Engineering Team
+> **Last Updated:** 2026-07-10 | **Status:** DISCOVERY — Awaiting Approval
 > **Update Rule:** Fully rewrite this document after every phase completion
 
 ---
@@ -11,67 +11,92 @@
 
 | Field | Value |
 |-------|-------|
-| **Phase ID** | 15C.2 |
-| **Phase Name** | Super Admin Dashboard Discovery |
+| **Phase ID** | 15C.3 |
+| **Phase Name** | Tenant Management Discovery |
 | **Status** | DISCOVERY — Not yet approved |
 | **Priority** | HIGH |
-| **Prerequisite** | Phase 15C.1 (Authentication) completion |
-| **Risk Level** | LOW (Audit Only) |
+| **Prerequisite** | Phase 15C.2 (Dashboard Discovery) completion |
+| **Risk Level** | HIGH (Data Permanence Risk) |
 
 ---
 
-## Why This Phase Is Needed
+## Why This Phase Is Discovery First
 
-The current Super Admin system (implemented through Phase 15A) supports a "Platform Control Center" dashboard.
-Before any new dashboard features are implemented, we must determine:
-- What dashboard capability already exists.
-- What Phase 15C requirements already exist.
-- What is partial.
-- What is missing.
-- What should remain untouched.
+The current Super Admin dashboard has a disabled "Provision Tenant" button and no Delete or Archive controls. Before implementing these, a thorough discovery must determine:
 
-**NO IMPLEMENTATION UNTIL AUDIT AND APPROVAL.**
+- What existing tenant lifecycle states the model already supports.
+- What existing tenant creation/registration mechanisms exist.
+- Whether existing CLI provisioning overlaps with a UI provisioning flow.
+- What foreign-key-linked data (leads, conversations, messages, users) depends on a Tenant row.
+- Whether hard DELETE is architecturally safe or prohibited by FK constraints.
+- Whether soft-delete (status = 'DELETED') is the only safe path.
+- Whether Archive requires different semantics from Suspend.
+- What billing dependencies (subscription IDs, invoice records) exist on a Tenant row.
+- What WABA dependencies exist on a Tenant row.
 
-Do not assume the dashboard must be newly built because an existing Platform Control Center already exists.
+> [!CAUTION]
+> **Hard delete must not be assumed safe.** The production database contains live tenant-linked data. Deleting a Tenant row without understanding FK behavior could cascade silently or fail. Discovery must precede any implementation decision.
 
 ---
 
-## Proposed Deliverables
+## Known Context from Phase 15C.2 Audit
+
+The following capabilities ALREADY EXIST and must NOT be duplicated:
+
+| Existing Capability | Route | Status |
+|---------------------|-------|--------|
+| Approve | `/crm/super/tenant/<id>/approve` [POST] | ✅ Production Verified |
+| Suspend | `/crm/super/tenant/<id>/suspend` [POST] | ✅ Production Verified |
+| Reactivate | `/crm/super/tenant/<id>/reactivate` [POST] | ✅ Production Verified |
+| Impersonate | `/crm/super/impersonate/<id>` [POST] | ✅ Production Verified |
+
+Known Tenant model status values: `TRIAL | ACTIVE | PAST_DUE | SUSPENDED | CANCELLED | DELETED`
+
+---
+
+## Proposed Discovery Deliverables
 
 | # | Deliverable | Type | Risk |
 |---|-------------|------|------|
-| 1 | Existing Platform Control Center Audit | Discovery | LOW |
-| 2 | Existing Features Gap Analysis | Discovery | LOW |
-| 3 | Phase 15C.3 Implementation Plan | Artifact | LOW |
+| 1 | Tenant Lifecycle Semantics Audit | Discovery | LOW |
+| 2 | Data Permanence & FK Dependency Map | Discovery | LOW |
+| 3 | Existing Registration / Provisioning Code Audit | Discovery | LOW |
+| 4 | Billing and WABA Dependency Audit | Discovery | LOW |
+| 5 | Gap Analysis & Implementation Plan | Artifact | LOW |
 
 ---
 
-## Dependencies
-
-| Dependency | Status |
-|-----------|--------|
-| Phase 15C.1 authentication verification complete | ✅ Completed |
-| Production SUPER_ADMIN count verified | ✅ Confirmed at 1 |
-
----
-
-## Estimated Execution Order
+## Estimated Discovery Order
 
 ```
-Step 1: Read templates/crm_super_dashboard.html
-Step 2: Read app/routes/admin.py (Super Admin sections)
-Step 3: Document existing capabilities and gaps
-Step 4: Prepare Phase 15C.3 Implementation Plan
-Step 5: Await user approval ← MANDATORY
+Step 1: Read app/models.py — all FK references to Tenant
+Step 2: Read app/routes/admin.py — existing Super Admin section
+Step 3: Read app/routes/public.py — existing registration flow
+Step 4: Assess hard-delete feasibility vs. soft-delete semantics
+Step 5: Assess Create-Tenant provisioning path
+Step 6: Produce Gap Analysis artifact
+Step 7: Write Implementation Plan
+Step 8: Await user approval ← MANDATORY
 ```
 
 ---
 
-## What Comes After Phase 15C.2
+## Phase Boundary Preservation
 
-**Phase 15C.3 — Super Admin Implementation**
-- Implement targeted missing capabilities (e.g. Delete/Archive/Create Tenant).
-- Only execute approved surgical updates.
+| Phase | Responsibility |
+|-------|----------------|
+| **15C.3** | Tenant lifecycle management (Create, Delete, Archive) — pending audit |
+| **15C.4** | Tenant Registration (public/self-service onboarding) |
+| **15C.5** | Tenant Approval (existing Approve route — audit if already satisfied) |
+| **15C.6** | Subscription Management (billing placeholders) |
+| **15C.7** | Platform Monitoring (global analytics, aggregate metrics) |
+| **15C.8** | Audit Logs |
+
+---
+
+## What Comes After Phase 15C.3
+
+**Phase 15C.4 — Tenant Registration**
 
 ---
 
