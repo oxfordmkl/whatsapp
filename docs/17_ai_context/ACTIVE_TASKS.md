@@ -6,9 +6,9 @@
 
 ---
 
-## Current Sprint: Phase 15C.3 — Tenant Management Discovery
+## Current Sprint: Phase 15C.4 — Tenant Registration Discovery
 
-**Sprint Goal:** Audit existing tenant lifecycle semantics, data permanence rules, and management capabilities before implementing any new tenant management routes.
+**Sprint Goal:** Audit existing `/register` flow, verify security and transaction safety, and assess production readiness gap before launch.
 
 **Sprint Status:** PLANNED
 
@@ -55,10 +55,7 @@
 
 | ID | Task | Phase | Status |
 |----|------|-------|--------|
-| T-100 | Phase 15C.3 — Tenant Management Discovery / Gap Analysis | 15C.3 | PLANNED |
-| T-101 | Super Admin — Delete Tenant route (pending audit) | 15C.3+ | PLANNED |
-| T-102 | Super Admin — Archive Tenant route (pending audit) | 15C.3+ | PLANNED |
-| T-103 | Super Admin — Create Tenant UI (pending audit) | 15C.3+ | PLANNED |
+| T-100 | Phase 15C.4 — Tenant Registration Discovery / Gap Analysis | 15C.4 | PLANNED |
 | T-103 | Activate Razorpay live subscriptions | 16 | PLANNED |
 | T-104 | LMS module design | 17 | PLANNED |
 
@@ -68,7 +65,7 @@
 
 | Item | Description | Date |
 |------|-------------|------|
-| Phase 15C.3 | Tenant Management Discovery | Pending |
+| Phase 15C.4 | Tenant Registration Discovery | Pending |
 
 ---
 

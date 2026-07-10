@@ -73,6 +73,18 @@ None.
 
 ---
 
+#### R-008 — Background Worker Suspension Enforcement
+| Field | Value |
+|-------|-------|
+| **ID** | R-008 |
+| **Severity** | MEDIUM |
+| **Description** | Some background outbound workers may not consistently enforce `Tenant.status` before execution. A SUSPENDED tenant may still have previously scheduled outbound work processed. |
+| **Impact** | VERIFIED CODE-PATH RISK — Outbound messages could fire for suspended tenants |
+| **Mitigation** | Review worker logic to explicitly require `ACTIVE` or `TRIAL` status |
+| **Resolution** | Pending audit/fix in automation phase |
+| **Owner** | Engineering Team |
+| **Phase Identified** | Phase 15C.3 |
+
 ### 🟢 LOW Risks
 
 #### R-003 — No READ_ONLY Role
@@ -126,6 +138,20 @@ None.
 | **Resolution** | Acceptable as-is for Kerala |
 | **Owner** | Engineering Team |
 | **Phase Identified** | Phase 14B.3 |
+
+---
+
+#### R-009 — Tenant.status Contract Inconsistency
+| Field | Value |
+|-------|-------|
+| **ID** | R-009 |
+| **Severity** | LOW |
+| **Description** | `PENDING` is used at runtime but omitted from model docstring. `DELETED` is documented but unused. Transition enforcement is partial/loose. |
+| **Impact** | Confusion over allowed lifecycle states |
+| **Mitigation** | Rely on explicit application logic in `admin.py` |
+| **Resolution** | Pending Phase 16 refactor |
+| **Owner** | Engineering Team |
+| **Phase Identified** | Phase 15C.3 |
 
 ---
 

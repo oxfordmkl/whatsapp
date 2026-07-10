@@ -13,7 +13,7 @@
 ┌─────────────────────────────────────────────┐
 │  Oxford CRM — Kerala Production Candidate   │
 │  Status: CONDITIONAL GO                     │
-│  Phase:  15C.2 (Dashboard Discovery Closed) │
+│  Phase:  15C.3 (Tenant Lifecycle Policy Approved) │
 │  Date:   2026-07-10                         │
 └─────────────────────────────────────────────┘
 ```
@@ -25,8 +25,8 @@
 | Dimension | State | Detail |
 |-----------|-------|--------|
 | **Version** | 15.1 | Documentation version |
-| **Phase** | 15C.2 | Super Admin Dashboard Discovery Closed |
-| **Production Status** | CONDITIONAL GO | Awaiting 15C.3 Discovery |
+| **Phase** | 15C.3 | Tenant Management Lifecycle Policy Approved |
+| **Production Status** | CONDITIONAL GO | Awaiting 15C.4 Discovery |
 | **Deployment Target** | Railway / India / Single Tenant | Oxford Computers only |
 | **Architecture Status** | STABLE | Phase 15A score: 90/100 |
 | **Security Status** | SECURE | Phase 14B patches applied, score 95/100 |
@@ -43,7 +43,7 @@
 
 ## Current Phase Detail
 
-**Phase 15C.2 — Super Admin Dashboard Discovery (No Code Change)**
+**Phase 15C.3 — Tenant Management Discovery (No Code Change)**
 
 | Task | Status |
 |------|--------|
@@ -114,10 +114,10 @@ See `KNOWN_RISKS.md` for full details.
 
 ## Next Approved Phase
 
-**Phase 15C.3 — Tenant Management Discovery**
+**Phase 15C.4 — Tenant Registration Discovery**
 - Status: DISCOVERY (not yet started)
 - Approved: Pending user approval for gap analysis. NO IMPLEMENTATION UNTIL APPROVED.
-- Hard-delete semantics must be audited before any implementation.
+- Critical warning: DO NOT ASSUME /register IS READY FOR PUBLIC LAUNCH. Must audit before any launch decision.
 
 ---
 

@@ -23,7 +23,7 @@
 
   "version": {
     "documentation": "15.1",
-    "phase": "15C.2",
+    "phase": "15C.3",
     "release": "Kerala Production Candidate v1.0",
     "next_version": "15.2"
   },
@@ -95,10 +95,11 @@
     "super_admin": {
       "status": "DASHBOARD_VERIFIED",
       "implemented": ["view_tenants", "approve", "suspend", "reactivate", "impersonate"],
-      "missing": ["delete", "archive", "create_tenant"],
+      "missing": ["create_tenant"],
       "authentication": "VERIFIED_AT_1",
       "bootstrap": "SECURE_CLI_REMEDIATED",
-      "dashboard_discovery": "EXISTING_CAPABILITY_NO_CODE_CHANGE"
+      "dashboard_discovery": "EXISTING_CAPABILITY_NO_CODE_CHANGE",
+      "tenant_management": "POLICY_APPROVED_NO_CODE_CHANGE"
     },
     "documentation": {
       "status": "IN_PROGRESS",
@@ -163,13 +164,13 @@
   },
 
   "next_phase": {
-    "id": "15C.3",
-    "name": "Tenant Management Discovery",
+    "id": "15C.4",
+    "name": "Tenant Registration Discovery",
     "status": "DISCOVERY",
     "approved": false,
     "mode": "DISCOVERY_ONLY",
-    "warning": "Hard-delete semantics must be audited before any implementation. Existing lifecycle routes must not be duplicated.",
-    "deliverables": ["lifecycle_semantics_audit", "data_permanence_audit", "gap_analysis"]
+    "warning": "DO NOT ASSUME /register IS READY FOR PUBLIC LAUNCH. Must audit before any launch decision.",
+    "deliverables": ["existing_flow_inventory", "security_audit", "production_readiness_gap_analysis"]
   },
 
   "never_do": [

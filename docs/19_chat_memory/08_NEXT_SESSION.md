@@ -33,14 +33,14 @@ This file is the literal baton pass from the previous AI session to you. It defi
 
 ## 3. The Immediate Next Task
 
-**Task:** Initiate Phase 15C.3 (Tenant Management Discovery).
+**Task:** Initiate Phase 15C.4 (Tenant Registration Discovery).
 
-**Context:** Phase 15C.2 (Dashboard Discovery) has been closed with NO CODE CHANGE. The existing Platform Control Center at `/crm/super/dashboard` already satisfies the Phase 15C.2 responsibility. Do NOT duplicate or rebuild it. The next phase is Phase 15C.3 — Tenant Management — and it must begin with DISCOVERY ONLY.
+**Context:** Phase 15C.3 (Tenant Management) has been closed with NO CODE CHANGE. A strict Data Permanence and Lifecycle Policy has been approved (ADR-011). Tenant creation policy is deferred to Phase 15C.4. The existing `/register` flow must be fully audited for security, transaction safety, and duplicate prevention before any public launch decision.
 
 **Critical warnings:**
-- Hard delete must NOT be assumed safe. The production database contains live tenant-linked lead, message, user, and billing data. Discover FK behavior before any implementation decision.
-- Existing lifecycle routes (Approve, Suspend, Reactivate, Impersonate) must NOT be rebuilt or duplicated.
-- Create/Archive/Delete are the candidate actions for 15C.3 — but only after the audit confirms feasibility.
+- DO NOT ASSUME `/register` IS READY FOR PUBLIC LAUNCH.
+- You must perform a complete Security Audit and Gap Analysis on the registration flow first.
+- No new tenant status (`ARCHIVED` or `DELETED`) may be added.
 
 **Warning:** NO IMPLEMENTATION UNTIL AUDIT AND APPROVAL.
 
@@ -48,7 +48,7 @@ This file is the literal baton pass from the previous AI session to you. It defi
 
 ## 4. Blocked Tasks
 
-- Phase 15C.3 implementation is blocked pending discovery audit and explicit user approval.
+- Phase 15C.4 implementation is blocked pending discovery audit and explicit user approval.
 
 ---
 
