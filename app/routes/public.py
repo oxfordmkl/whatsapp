@@ -24,7 +24,7 @@ def register():
     if request.method == "POST":
         business_name = request.form.get("business_name", "").strip()
         admin_name = request.form.get("admin_name", "").strip()
-        email = request.form.get("email", "").strip()
+        email = request.form.get("email", "").strip().lower()
         phone = request.form.get("phone", "").strip()
         industry = request.form.get("industry", "Education").strip()
         password = request.form.get("password", "")

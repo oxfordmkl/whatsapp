@@ -72,7 +72,7 @@ def create_app():
             click.echo("A Super Admin account already exists. No changes were made.")
             return
 
-        email = click.prompt("Email", type=str).strip()
+        email = click.prompt("Email", type=str).strip().lower()
         if not email:
             click.echo("Email cannot be empty. Aborting.")
             return

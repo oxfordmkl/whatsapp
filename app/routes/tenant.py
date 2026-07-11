@@ -182,11 +182,11 @@ def tenant_staff():
         # ── Create Staff ──────────────────────────────────────────────────
         if action == 'create':
             username = request.form.get('username', '').strip()
-            email = request.form.get('email', '').strip() or None
+            email = request.form.get('email', '').strip().lower()
             password = request.form.get('password', '')
 
-            if not username or not password:
-                flash('Username and Password are required.', 'danger')
+            if not username or not password or not email:
+                flash('Username, Email, and Password are required.', 'danger')
                 return redirect(url_for('tenant.tenant_staff'))
 
             # Duplicate username within this tenant
