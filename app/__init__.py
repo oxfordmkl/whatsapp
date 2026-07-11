@@ -42,6 +42,14 @@ def create_app():
         except Exception as e:
             raise RuntimeError(f"CRITICAL: Failed to initialize WABA encryption: {e}")
 
+    from app.config import DEBUG, ADMIN_KEY
+    if not ADMIN_KEY:
+        raise RuntimeError("CRITICAL: ADMIN_KEY is not set.")
+
+    # Phase 15C.5-B: Initialize Email Service
+    from app.services.email_service import email_service
+    email_service.init_app(app)
+
     # ── Initialise extensions ─────────────────────────────────────────────
     db.init_app(app)
     migrate.init_app(app, db)

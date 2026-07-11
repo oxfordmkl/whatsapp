@@ -3,4 +3,13 @@ credentials_old.json
 waba.txt
 .env
 venv/
+.venv/
 __pycache__/
+*.pyc
+scratch_*.py
+instance/*.db
+instance/*.sqlite
+instance/*.sqlite3
+*.sqlite
+*.sqlite3
+node_modules/

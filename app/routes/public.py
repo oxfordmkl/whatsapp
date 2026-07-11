@@ -73,6 +73,18 @@ def register():
             db.session.add(new_user)
             db.session.commit()
             
+            # Phase 15C.5-B: Dispatch verification email gracefully
+            from app.services.email_service import email_service
+            try:
+                success = email_service.send_verification_email(user_email=email, user_name=admin_name)
+                if not success:
+                    import logging
+                    logging.error("Failed to dispatch verification email to newly registered user.")
+            except Exception as e:
+                import logging
+                logging.error(f"Email dispatch exception during registration: {str(e)}")
+                
+            flash("Registration successful. Check your email to verify your account.", "success")
             return redirect(url_for("public.pending"))
             
         except IntegrityError:
@@ -85,3 +97,40 @@ def register():
 @public_bp.route("/pending", methods=["GET"])
 def pending():
     return render_template("public/pending.html")
+
+@public_bp.route("/verify-email/<token>", methods=["GET"])
+def verify_email(token):
+    from app.services.email_service import email_service
+    from itsdangerous import SignatureExpired, BadSignature
+    from datetime import datetime, timezone
+    from flask import current_app
+    import logging
+    
+    max_age = current_app.config.get("VERIFY_EMAIL_EXPIRY_SECONDS", 86400)
+    
+    try:
+        email = email_service.verify_token(token, max_age=max_age)
+    except SignatureExpired:
+        flash("The verification link has expired. Please request a new one.", "warning")
+        return redirect(url_for('admin.crm_login'))
+    except BadSignature:
+        flash("Invalid verification link.", "danger")
+        return redirect(url_for('admin.crm_login'))
+    except Exception as e:
+        logging.error(f"Verification token failure: {str(e)}")
+        flash("An error occurred during verification.", "danger")
+        return redirect(url_for('admin.crm_login'))
+        
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        flash("User not found.", "danger")
+        return redirect(url_for('admin.crm_login'))
+        
+    if user.email_verified_at is None:
+        user.email_verified_at = datetime.now(timezone.utc)
+        db.session.commit()
+        flash("Your email has been successfully verified! You may now log in if your account is approved.", "success")
+    else:
+        flash("Your email is already verified.", "info")
+        
+    return redirect(url_for('admin.crm_login'))

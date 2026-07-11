@@ -10,6 +10,15 @@ ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
 SECRET_KEY           = os.environ.get("SECRET_KEY", "oxford-crm-local-dev-key")
 
+# Phase 15C.5-B: Email Configuration
+EMAIL_PROVIDER       = os.environ.get("EMAIL_PROVIDER", "brevo")
+BREVO_API_KEY        = os.environ.get("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL   = os.environ.get("BREVO_SENDER_EMAIL", "noreply@oxfordedu.com")
+BREVO_SENDER_NAME    = os.environ.get("BREVO_SENDER_NAME", "Oxford CRM")
+APP_URL              = os.environ.get("APP_URL", "http://localhost:5000")
+VERIFY_EMAIL_EXPIRY_SECONDS = int(os.environ.get("VERIFY_EMAIL_EXPIRY_SECONDS", "86400"))
+EMAIL_TIMEOUT_SECONDS = int(os.environ.get("EMAIL_TIMEOUT_SECONDS", "5"))
+
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
 # ── PostgreSQL (Railway auto-sets DATABASE_URL) ────────────────────────────

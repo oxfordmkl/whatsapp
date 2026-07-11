@@ -4678,6 +4678,11 @@ def crm_login():
                 flash("Account awaiting approval. Please contact support.", "warning")
                 return redirect(url_for("admin.crm_login"))
                 
+            # Phase 15C.5-B: Enforce Email Verification for tenant users
+            if user.email_verified_at is None:
+                flash("Please verify your email address to log in. Check your inbox.", "warning")
+                return redirect(url_for("admin.crm_login"))
+                
             user.last_login = datetime.utcnow()
             db.session.commit()
             login_user(user)

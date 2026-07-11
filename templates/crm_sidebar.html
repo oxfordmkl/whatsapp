@@ -452,6 +452,12 @@ body {
       </a>
       <!-- Phase 10: Settings route will be added here -->
       <!-- Phase 11: Tenant management will be added here -->
+      {% if actor.role == 'ADMIN' %}
+      <a class="nav-item" href="{{ url_for('tenant.tenant_home') }}" data-path="/tenant/home">
+        <i class="bi bi-building"></i>
+        <span class="nav-label">Tenant Settings</span>
+      </a>
+      {% endif %}
       <a class="nav-item" href="/panel?key={{ key }}" data-path="/panel" style="opacity:0.6;" title="Legacy panel — preserved">
         <i class="bi bi-grid-3x3-gap"></i>
         <span class="nav-label">Legacy Panel</span>

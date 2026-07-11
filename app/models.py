@@ -91,6 +91,9 @@ class User(UserMixin, db.Model):
     # ── Phase 13-A2B: Email for Tenant Admin login and password reset ──────
     # nullable=True: Staff may not have emails. Tenant Admins must supply email at registration.
     email = db.Column(db.String(120), nullable=True, unique=True)
+    
+    # ── Phase 15C.5-B: Email Verification ──────
+    email_verified_at = db.Column(db.DateTime, nullable=True, index=True)
 
     __table_args__ = (
         # Phase 13-A2B: Composite uniqueness — username is unique WITHIN a tenant,
