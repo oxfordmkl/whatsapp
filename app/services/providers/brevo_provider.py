@@ -46,12 +46,15 @@ class BrevoProvider:
             )
 
             if response.status_code >= 400:
-                logging.error("Brevo Status: %s", response.status_code)
-                logging.error("Brevo Body: %s", response.text)
+                logging.error("========== BREVO SMTP FAILURE ==========")
+                logging.error("Status : %s", response.status_code)
+                logging.error("Body   : %s", response.text)
+                logging.error("Headers: %s", dict(response.headers))
+                logging.error("========================================")
                 return False
 
             return True
 
         except requests.exceptions.RequestException as e:
-            logging.exception(e)
+            logging.exception("Brevo request failed")
             return False
