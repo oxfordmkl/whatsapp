@@ -4861,10 +4861,6 @@ def crm_super_approve_tenant(tenant_id):
 @login_required
 @super_admin_required
 def debug_brevo_account():
-    @admin_bp.route("/debug/brevo-account", methods=["GET"])
-@login_required
-@super_admin_required
-def debug_brevo_account():
     import requests
     from flask import current_app, Response
 
