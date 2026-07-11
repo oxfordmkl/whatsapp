@@ -44,25 +44,14 @@ class BrevoProvider:
                 json=payload,
                 timeout=self.timeout
             )
-            try:
-    response = requests.post(
-        self.API_URL,
-        headers=headers,
-        json=payload,
-        timeout=self.timeout
-    )
 
-    if response.status_code >= 400:
-        logging.error("Brevo Status: %s", response.status_code)
-        logging.error("Brevo Body: %s", response.text)
-        return False
+            if response.status_code >= 400:
+                logging.error("Brevo Status: %s", response.status_code)
+                logging.error("Brevo Body: %s", response.text)
+                return False
 
-    return True
+            return True
 
-except requests.exceptions.RequestException as e:
-    logging.exception(e)
-    return False
         except requests.exceptions.RequestException as e:
-            # We explicitly do NOT log the payload or headers to prevent secret leakage
-            logging.error(f"Brevo HTTP Failure: {str(e)}")
+            logging.exception(e)
             return False
