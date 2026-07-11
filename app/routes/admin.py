@@ -4856,3 +4856,41 @@ def crm_super_approve_tenant(tenant_id):
         flash(f"Tenant '{tenant.name}' is already {tenant.status}. No change made.", "info")
     return redirect(url_for('admin.crm_super_dashboard'))
 
+# ── Phase 15C.5-H: Brevo Account Diagnostic ──────────────────────────────────
+@admin_bp.route("/debug/brevo-account", methods=["GET"])
+@login_required
+@super_admin_required
+def debug_brevo_account():
+    @admin_bp.route("/debug/brevo-account", methods=["GET"])
+@login_required
+@super_admin_required
+def debug_brevo_account():
+    import requests
+    from flask import current_app, Response
+
+    api_key = current_app.config.get("BREVO_API_KEY", "")
+
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key
+    }
+
+    try:
+        response = requests.get(
+            "https://api.brevo.com/v3/account",
+            headers=headers,
+            timeout=10
+        )
+
+        output = f"""
+Status Code : {response.status_code}
+
+Response :
+
+{response.text}
+"""
+
+    except Exception as e:
+        output = str(e)
+
+    return Response(output, mimetype="text/plain")
