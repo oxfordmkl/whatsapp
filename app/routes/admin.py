@@ -4789,9 +4789,49 @@ def crm_super_login():
 @login_required
 @super_admin_required
 def crm_super_dashboard():
-    from app.models import Tenant
+    from app.models import Tenant, User
     tenants = Tenant.query.order_by(Tenant.created_at.desc()).all()
-    return render_template("crm_super_dashboard.html", tenants=tenants)
+    
+    admins = User.query.filter_by(role="ADMIN").all()
+    tenant_admins = {
+        admin.tenant_id: admin
+        for admin in admins
+    }
+    
+    return render_template("crm_super_dashboard.html", tenants=tenants, tenant_admins=tenant_admins)
+
+@admin_bp.route("/admin/tenant/<tenant_id>/resend-verification", methods=["POST"])
+@login_required
+@super_admin_required
+def crm_super_resend_verification(tenant_id):
+    from app.models import User
+    import logging
+    from app.services.email_service import email_service
+    
+    admin_user = User.query.filter_by(tenant_id=tenant_id, role="ADMIN").first()
+    if not admin_user:
+        flash("No Tenant Admin found for this tenant.", "danger")
+        return redirect(url_for('admin.crm_super_dashboard'))
+        
+    if not admin_user.email:
+        flash("Tenant Admin does not have a registered email.", "warning")
+        return redirect(url_for('admin.crm_super_dashboard'))
+        
+    if admin_user.email_verified_at is not None:
+        flash("Tenant Admin is already verified.", "info")
+        return redirect(url_for('admin.crm_super_dashboard'))
+        
+    logging.info(f"SUPER_ADMIN_RESEND_VERIFICATION_REQUESTED: User {admin_user.id}")
+    success = email_service.send_verification_email(admin_user.email, admin_user.username)
+    
+    if success:
+        logging.info(f"SUPER_ADMIN_RESEND_VERIFICATION_SENT: User {admin_user.id}")
+        flash("Verification email successfully resent.", "success")
+    else:
+        logging.error(f"SUPER_ADMIN_RESEND_VERIFICATION_FAILED: User {admin_user.id}")
+        flash("Failed to resend verification email.", "danger")
+        
+    return redirect(url_for('admin.crm_super_dashboard'))
 
 @admin_bp.route("/crm/super/tenant/<tenant_id>/suspend", methods=["POST"])
 @login_required

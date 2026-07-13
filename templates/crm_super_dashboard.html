@@ -169,6 +169,7 @@
         <thead>
           <tr>
             <th>Tenant</th>
+            <th>Admin</th>
             <th>Plan</th>
             <th>Industry</th>
             <th>Status</th>
@@ -182,6 +183,22 @@
             <td>
               <div class="tenant-name">{{ tenant.name }}</div>
               <div class="tenant-slug">/t/{{ tenant.slug }}</div>
+            </td>
+            <td>
+              {% set admin = tenant_admins.get(tenant.id) %}
+              {% if admin %}
+                <div style="font-weight: 500;">{{ admin.username }}</div>
+                <div class="text-muted small">{{ admin.email }}</div>
+                <div class="mt-1">
+                  {% if admin.email_verified_at %}
+                    <span class="badge bg-success" style="font-size: 0.65rem;">Verified</span>
+                  {% else %}
+                    <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">Not Verified</span>
+                  {% endif %}
+                </div>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
             </td>
             <td><span style="font-weight: 500;">{{ tenant.plan }}</span></td>
             <td><span class="text-muted">{{ tenant.industry }}</span></td>
@@ -204,6 +221,12 @@
             </td>
             <td class="text-muted">{{ tenant.created_at.strftime('%Y-%m-%d') }}</td>
             <td class="text-end">
+              {% if admin and not admin.email_verified_at %}
+                <form action="{{ url_for('admin.crm_super_resend_verification', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <button type="submit" class="btn btn-action" style="color: #58a6ff; border: 1px solid rgba(88,166,255,0.4);" title="Resend Verification"><i class="bi bi-envelope"></i> Resend</button>
+                </form>
+              {% endif %}
+              
               {% if tenant.status == 'PENDING' %}
                 <form action="{{ url_for('admin.crm_super_approve_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
                   <button type="submit" class="btn btn-action btn-approve"><i class="bi bi-check-circle"></i> Approve</button>

@@ -136,6 +136,41 @@ def verify_email(token):
         
     return redirect(url_for('admin.crm_login'))
 
+@public_bp.route("/resend-verification", methods=["GET", "POST"])
+def resend_verification():
+    import logging
+    from app.services.email_service import email_service
+    
+    if request.method == "POST":
+        ip = get_client_ip()
+        email = request.form.get("email", "").strip().lower()
+        
+        # Rate limit: 3 per IP per 15 mins (900s)
+        if not check_rate_limit(f"resend_ip_{ip}", 3, 900):
+            return "Too many requests. Please try again later.", 429
+            
+        if email:
+            # Rate limit: 3 per Email per 15 mins
+            if not check_rate_limit(f"resend_email_{email}", 3, 900):
+                return "Too many requests. Please try again later.", 429
+                
+            user = User.query.filter_by(email=email, role="ADMIN").first()
+            if user and user.email_verified_at is None:
+                logging.info(f"RESEND_VERIFICATION_REQUESTED: User {user.id}")
+                success = email_service.send_verification_email(user.email, user.username)
+                if success:
+                    logging.info(f"RESEND_VERIFICATION_EMAIL_SENT: User {user.id}")
+                else:
+                    logging.error(f"RESEND_VERIFICATION_EMAIL_FAILED: User {user.id}")
+            else:
+                # User not found or already verified - prevent enumeration
+                pass
+                
+        flash("If an unverified account with that email exists, a verification email has been sent.", "success")
+        return redirect(url_for("admin.crm_login"))
+        
+    return render_template("public/resend_verification.html")
+
 # ── Lightweight In-Memory Rate Limiter ───────────────────────────────────────
 import time
 _RATE_LIMITS = {}
