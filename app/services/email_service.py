@@ -73,5 +73,47 @@ class EmailService:
             html_content=html_content
         )
 
+    def generate_password_reset_token(self, user_id: int, password_hash: str) -> str:
+        """
+        Generates a stateless, signed token for password reset.
+        Includes a 12-char fingerprint of the current password hash for replay prevention.
+        """
+        payload = [user_id, password_hash[-12:]]
+        return self.get_serializer().dumps(payload, salt='password-reset')
+
+    def verify_password_reset_token(self, token: str, max_age: int = 3600) -> list:
+        """
+        Validates the token. Returns the payload list [user_id, hash_suffix] if valid.
+        Raises SignatureExpired or BadSignature on failure.
+        """
+        return self.get_serializer().loads(token, salt='password-reset', max_age=max_age)
+
+    def send_password_reset_email(self, user_email: str, user_id: int, password_hash: str) -> bool:
+        """
+        Constructs and dispatches the password reset email.
+        """
+        if not self.email_client:
+            logging.error("Email client not configured.")
+            return False
+
+        token = self.generate_password_reset_token(user_id, password_hash)
+        reset_link = f"{self.app_url}/reset-password/{token}"
+
+        try:
+            html_content = render_template(
+                'email/reset_password.html',
+                reset_link=reset_link
+            )
+        except Exception as e:
+            logging.error(f"Template rendering failed: {str(e)}")
+            return False
+
+        return self.email_client.send_email(
+            to_email=user_email,
+            to_name="User",  # Can pass actual name if available, fallback to "User"
+            subject="Reset your Oxford CRM password",
+            html_content=html_content
+        )
+
 # Global instance
 email_service = EmailService()

@@ -133,4 +133,138 @@ def verify_email(token):
     else:
         flash("Your email is already verified.", "info")
         
+        
     return redirect(url_for('admin.crm_login'))
+
+# ── Lightweight In-Memory Rate Limiter ───────────────────────────────────────
+import time
+_RATE_LIMITS = {}
+
+def check_rate_limit(key: str, max_reqs: int, window_seconds: int) -> bool:
+    """Returns True if allowed, False if limit exceeded."""
+    now = time.time()
+    if key not in _RATE_LIMITS:
+        _RATE_LIMITS[key] = []
+    
+    _RATE_LIMITS[key] = [t for t in _RATE_LIMITS[key] if now - t < window_seconds]
+    
+    if len(_RATE_LIMITS[key]) >= max_reqs:
+        return False
+        
+    _RATE_LIMITS[key].append(now)
+    return True
+
+def get_client_ip():
+    return request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+
+# ── Password Policy Validation ────────────────────────────────────────────────
+def validate_password(password: str) -> bool:
+    if not password or len(password) < 8 or len(password) > 128:
+        return False
+    if password.startswith(" ") or password.endswith(" "):
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    if not re.search(r"[a-z]", password):
+        return False
+    if not re.search(r"[0-9]", password):
+        return False
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return False
+    return True
+
+# ── Password Reset Routes ─────────────────────────────────────────────────────
+
+@public_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    import logging
+    from app.services.email_service import email_service
+    
+    if request.method == "POST":
+        ip = get_client_ip()
+        email = request.form.get("email", "").strip().lower()
+        
+        # Rate limit: 3 per IP per 15 mins (900s)
+        if not check_rate_limit(f"fp_ip_{ip}", 3, 900):
+            return "Too many requests. Please try again later.", 429
+            
+        if email:
+            # Rate limit: 3 per Email per 15 mins
+            if not check_rate_limit(f"fp_email_{email}", 3, 900):
+                return "Too many requests. Please try again later.", 429
+                
+            user = User.query.filter_by(email=email).first()
+            if user:
+                logging.info(f"PASSWORD_RESET_REQUESTED: User {user.id}")
+                success = email_service.send_password_reset_email(user.email, user.id, user.password_hash)
+                if success:
+                    logging.info(f"PASSWORD_RESET_EMAIL_SENT: User {user.id}")
+                else:
+                    logging.error(f"PASSWORD_RESET_EMAIL_DISPATCH_FAILED: User {user.id}")
+            else:
+                # To prevent enumeration, we act exactly the same but do nothing
+                pass
+                
+        flash("If an account with that email exists, a password reset link has been sent.", "success")
+        return redirect(url_for("admin.crm_login"))
+        
+    return render_template("public/forgot_password.html")
+
+@public_bp.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    import logging
+    from app.services.email_service import email_service
+    from itsdangerous import SignatureExpired, BadSignature
+    
+    ip = get_client_ip()
+    # Rate limit: 5 per IP per hour (3600s)
+    if not check_rate_limit(f"rp_ip_{ip}", 5, 3600):
+        return "Too many requests. Please try again later.", 429
+
+    try:
+        payload = email_service.verify_password_reset_token(token, max_age=3600)
+        user_id, hash_suffix = payload[0], payload[1]
+    except SignatureExpired:
+        logging.info("PASSWORD_RESET_EXPIRED")
+        flash("This reset link is invalid or has expired. Please request a new one.", "danger")
+        return redirect(url_for("public.forgot_password"))
+    except BadSignature:
+        logging.info("PASSWORD_RESET_INVALID_TOKEN")
+        flash("This reset link is invalid or has expired. Please request a new one.", "danger")
+        return redirect(url_for("public.forgot_password"))
+    except Exception as e:
+        logging.error("PASSWORD_RESET_INVALID_TOKEN (exception)")
+        flash("This reset link is invalid or has expired. Please request a new one.", "danger")
+        return redirect(url_for("public.forgot_password"))
+        
+    user = User.query.get(user_id)
+    if not user:
+        flash("This reset link is invalid or has expired. Please request a new one.", "danger")
+        return redirect(url_for("public.forgot_password"))
+        
+    # Replay protection: Check if current hash suffix matches the token
+    if user.password_hash[-12:] != hash_suffix:
+        logging.info("PASSWORD_RESET_REPLAY")
+        flash("This reset link is invalid or has expired. Please request a new one.", "danger")
+        return redirect(url_for("public.forgot_password"))
+        
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        
+        if password != confirm:
+            flash("Passwords do not match.", "danger")
+            return render_template("public/reset_password.html", token=token)
+            
+        if not validate_password(password):
+            flash("Password must be 8-128 chars, include upper, lower, number, special char, and no leading/trailing spaces.", "danger")
+            return render_template("public/reset_password.html", token=token)
+            
+        user.password_hash = generate_password_hash(password)
+        db.session.commit()
+        
+        logging.info(f"PASSWORD_RESET_COMPLETED: User {user.id}")
+        flash("Your password has been successfully reset. Please log in with your new password.", "success")
+        return redirect(url_for("admin.crm_login"))
+        
+    return render_template("public/reset_password.html", token=token)
