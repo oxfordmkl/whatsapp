@@ -1197,7 +1197,7 @@ def crm_lead_detail(phone):
         search_q=search_q,
         source_q=source_q,
         range_q=range_q,
-        key=request.args.get("key", ""),
+        key=ADMIN_KEY,
         msg=request.args.get("msg", ""),
         err=request.args.get("err", ""),
         events=events,
