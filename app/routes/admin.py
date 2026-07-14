@@ -878,10 +878,9 @@ def _calculate_audiences(tenant_id=None):
 
 @admin_bp.route("/crm/staff-management", methods=["GET", "POST"])
 def crm_staff_management():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
-    key = request.args.get("key", "")
     registry = load_staff_registry()
     
     if request.method == "POST":
@@ -894,9 +893,9 @@ def crm_staff_management():
             active = request.form.get("active") == "on"
             
             if not code or not display_name:
-                return redirect(url_for("admin.crm_staff_management", key=key, err="Code and Name required"))
+                return redirect(url_for("admin.crm_staff_management", err="Code and Name required"))
             if code in registry:
-                return redirect(url_for("admin.crm_staff_management", key=key, err="Staff code already exists"))
+                return redirect(url_for("admin.crm_staff_management", err="Staff code already exists"))
                 
             registry[code] = {
                 "display_name": display_name,
@@ -904,12 +903,12 @@ def crm_staff_management():
                 "active": active
             }
             save_staff_registry(registry)
-            return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff added"))
+            return redirect(url_for("admin.crm_staff_management", msg="Staff added"))
             
         elif action == "edit":
             code = request.form.get("staff_code", "").strip().upper()
             if code not in registry:
-                return redirect(url_for("admin.crm_staff_management", key=key, err="Staff not found"))
+                return redirect(url_for("admin.crm_staff_management", err="Staff not found"))
                 
             new_active = request.form.get("active") == "on"
             if not new_active and registry[code].get("active", False):
@@ -919,14 +918,14 @@ def crm_staff_management():
                 leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
                 if leads_count > 0:
                     err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
-                    return redirect(url_for("admin.crm_staff_management", key=key, err=err_msg))
+                    return redirect(url_for("admin.crm_staff_management", err=err_msg))
                 
             registry[code]["display_name"] = request.form.get("display_name", "").strip() or registry[code]["display_name"]
             registry[code]["role"] = request.form.get("role", "").strip() or registry[code]["role"]
             registry[code]["active"] = new_active
             
             save_staff_registry(registry)
-            return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff updated"))
+            return redirect(url_for("admin.crm_staff_management", msg="Staff updated"))
             
         elif action == "toggle":
             code = request.form.get("staff_code", "").strip().upper()
@@ -939,11 +938,11 @@ def crm_staff_management():
                     leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
                     if leads_count > 0:
                         err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
-                        return redirect(url_for("admin.crm_staff_management", key=key, err=err_msg))
+                        return redirect(url_for("admin.crm_staff_management", err=err_msg))
 
                 registry[code]["active"] = new_active
                 save_staff_registry(registry)
-                return redirect(url_for("admin.crm_staff_management", key=key, msg="Staff status toggled"))
+                return redirect(url_for("admin.crm_staff_management", msg="Staff status toggled"))
     
     # Calculate statistics based on existing analytics logic
     analytics_data = calculate_admission_analytics()
@@ -970,7 +969,7 @@ def crm_staff_management():
     
     return render_template(
         "crm_staff_management.html",
-        key=key,
+        key=request.args.get("key", ""),
         staff_list=staff_list,
         msg=request.args.get("msg", ""),
         err=request.args.get("err", "")
@@ -1879,7 +1878,7 @@ def calculate_staff_performance_fixed(tenant_id=None):
 
 @admin_bp.route("/crm/staff-performance", methods=["GET"])
 def crm_staff_performance():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     data = calculate_staff_performance_fixed()
@@ -2640,7 +2639,7 @@ def crm_health():
     Phase 8.5: CRM Health & Data Quality Dashboard.
     Protected by ?key=ADMIN_KEY. Read-only.
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
     
     data = calculate_crm_health()
@@ -2835,7 +2834,7 @@ def crm_action_center():
     Phase 8.6: CRM Action Center
     Protected by ?key=ADMIN_KEY. Read-only operational dashboard.
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
     
     data = calculate_action_center()
@@ -3017,7 +3016,7 @@ def crm_operations():
     Phase 8.8: CRM Operations Command Center
     Protected by ?key=ADMIN_KEY. Read-only.
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
     
     data = calculate_operations()
@@ -3532,7 +3531,7 @@ def get_staff_recommendations(limit=3):
 
 @admin_bp.route("/crm/staff-workload", methods=["GET"])
 def crm_staff_workload():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     from app.models import ConversationState
@@ -4320,10 +4319,9 @@ def crm_staff_allocation():
     # future_role = ADMIN
     # future_permission = STAFF_REALLOCATION
     # future_tenant = tenant_id
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
     
-    key = request.args.get("key", "")
     from app.extensions import db
     from sqlalchemy import func, case
     from app.models import ConversationState, LeadEvent
@@ -4458,7 +4456,7 @@ def crm_staff_allocation():
     
     return render_template(
         "crm_staff_allocation.html",
-        key=key,
+        key=request.args.get("key", ""),
         staff_data=staff_data,
         total_crm_leads=total_crm_leads
     )
@@ -4468,10 +4466,9 @@ def crm_staff_allocation():
 def crm_staff_allocation_detail(staff_name):
     # future_role = ADMIN
     # future_permission = STAFF_REALLOCATION
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
-    key = request.args.get("key", "")
     from app.models import ConversationState
     
     actual_name = "" if staff_name == "Unassigned" else staff_name
@@ -4493,7 +4490,7 @@ def crm_staff_allocation_detail(staff_name):
     
     return render_template(
         "crm_staff_allocation_detail.html",
-        key=key,
+        key=request.args.get("key", ""),
         staff_name=staff_name,
         leads=leads,
         active_staff=active_staff
@@ -4503,7 +4500,7 @@ def crm_staff_allocation_detail(staff_name):
 @admin_bp.route("/crm/staff-allocation/check-deactivation/<staff_name>", methods=["GET"])
 def crm_staff_allocation_check(staff_name):
     # future_role = ADMIN
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
         
     from app.models import ConversationState, LeadEvent
