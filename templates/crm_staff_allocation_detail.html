@@ -82,7 +82,7 @@
                   <input class="form-check-input lead-chk" type="checkbox" value="{{ lead.phone }}" data-name="{{ lead.name }}">
                 </td>
                 <td class="font-monospace">{{ lead.phone }}</td>
-                <td><a href="/crm/lead/{{ lead.phone }}?key={{ key }}" class="lead-name" target="_blank">{{ lead.name or 'Unknown' }}</a></td>
+                <td><a href="/crm/lead/{{ lead.phone }}" class="lead-name" target="_blank">{{ lead.name or 'Unknown' }}</a></td>
                 <td>{{ lead.lead_status or '-' }}</td>
                 <td>
                   {% if lead.lead_score >= 80 %}<span class="badge bg-danger">{{ lead.lead_score }}</span>
@@ -207,8 +207,7 @@
       fetch("/crm/reassignment-center/confirm", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Key": "{{ key }}"
+          "Content-Type": "application/json"
         },
         body: JSON.stringify(currentPayload)
       })
@@ -235,7 +234,7 @@
       body.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Checking safe deactivation conditions...</p></div>';
       modal.show();
 
-      fetch("/crm/staff-allocation/check-deactivation/{{ staff_name }}?key={{ key }}")
+      fetch("/crm/staff-allocation/check-deactivation/{{ staff_name }}")
         .then(res => res.json())
         .then(data => {
           if(data.safe) {

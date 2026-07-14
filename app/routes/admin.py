@@ -4482,7 +4482,6 @@ def crm_staff_allocation_detail(staff_name):
     
     return render_template(
         "crm_staff_allocation_detail.html",
-        key=request.args.get("key", ""),
         staff_name=staff_name,
         leads=leads,
         active_staff=active_staff
