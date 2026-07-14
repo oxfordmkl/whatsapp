@@ -3589,7 +3589,7 @@ def crm_staff_workload():
 
 @admin_bp.route("/crm/leads/unassigned", methods=["GET"])
 def crm_unassigned_leads():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     from app.models import ConversationState
@@ -3616,7 +3616,7 @@ def crm_unassigned_leads():
 
 @admin_bp.route("/crm/leads/unassigned/assign", methods=["POST"])
 def crm_unassigned_assign():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     phone = request.form.get("phone")
@@ -3651,7 +3651,7 @@ def crm_unassigned_assign():
 
 @admin_bp.route("/crm/leads/unassigned/auto-assign-preview", methods=["POST"])
 def crm_auto_assign_preview():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
         
     from app.models import ConversationState
@@ -3690,7 +3690,7 @@ def crm_auto_assign_preview():
 
 @admin_bp.route("/crm/leads/unassigned/auto-assign-confirm", methods=["POST"])
 def crm_auto_assign_confirm():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.get_json(silent=True) or {}
