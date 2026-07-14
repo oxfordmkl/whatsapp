@@ -1611,14 +1611,13 @@ def calculate_funnel_metrics(tenant_id=None):
 
 @admin_bp.route("/crm/analytics", methods=["GET"])
 def crm_analytics():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     data = calculate_funnel_metrics()
     
     return render_template(
         "crm_analytics.html",
-        key=request.args.get("key", ""),
         data=data
     )
 
@@ -2006,14 +2005,13 @@ def calculate_source_analytics(tenant_id=None):
 
 @admin_bp.route("/crm/source-analytics", methods=["GET"])
 def crm_source_analytics():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     data = calculate_source_analytics()
 
     return render_template(
         "crm_source_analytics.html",
-        key=request.args.get("key", ""),
         data=data,
     )
 
@@ -2160,14 +2158,13 @@ def calculate_admission_analytics(tenant_id=None):
 
 @admin_bp.route("/crm/admission-analytics", methods=["GET"])
 def crm_admission_analytics():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     data = calculate_admission_analytics()
 
     return render_template(
         "crm_admission_analytics.html",
-        key=request.args.get("key", ""),
         data=data,
     )
 
@@ -2363,14 +2360,13 @@ def crm_revenue_analytics():
     Protected by ?key=ADMIN_KEY (same pattern as all CRM analytics pages).
     Read-only. No writes. No schema changes.
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     data = calculate_revenue_analytics()
 
     return render_template(
         "crm_revenue_analytics.html",
-        key=request.args.get("key", ""),
         data=data,
     )
 
