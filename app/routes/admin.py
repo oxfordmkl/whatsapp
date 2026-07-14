@@ -622,7 +622,7 @@ def crm_marketing():
     # Future Tenant Scope: Load per-tenant server URL + broadcast API key here
     # Future Auth Scope: Check role == ADMIN or SUPER_ADMIN
     """
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
 
     return render_template(
@@ -1342,7 +1342,7 @@ def crm_lead_update(phone):
 # ── Phase 6G: Campaigns ──
 @admin_bp.route("/crm/campaigns", methods=["GET"])
 def campaigns():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
     
     from datetime import date
@@ -1378,11 +1378,11 @@ def campaigns():
         "last_campaign_time": last_campaign_time.strftime("%H:%M") if last_campaign_time else "—"
     }
     
-    return render_template("campaigns.html", dashboard=dashboard, key=ADMIN_KEY)
+    return render_template("campaigns.html", dashboard=dashboard)
 
 @admin_bp.route("/crm/campaigns/preview", methods=["POST"])
 def campaign_preview():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 403
         
     data = request.get_json()
@@ -1399,7 +1399,7 @@ def campaign_preview():
 
 @admin_bp.route("/crm/campaigns/send", methods=["POST"])
 def campaign_send():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     name = request.form.get("campaign_name", "").strip()
@@ -1408,18 +1408,18 @@ def campaign_send():
     
     if not name or not message:
         flash("Campaign name and message are required.", "danger")
-        return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+        return redirect(url_for("admin.campaigns"))
         
     audiences = _calculate_audiences()
     phones = list(audiences.get(audience_type, set()))
     
     if len(phones) == 0:
         flash(f"Audience '{audience_type}' has 0 leads. Campaign aborted.", "warning")
-        return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+        return redirect(url_for("admin.campaigns"))
         
     if len(phones) > 100:
         flash("Campaigns are limited to 100 recipients max. Please split large batches.", "danger")
-        return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+        return redirect(url_for("admin.campaigns"))
         
     from app.services.log_service import _get_default_tenant_id
     from app.services.campaign_service import start_campaign
@@ -1429,7 +1429,7 @@ def campaign_send():
     except Exception as e:
         flash(f"Failed to start campaign: {str(e)}", "danger")
         
-    return redirect(url_for("admin.campaigns", key=ADMIN_KEY))
+    return redirect(url_for("admin.campaigns"))
 
 
 # ── POST /crm/lead/<phone>/send ────────────────────────────────────────────

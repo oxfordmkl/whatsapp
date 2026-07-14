@@ -186,7 +186,7 @@
             <i class="bi bi-pencil-square"></i>Campaign Builder
           </div>
           <div class="crm-card-body">
-            <form id="campaignForm" method="POST" action="/crm/campaigns/send?key={{ key }}">
+            <form id="campaignForm" method="POST" action="/crm/campaigns/send">
               <div class="mb-3">
                 <label class="form-label text-muted fw-semibold" style="font-size: 0.8rem;">Campaign Name</label>
                 <input type="text" class="form-control" name="campaign_name" placeholder="e.g. Diwali Admission Drive" required>
@@ -243,7 +243,7 @@
   </div>
 
   <script>
-    const key = "{{ key }}";
+
     const audienceSelect = document.getElementById('audienceSelect');
     const previewArea = document.getElementById('previewArea');
     const form = document.getElementById('campaignForm');
@@ -263,7 +263,7 @@
       previewArea.innerHTML = `<div class="text-center" style="color: var(--text-muted); padding: 2rem 0;">Loading audience...</div>`;
       
       try {
-        const response = await fetch(`/crm/campaigns/preview?key=${key}`, {
+        const response = await fetch(`/crm/campaigns/preview`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ audience: val })
