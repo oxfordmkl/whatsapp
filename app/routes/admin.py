@@ -3743,7 +3743,6 @@ def crm_reassignment_center():
     
     return render_template(
         "crm_reassignment_center.html",
-        key=request.args.get("key", ""),
         active_staff=active_staff,
         recommendations=recommendations,
         msg=request.args.get("msg", ""),
