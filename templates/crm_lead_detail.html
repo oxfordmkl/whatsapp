@@ -671,7 +671,7 @@
       <div class="crm-card mb-3">
         <div class="crm-card-header">
           <i class="bi bi-list-check"></i>Task Summary
-          <a href="/crm/tasks/my?key={{ key }}&staff={{ lead.assigned_staff }}" class="ms-auto text-decoration-none" style="font-size: 0.7rem; color: var(--blue);">View All</a>
+          <a href="/crm/tasks/my?staff={{ lead.assigned_staff }}" class="ms-auto text-decoration-none" style="font-size: 0.7rem; color: var(--blue);">View All</a>
         </div>
         <div class="crm-card-body p-3">
           <div class="d-flex flex-wrap gap-4 align-items-center">
@@ -713,7 +713,7 @@
             <i class="bi bi-pencil-square"></i>CRM Updates
           </div>
           <div class="crm-card-body">
-            <form method="POST" action="/crm/lead/{{ lead.phone }}/update?key={{ key }}">
+            <form method="POST" action="/crm/lead/{{ lead.phone }}/update">
 
               <!-- Lead Status -->
               <div class="mb-3">
@@ -879,7 +879,7 @@
               </div>
             </div>
 
-            <form method="POST" action="/crm/lead/{{ lead.phone }}/send?key={{ key }}">
+            <form method="POST" action="/crm/lead/{{ lead.phone }}/send">
               <!-- Quick Replies -->
               <div class="mb-2">
                 <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Replies</div>
@@ -931,7 +931,7 @@
           </div>
           <div class="crm-card-body">
             
-            <form method="POST" action="/crm/tasks/create?key={{ key }}">
+            <form method="POST" action="/crm/tasks/create">
               <input type="hidden" name="phone" value="{{ lead.phone }}">
               
               <!-- Quick Templates -->
@@ -1109,7 +1109,7 @@
                 {% set tid = event_payload_map[ev.id].get('task_id') %}
                 {% if tid in task_map and not task_map[tid].get('_completed') %}
                   <div class="mt-2">
-                    <form method="POST" action="/crm/tasks/complete?key={{ key }}">
+                    <form method="POST" action="/crm/tasks/complete">
                       <input type="hidden" name="phone" value="{{ lead.phone }}">
                       <input type="hidden" name="task_id" value="{{ tid }}">
                       <button type="submit" class="btn btn-sm btn-outline-success" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-color: var(--green); color: var(--green);">
@@ -1220,7 +1220,7 @@
         </p>
 
         <form method="POST"
-              action="/crm/course-admissions/{{ lead.phone }}?key={{ key }}"
+              action="/crm/course-admissions/{{ lead.phone }}"
               id="multi-course-admission-form">
 
           <div class="d-flex flex-column gap-2 mb-3" id="course-admission-checklist">
@@ -1621,7 +1621,6 @@
       <!-- Ã¢"â‚¬Ã¢"â‚¬ Phase 5C: Search & Filter Toolbar Ã¢"â‚¬Ã¢"â‚¬ -->
       <div class="crm-card-body p-3" style="border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.1);">
         <form method="GET" action="/crm/lead/{{ lead.phone }}" class="row g-2 align-items-center">
-          <input type="hidden" name="key" value="{{ key }}">
           
           <div class="col-12 col-md-5">
             <input type="text" name="search" class="crm-input" placeholder="Keyword..." value="{{ search_q }}">

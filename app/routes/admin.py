@@ -1197,7 +1197,6 @@ def crm_lead_detail(phone):
         search_q=search_q,
         source_q=source_q,
         range_q=range_q,
-        key=ADMIN_KEY,
         msg=request.args.get("msg", ""),
         err=request.args.get("err", ""),
         events=events,
@@ -1223,7 +1222,6 @@ def crm_lead_update(phone):
     from app.models import ConversationState
     from app.extensions import db
 
-    key  = request.args.get("key", "")
     _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
@@ -1266,7 +1264,7 @@ def crm_lead_update(phone):
         if new_admitted and not (lead.assigned_staff or "").strip():
             db.session.rollback()
             return redirect(url_for(
-                "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
+                "admin.crm_lead_detail", phone=phone,
                 err="Admission+blocked%3A+please+assign+a+staff+member+before+marking+this+lead+as+admitted."
             ))
 
@@ -1336,7 +1334,7 @@ def crm_lead_update(phone):
     except Exception as e:
         db.session.rollback()
 
-    return redirect(url_for("admin.crm_lead_detail", phone=phone, key=ADMIN_KEY))
+    return redirect(url_for("admin.crm_lead_detail", phone=phone))
 
 # ── Phase 6G: Campaigns ──
 @admin_bp.route("/crm/campaigns", methods=["GET"])
@@ -1452,11 +1450,10 @@ def crm_lead_send(phone):
         if lead_staff_normalized != actor_username_normalized:
             return _deny()
 
-    key     = request.args.get("key", "")
     message = request.form.get("manual_message", "").strip()
 
     if not message:
-        return redirect(f"/crm/lead/{phone}?key={key}&err=Message+cannot+be+empty")
+        return redirect(f"/crm/lead/{phone}?err=Message+cannot+be+empty")
 
     import urllib.parse
     qs = ""
@@ -1499,13 +1496,13 @@ def crm_lead_send(phone):
                 event_type="MANUAL_MESSAGE",
                 event_data=json.dumps({"staff": sender_name})
             )
-            return redirect(f"/crm/lead/{phone}?key={key}&msg=Message+sent+successfully{qs}")
+            return redirect(f"/crm/lead/{phone}?msg=Message+sent+successfully{qs}")
 
         else:
-            return redirect(f"/crm/lead/{phone}?key={key}&err=WhatsApp+API+returned+an+error{qs}")
+            return redirect(f"/crm/lead/{phone}?err=WhatsApp+API+returned+an+error{qs}")
     except Exception:
         logging.exception(f"Manual WhatsApp send failed for {phone}")
-        return redirect(f"/crm/lead/{phone}?key={key}&err=Unexpected+server+error{qs}")
+        return redirect(f"/crm/lead/{phone}?err=Unexpected+server+error{qs}")
 
 
 
@@ -2468,12 +2465,12 @@ def crm_course_admissions(phone):
             names = ", ".join(newly_admitted)
             msg = f"course+admissions+saved%3A+{count}+new+course{'s' if count != 1 else ''}+admitted+%28{'+'.join(n.replace(' ', '+') for n in newly_admitted)}%29"
             return redirect(url_for(
-                "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY, msg=msg
+                "admin.crm_lead_detail", phone=phone, msg=msg
             ))
         else:
             # Nothing new — all checked courses already recorded, or nothing checked
             return redirect(url_for(
-                "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
+                "admin.crm_lead_detail", phone=phone,
                 msg="course+admissions+saved%3A+no+new+admissions+to+record"
             ))
 
@@ -2485,7 +2482,7 @@ def crm_course_admissions(phone):
         except Exception:
             pass
         return redirect(url_for(
-            "admin.crm_lead_detail", phone=phone, key=ADMIN_KEY,
+            "admin.crm_lead_detail", phone=phone,
             err="course+admission+save+failed%3A+please+try+again"
         ))
 
@@ -3932,7 +3929,7 @@ def get_all_tasks(tenant_id=None):
 
 @admin_bp.route("/crm/tasks/create", methods=["POST"])
 def crm_tasks_create():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     phone = request.form.get("phone")
@@ -3940,10 +3937,8 @@ def crm_tasks_create():
     notes = request.form.get("notes", "").strip()
     due_date = request.form.get("due_date", "").strip()
     staff = request.form.get("staff", "").strip()
-    key = request.args.get("key", "")
-    
     if not phone or not task_title or not due_date:
-        return redirect(url_for("admin.crm_lead_detail", phone=phone, key=key))
+        return redirect(url_for("admin.crm_lead_detail", phone=phone))
         
     from app.services.log_service import log_lead_event, _get_default_tenant_id
     import uuid
@@ -3968,12 +3963,11 @@ def crm_tasks_create():
         event_data=json.dumps(payload)
     )
     
-    return redirect(url_for("admin.crm_lead_detail", phone=phone, key=key))
-
+    return redirect(url_for("admin.crm_lead_detail", phone=phone))
 @admin_bp.route("/crm/tasks/complete", methods=["POST"])
 def crm_tasks_complete():
     # Supports both Form (from lead detail) and JSON (from dashboards)
-    if request.args.get("key", "") != ADMIN_KEY and request.headers.get("X-Admin-Key") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
         
     is_json = request.is_json
@@ -3992,7 +3986,7 @@ def crm_tasks_complete():
         if is_json:
             return jsonify({"error": "Missing parameters"}), 400
         else:
-            return redirect(url_for("admin.crm_lead_detail", phone=phone, key=request.args.get("key", "")))
+            return redirect(url_for("admin.crm_lead_detail", phone=phone))
             
     from app.models import LeadEvent
     from app.services.log_service import log_lead_event, _get_default_tenant_id
@@ -4024,7 +4018,7 @@ def crm_tasks_complete():
     if is_json:
         return jsonify({"success": True})
     else:
-        return redirect(url_for("admin.crm_lead_detail", phone=phone, key=request.args.get("key", "")))
+        return redirect(url_for("admin.crm_lead_detail", phone=phone))
 
 @admin_bp.route("/crm/tasks/my", methods=["GET"])
 def crm_my_tasks():
