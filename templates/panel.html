@@ -791,9 +791,7 @@ tr:hover td { background: rgba(37,211,102,0.03); }
   </div>
   <script>
     function goCrm(path) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const key = urlParams.get('key') || '';
-      window.location.href = path + '?key=' + key;
+      window.location.href = path;
     }
   </script>
 

@@ -84,7 +84,6 @@
       
       <div class="d-flex align-items-center gap-3">
         <form method="GET" class="d-flex align-items-center gap-2 m-0">
-          <input type="hidden" name="key" value="{{ key }}">
           <label class="text-muted" style="font-size: 0.85rem; font-weight: 600;">Staff Context:</label>
           <select name="staff" class="form-select form-select-sm" style="background: var(--card-bg); color: var(--text-main); border-color: var(--border); width: 200px;" onchange="this.form.submit()">
             <option value="">-- All Staff --</option>
@@ -93,7 +92,7 @@
             {% endfor %}
           </select>
         </form>
-        <a href="/crm/staff-dashboard?key={{ key }}&staff={{ staff_name }}" class="btn btn-outline-secondary btn-sm" style="border-color: var(--border); color: var(--text-main);">
+        <a href="/crm/staff-dashboard?staff={{ staff_name }}" class="btn btn-outline-secondary btn-sm" style="border-color: var(--border); color: var(--text-main);">
           <i class="bi bi-arrow-left me-1"></i>Dashboard
         </a>
       </div>

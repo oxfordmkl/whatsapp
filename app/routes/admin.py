@@ -489,7 +489,7 @@ def stats():
 
 @admin_bp.route("/panel", methods=["GET"])
 def admin_panel():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return (
             "<html><body style='font-family:sans-serif;text-align:center;"
             "padding:50px;background:#0a0f0d;color:#25D366'>"
@@ -4065,7 +4065,7 @@ def crm_my_tasks():
 
 @admin_bp.route("/crm/tasks/admin", methods=["GET"])
 def crm_admin_tasks():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     open_tasks, completed_tasks = get_all_tasks()
@@ -4109,7 +4109,6 @@ def crm_admin_tasks():
     
     return render_template(
         "crm_admin_tasks.html",
-        key=request.args.get("key", ""),
         kpis=kpis,
         staff_summary=summary_list
     )
@@ -4234,7 +4233,7 @@ def crm_my_leads():
 
 @admin_bp.route("/crm/staff-performance-detail", methods=["GET"])
 def crm_staff_performance_detail():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     staff_name = request.args.get("staff", "").strip()
@@ -4300,7 +4299,6 @@ def crm_staff_performance_detail():
 
     return render_template(
         "crm_staff_performance_detail.html",
-        key=request.args.get("key", ""),
         staff_name=staff_name,
         active_staff=active_staff,
         metrics=staff_metrics

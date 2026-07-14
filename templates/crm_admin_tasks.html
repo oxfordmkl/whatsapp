@@ -38,7 +38,7 @@
     </div>
     <div class="d-flex gap-2">
       <a href="/crm/operations" class="btn-crm-outline text-white border-secondary"><i class="bi bi-speedometer2"></i> Operations</a>
-      <a href="/panel?key={{ key }}" class="btn-crm-outline"><i class="bi bi-arrow-left"></i> Back to Panel</a>
+      <a href="/panel" class="btn-crm-outline"><i class="bi bi-arrow-left"></i> Back to Panel</a>
     </div>
   </div>
 
@@ -101,7 +101,7 @@
           </td>
           <td style="color: #25D366; font-weight: 600;">{{ s.completed }}</td>
           <td>
-            <a href="/crm/tasks/my?key={{ key }}&staff={{ s.name }}" class="btn btn-sm btn-outline-secondary">View Board</a>
+            <a href="/crm/tasks/my?staff={{ s.name }}" class="btn btn-sm btn-outline-secondary">View Board</a>
           </td>
         </tr>
         {% endfor %}
