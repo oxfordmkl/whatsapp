@@ -3735,7 +3735,7 @@ def crm_auto_assign_confirm():
 
 @admin_bp.route("/crm/reassignment-center", methods=["GET"])
 def crm_reassignment_center():
-    if request.args.get("key", "") != ADMIN_KEY:
+    if not check_auth():
         return _deny()
         
     registry = load_staff_registry()
@@ -3755,7 +3755,7 @@ def crm_reassignment_center():
 
 @admin_bp.route("/crm/reassignment-center/preview", methods=["POST"])
 def crm_reassignment_preview():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.get_json(silent=True) or {}
@@ -3783,7 +3783,7 @@ def crm_reassignment_preview():
 
 @admin_bp.route("/crm/reassignment-center/confirm", methods=["POST"])
 def crm_reassignment_confirm():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+    if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.get_json(silent=True) or {}

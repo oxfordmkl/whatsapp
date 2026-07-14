@@ -45,7 +45,7 @@
     </div>
     <div>
       <a href="/panel?key={{ key }}" class="btn-crm-outline me-2"><i class="bi bi-arrow-left"></i> Back to Panel</a>
-      <a href="/crm/staff-workload?key={{ key }}" class="btn btn-outline-light"><i class="bi bi-speedometer2"></i> Staff Workload</a>
+      <a href="/crm/staff-workload" class="btn btn-outline-light"><i class="bi bi-speedometer2"></i> Staff Workload</a>
     </div>
   </div>
 
@@ -120,8 +120,6 @@
 </div>
 
 <script>
-  const ADMIN_KEY = "{{ key }}";
-  
   function selectStaff(name) {
     document.getElementById('targetStaff').value = name;
   }
@@ -158,8 +156,7 @@
       const response = await fetch('/crm/reassignment-center/preview', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Key': ADMIN_KEY
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phones: phones, target_staff: targetStaff })
       });
@@ -218,8 +215,7 @@
       const response = await fetch('/crm/reassignment-center/confirm', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Key': ADMIN_KEY
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phones: phones, target_staff: targetStaff })
       });
