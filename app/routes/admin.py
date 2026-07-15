@@ -624,6 +624,13 @@ def crm_home():
         return _deny()
     logging.info(f"AUTH_SUCCESS username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/home")
 
+    if actor.get("role") == "STAFF":
+        return render_template(
+            "crm_home_staff.html",
+            key=request.args.get("key", ""),
+            actor=actor
+        )
+
     kpis = calculate_home_kpis()
 
     return render_template(
@@ -4058,9 +4065,9 @@ def crm_my_tasks():
     is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
     
     if is_staff:
-        staff_name = actor.get("username")
+        staff_name = normalize_staff_name(actor.get("username", ""))
     else:
-        staff_name = request.args.get("staff", "").strip()
+        staff_name = normalize_staff_name(request.args.get("staff", ""))
     open_tasks, completed_tasks = get_all_tasks()
     
     if staff_name:
@@ -4152,8 +4159,12 @@ def crm_staff_dashboard():
         logging.warning(f"AUTH_FAILURE username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/staff-dashboard")
         return _deny()
     logging.info(f"AUTH_SUCCESS username={actor['username']} role={actor['role']} source={actor['source']} route=/crm/staff-dashboard")
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
     
-    staff_name = request.args.get("staff", "").strip()
+    if is_staff:
+        staff_name = normalize_staff_name(actor.get("username", ""))
+    else:
+        staff_name = normalize_staff_name(request.args.get("staff", ""))
     registry = load_staff_registry()
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()
@@ -4232,9 +4243,9 @@ def crm_my_leads():
     is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
     
     if is_staff:
-        staff_name = actor.get("username")
+        staff_name = normalize_staff_name(actor.get("username", ""))
     else:
-        staff_name = request.args.get("staff", "").strip()
+        staff_name = normalize_staff_name(request.args.get("staff", ""))
     registry = load_staff_registry()
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()
@@ -4264,8 +4275,13 @@ def crm_my_leads():
 def crm_staff_performance_detail():
     if not check_auth():
         return _deny()
-        
-    staff_name = request.args.get("staff", "").strip()
+    actor = get_current_actor()
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    
+    if is_staff:
+        staff_name = normalize_staff_name(actor.get("username", ""))
+    else:
+        staff_name = normalize_staff_name(request.args.get("staff", ""))
     registry = load_staff_registry()
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()

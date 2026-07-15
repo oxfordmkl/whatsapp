@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home — Oxford CRM</title>
+  <meta name="description" content="Oxford CRM command center — unified business operating system dashboard for Oxford Computers.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* ── Page-specific styles (design tokens come from crm_sidebar.html) ── */
+
+    .crm-page-header {
+      padding: 1.75rem 2rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+    .crm-page-header h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.2rem;
+    }
+    .crm-page-header p {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin: 0;
+    }
+    .page-body {
+      padding: 1.75rem 2rem;
+    }
+
+    /* ── Section headings ────────────────────────────────────────────── */
+    .section-heading {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    /* ── KPI Cards ───────────────────────────────────────────────────── */
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .kpi-card:hover {
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      color: inherit;
+    }
+    .kpi-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      background: radial-gradient(circle at top right, rgba(255,255,255,0.04), transparent 70%);
+      transition: opacity 0.2s;
+    }
+    .kpi-card:hover::after { opacity: 1; }
+
+    .kpi-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .kpi-info { flex: 1; min-width: 0; }
+    .kpi-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+    }
+    .kpi-value {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .kpi-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+    .kpi-arrow {
+      font-size: 0.85rem;
+      color: var(--border);
+      transition: color 0.2s, transform 0.2s;
+      flex-shrink: 0;
+    }
+    .kpi-card:hover .kpi-arrow { color: var(--text-muted); transform: translateX(3px); }
+
+    /* Color variants */
+    .kpi-green   { background: rgba(37,211,102,0.1);  color: var(--green);  }
+    .kpi-red     { background: rgba(248,81,73,0.1);   color: var(--red);    }
+    .kpi-yellow  { background: rgba(210,153,34,0.1);  color: var(--yellow); }
+    .kpi-blue    { background: rgba(88,166,255,0.1);  color: var(--blue);   }
+    .kpi-purple  { background: rgba(188,140,255,0.1); color: var(--purple); }
+    .kpi-orange  { background: rgba(227,129,58,0.1);  color: var(--orange); }
+
+    /* ── Quick Action Cards ──────────────────────────────────────────── */
+    .quick-action-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem 1.4rem;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+      height: 100%;
+    }
+    .quick-action-card:hover {
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      color: inherit;
+    }
+    .qa-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      margin-bottom: 1rem;
+    }
+    .qa-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 0.3rem;
+      letter-spacing: -0.01em;
+    }
+    .qa-desc {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .qa-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      margin-top: 0.85rem;
+      transition: gap 0.2s;
+    }
+    .quick-action-card:hover .qa-cta { gap: 0.5rem; }
+
+    /* ── Activity Feed ───────────────────────────────────────────────── */
+    .activity-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      height: 100%;
+    }
+    .activity-card-header {
+      padding: 1rem 1.25rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .activity-card-body {
+      padding: 0.5rem 0;
+    }
+    .activity-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.65rem 1.25rem;
+      border-bottom: 1px solid rgba(48,54,61,0.5);
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-item:hover { background: rgba(255,255,255,0.02); }
+    .activity-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .activity-content { flex: 1; min-width: 0; }
+    .activity-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.15rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .activity-meta {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .activity-time {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+    .activity-empty {
+      padding: 2rem 1.25rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+    .view-all-link {
+      display: block;
+      padding: 0.75rem 1.25rem;
+      text-align: center;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-top: 1px solid var(--border);
+      transition: color 0.15s, background 0.15s;
+    }
+    .view-all-link:hover { color: var(--green); background: var(--green-glow); }
+
+    /* ── Status bar ──────────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 0.65rem 2rem;
+      background: var(--bg-card2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+    .status-dot-live {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse-dot 2s infinite;
+      display: inline-block;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ── Responsive ──────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .page-body { padding: 1.25rem 1rem; }
+      .crm-page-header { padding: 1.25rem 1rem 0.85rem; }
+      .kpi-value { font-size: 1.6rem; }
+      .status-bar { padding: 0.5rem 1rem; gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+{% include 'crm_sidebar.html' %}
+
+<div class="crm-main">
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <span><span class="status-dot-live"></span> Live Data</span>
+    <span id="homeTimestamp"></span>
+    <span>Oxford Computers CRM · Phase 9.7</span>
+    <!-- Future Tenant Scope: tenant_name will display here (Phase 11) -->
+  </div>
+
+  <!-- Page Header STAFF -->
+  <div class="crm-page-header">
+    <h1><i class="bi bi-person-workspace me-2" style="color:var(--green);"></i>Staff Workspace</h1>
+    <p>Welcome back, {{ actor.username if actor else 'Staff Member' }}. Here is your daily overview.</p>
+  </div>
+
+  <div class="page-body">
+    <div class="section-heading mb-3">Quick Actions</div>
+    <div class="row g-3 mb-4">
+      <!-- Quick Action Cards for STAFF -->
+      <div class="col-6 col-lg-4">
+        <a class="quick-action-card" href="/crm/my-leads?key={{ key }}">
+          <div class="qa-icon kpi-green"><i class="bi bi-person-fill"></i></div>
+          <div class="qa-title">My Leads</div>
+          <div class="qa-desc">View and manage your assigned leads.</div>
+          <div class="qa-cta" style="color:var(--green);">Open Leads <i class="bi bi-arrow-right"></i></div>
+        </a>
+      </div>
+      <div class="col-6 col-lg-4">
+        <a class="quick-action-card" href="/crm/tasks/my?key={{ key }}">
+          <div class="qa-icon kpi-yellow"><i class="bi bi-calendar2-check-fill"></i></div>
+          <div class="qa-title">My Tasks & Followups</div>
+          <div class="qa-desc">Track today's followups and your scheduled tasks.</div>
+          <div class="qa-cta" style="color:var(--yellow);">Open Tasks <i class="bi bi-arrow-right"></i></div>
+        </a>
+      </div>
+      <div class="col-6 col-lg-4">
+        <a class="quick-action-card" href="/crm/staff-performance-detail?staff={{ actor.username if actor else '' }}&key={{ key }}">
+          <div class="qa-icon kpi-blue"><i class="bi bi-graph-up-arrow"></i></div>
+          <div class="qa-title">My Performance</div>
+          <div class="qa-desc">Review your metrics, conversions, and SLA.</div>
+          <div class="qa-cta" style="color:var(--blue);">View Performance <i class="bi bi-arrow-right"></i></div>
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center mt-4" style="color:var(--text-muted);font-size:0.7rem;">
+      Oxford Computers CRM &nbsp;·&nbsp; WhatsApp Business OS &nbsp;·&nbsp; Phase 9.7
+      &nbsp;·&nbsp; <span id="homeFooterTs"></span>
+    </p>
+
+  </div><!-- /page-body -->
+</div><!-- /crm-main -->
+
+<script>
+  // Live timestamps
+  (function() {
+    var now = new Date();
+    var opts = { dateStyle: 'medium', timeStyle: 'short' };
+    var ts = now.toLocaleString('en-IN', opts);
+    var el1 = document.getElementById('homeTimestamp');
+    var el2 = document.getElementById('homeFooterTs');
+    if (el1) el1.textContent = ts;
+    if (el2) el2.textContent = ts;
+  })();
+</script>
+
+</body>
+</html>

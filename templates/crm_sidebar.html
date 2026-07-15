@@ -299,56 +299,63 @@ body {
 
   <!-- Nav Body -->
   <div class="crm-nav-body">
+    {% set actor = get_current_actor() %}
 
     <!-- HOME — visible to ALL roles -->
-    <!-- future_role: ALL — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN', 'STAFF'] %}
     <div class="nav-section">
       <a class="nav-item" href="/crm/home?key={{ key }}" data-path="/crm/home">
         <i class="bi bi-house-fill"></i>
         <span class="nav-label">Home</span>
       </a>
     </div>
-    <!-- future_role: ALL — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- LEADS — future_role: ADMIN | SUPER_ADMIN | STAFF — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN', 'STAFF'] %}
     <div class="nav-section">
       <div class="nav-section-label">Leads</div>
+      {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
       <a class="nav-item" href="/crm/leads?key={{ key }}" data-path="/crm/leads">
         <i class="bi bi-people-fill"></i>
         <span class="nav-label">All Leads</span>
       </a>
+      {% endif %}
       <a class="nav-item" href="/crm/my-leads?key={{ key }}" data-path="/crm/my-leads">
         <i class="bi bi-person-fill"></i>
         <span class="nav-label">My Leads</span>
       </a>
+      {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
       <a class="nav-item" href="/crm/leads/unassigned?key={{ key }}" data-path="/crm/leads/unassigned">
         <i class="bi bi-inbox-fill"></i>
         <span class="nav-label">Unassigned</span>
       </a>
+      {% endif %}
     </div>
-    <!-- future_role: ADMIN | SUPER_ADMIN | STAFF — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- TASKS — future_role: ADMIN | SUPER_ADMIN | STAFF — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN', 'STAFF'] %}
     <div class="nav-section">
       <div class="nav-section-label">Tasks</div>
       <a class="nav-item" href="/crm/tasks/my?key={{ key }}" data-path="/crm/tasks/my">
         <i class="bi bi-calendar2-check-fill"></i>
         <span class="nav-label">My Tasks</span>
       </a>
+      {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
       <a class="nav-item" href="/crm/tasks/admin?key={{ key }}" data-path="/crm/tasks/admin">
         <i class="bi bi-list-check"></i>
         <span class="nav-label">Admin Tasks</span>
       </a>
+      {% endif %}
     </div>
-    <!-- future_role: ADMIN | SUPER_ADMIN | STAFF — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- MARKETING — future_role: ADMIN | SUPER_ADMIN — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
       <div class="nav-section-label">Marketing</div>
       <a class="nav-item" href="/crm/marketing" data-path="/crm/marketing">
@@ -360,11 +367,11 @@ body {
         <span class="nav-label">Campaign Center</span>
       </a>
     </div>
-    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- ANALYTICS — future_role: ADMIN | SUPER_ADMIN — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
       <div class="nav-section-label">Analytics</div>
       <a class="nav-item" href="/crm/analytics" data-path="/crm/analytics">
@@ -384,11 +391,11 @@ body {
         <span class="nav-label">Source Analytics</span>
       </a>
     </div>
-    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- OPERATIONS — future_role: ADMIN | SUPER_ADMIN — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
       <div class="nav-section-label">Operations</div>
       <a class="nav-item" href="/crm/operations" data-path="/crm/operations">
@@ -404,11 +411,11 @@ body {
         <span class="nav-label">Staff Workload</span>
       </a>
     </div>
-    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- STAFF — future_role: ADMIN | SUPER_ADMIN — begin -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
       <div class="nav-section-label">Staff</div>
       <a class="nav-item" href="/crm/staff-dashboard?key={{ key }}" data-path="/crm/staff-dashboard">
@@ -432,14 +439,13 @@ body {
         <span class="nav-label">Performance</span>
       </a>
     </div>
-    <!-- future_role: ADMIN | SUPER_ADMIN — end -->
-
     <div class="nav-divider"></div>
+    {% endif %}
 
     <!-- SETTINGS — future_role: SUPER_ADMIN — begin (Phase 10 placeholder) -->
+    {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
       <div class="nav-section-label">System</div>
-      {% set actor = get_current_actor() %}
       {% if actor.role == 'SUPER_ADMIN' %}
       <a class="nav-item" href="/crm/super/dashboard" data-path="/crm/super/dashboard">
         <i class="bi bi-shield-lock-fill"></i>
@@ -452,18 +458,16 @@ body {
       </a>
       <!-- Phase 10: Settings route will be added here -->
       <!-- Phase 11: Tenant management will be added here -->
-      {% if actor.role == 'ADMIN' %}
       <a class="nav-item" href="{{ url_for('tenant.tenant_home') }}" data-path="/tenant/home">
         <i class="bi bi-building"></i>
         <span class="nav-label">Tenant Settings</span>
       </a>
-      {% endif %}
       <a class="nav-item" href="/panel?key={{ key }}" data-path="/panel" style="opacity:0.6;" title="Legacy panel — preserved">
         <i class="bi bi-grid-3x3-gap"></i>
         <span class="nav-label">Legacy Panel</span>
       </a>
     </div>
-    <!-- future_role: SUPER_ADMIN — end -->
+    {% endif %}
 
   </div><!-- /crm-nav-body -->
 
@@ -508,7 +512,9 @@ body {
       <div style="margin-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.4rem;">
         <div style="display: flex; flex-direction: column; gap: 0.4rem;">
           <a href="#" style="font-size: 0.75rem; color: var(--text-muted); text-decoration: none;" onclick="return false;"><i class="bi bi-person me-1"></i> Profile (placeholder)</a>
+          {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
           <a href="#" style="font-size: 0.75rem; color: var(--text-muted); text-decoration: none;" onclick="return false;"><i class="bi bi-shield-lock me-1"></i> Change Password (placeholder)</a>
+          {% endif %}
           {% if actor.source == 'SESSION' %}
           <a href="/crm/logout" style="font-size: 0.75rem; color: var(--red); text-decoration: none; margin-top: 0.2rem;"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
           {% endif %}
