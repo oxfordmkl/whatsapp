@@ -877,6 +877,7 @@ def _calculate_audiences(tenant_id=None):
 # ── Phase 9.2A-Lite: Staff Management ────────────────────────────────────────
 
 @admin_bp.route("/crm/staff-management", methods=["GET", "POST"])
+@admin_required
 def crm_staff_management():
     if not check_auth():
         return _deny()
@@ -1378,6 +1379,7 @@ def campaigns():
     return render_template("campaigns.html", dashboard=dashboard)
 
 @admin_bp.route("/crm/campaigns/preview", methods=["POST"])
+@admin_required
 def campaign_preview():
     if not check_auth():
         return jsonify({"error": "Unauthorized"}), 403
@@ -1395,6 +1397,7 @@ def campaign_preview():
     })
 
 @admin_bp.route("/crm/campaigns/send", methods=["POST"])
+@admin_required
 def campaign_send():
     if not check_auth():
         return _deny()
@@ -3689,6 +3692,7 @@ def crm_auto_assign_preview():
     return jsonify({"preview": preview_data})
 
 @admin_bp.route("/crm/leads/unassigned/auto-assign-confirm", methods=["POST"])
+@admin_required
 def crm_auto_assign_confirm():
     if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
@@ -3778,6 +3782,7 @@ def crm_reassignment_preview():
     return jsonify({"preview": preview_data, "target_staff": target_staff})
 
 @admin_bp.route("/crm/reassignment-center/confirm", methods=["POST"])
+@admin_required
 def crm_reassignment_confirm():
     if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
@@ -4736,6 +4741,17 @@ def super_admin_required(f):
         if not current_user.is_authenticated:
             return redirect(url_for('admin.crm_super_login'))
         if getattr(current_user, 'role', None) != 'SUPER_ADMIN':
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    """Decorator: allows ADMIN and SUPER_ADMIN only. STAFF receives 403."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('admin.crm_login'))
+        if getattr(current_user, 'role', None) not in ('ADMIN', 'SUPER_ADMIN'):
             abort(403)
         return f(*args, **kwargs)
     return decorated_function
