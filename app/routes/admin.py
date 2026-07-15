@@ -3587,6 +3587,7 @@ def crm_staff_workload():
 
 
 @admin_bp.route("/crm/leads/unassigned", methods=["GET"])
+@admin_required
 def crm_unassigned_leads():
     if not check_auth():
         return _deny()
@@ -3594,7 +3595,8 @@ def crm_unassigned_leads():
     from app.models import ConversationState
     from sqlalchemy import or_
     
-    unassigned = ConversationState.query.filter(
+    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    unassigned = tenant_query(ConversationState, _tid).filter(
         or_(ConversationState.assigned_staff.is_(None), ConversationState.assigned_staff == '')
     ).order_by(ConversationState.lead_score.desc()).all()
     
