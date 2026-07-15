@@ -661,6 +661,33 @@ def crm_marketing():
         key=request.args.get("key", ""),
     )
 
+@admin_bp.route("/crm/marketing/start_job", methods=["POST"])
+@admin_required
+def crm_marketing_start_job():
+    if not check_auth():
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    data = request.get_json() or {}
+    phones = data.get("phones", [])
+    message = data.get("message", "").strip()
+    campaign_name = data.get("campaign_name", "Marketing Hub Custom").strip()
+    
+    if not phones:
+        return jsonify({"error": "No contacts provided"}), 400
+    if not message:
+        return jsonify({"error": "Message is required"}), 400
+        
+    from app.services.campaign_service import start_campaign
+    from app.services.log_service import _get_default_tenant_id
+    
+    try:
+        start_campaign(phones, message, campaign_name, tenant_id=_get_default_tenant_id())
+        return jsonify({"success": True, "count": len(phones)})
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @admin_bp.route("/crm/leads", methods=["GET"])
 def crm_leads():

@@ -978,73 +978,56 @@ async function startBroadcast() {
   if (!msgTemplate) { showAlert('Message type cheyyuka!', 'warn'); return; }
   const pending = mktContacts.filter(c => c.status === 'pending');
   if (!pending.length) { showAlert('No pending contacts! Import contacts first.', 'warn'); return; }
-  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
-  const apiKey    = document.getElementById('apiKey').value.trim();
-  if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
-  const delay = parseInt(document.getElementById('delayRange').value) * 1000;
-  const batchSize = parseInt(document.getElementById('batchRange').value);
-  const batchPause = parseInt(document.getElementById('pauseRange').value) * 1000;
-  if (!confirm(`📣 Broadcast Confirm:\n\n• ${pending.length} contacts\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Est: ~${Math.ceil(pending.length * delay / 60000)} min\n\nStart?`)) return;
+  if (pending.length > 100) { showAlert('Backend limit: max 100 leads per campaign.', 'warn'); return; }
+  
+  if (!confirm(`📣 Broadcast Confirm:\n\n• ${pending.length} contacts\n• Will be processed securely by backend engine.\n\nStart?`)) return;
+  
   mktIsSending = true; mktStopFlag = false; mktStartTime = Date.now(); mktSentCount = 0; mktFailCount = 0;
   document.getElementById('sendBtn').disabled = true;
   document.getElementById('sendTplBtn').disabled = true;
   document.getElementById('sendSpinner').style.display = 'block';
-  document.getElementById('sendBtnText').textContent = 'Broadcasting...';
-  document.getElementById('stopBtn').style.display = 'inline-flex';
+  document.getElementById('sendBtnText').textContent = 'Submitting Job...';
+  document.getElementById('stopBtn').style.display = 'none';
   document.getElementById('progressSection').classList.add('visible');
-  log('info', `🚀 Broadcast started — ${pending.length} contacts`);
-  for (let i = 0; i < pending.length; i++) {
-    if (mktStopFlag) { log('warn', `⏹ Stopped at contact ${i+1}`); break; }
-    const contact = pending[i]; const idx = mktContacts.indexOf(contact);
-    const msg = msgTemplate.replace(/{name}/g, contact.name);
-    updateRowStatus(idx, 'sending');
-    try {
-      const resp = await fetch(`${serverUrl}/broadcast`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
-        body: JSON.stringify({ numbers: [contact.phone], message: msg, delay_seconds: 0 })
+  log('info', `🚀 Submitting backend job — ${pending.length} contacts`);
+  
+  const phones = pending.map(c => c.phone);
+  try {
+    const resp = await fetch(`/crm/marketing/start_job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phones: phones, message: msgTemplate, campaign_name: "Marketing Hub" })
+    });
+    const data = await resp.json();
+    
+    if (resp.ok && data.success) {
+      log('ok', `✓ Job accepted by backend engine! Processing ${phones.length} leads.`);
+      pending.forEach((c, idx) => {
+        c.status = 'sent'; // Optimistic update
+        updateRowStatus(mktContacts.indexOf(c), 'sent');
       });
-      const data = await resp.json();
-      if (resp.ok && data.success > 0) {
-        contact.status = 'sent'; mktSentCount++; updateRowStatus(idx, 'sent');
-        log('ok', `✓ ${contact.name} (${contact.phone})`);
-      } else {
-        contact.status = 'failed'; mktFailCount++; updateRowStatus(idx, 'failed');
-        log('err', `✗ ${contact.name} — ${JSON.stringify(data)}`);
-      }
-    } catch(err) {
-      contact.status = 'failed'; mktFailCount++; updateRowStatus(idx, 'failed');
-      log('err', `✗ ${contact.name} — Network: ${err.message}`);
+      mktSentCount = pending.length;
+      document.getElementById('progressBar').style.width = '100%';
+      document.getElementById('progressPct').textContent = '100%';
+    } else {
+      log('err', `✗ Job rejected: ${data.error}`);
+      showAlert('Failed: ' + data.error, 'err');
     }
-    const done = i+1, pct = Math.round((done/pending.length)*100);
-    const elapsed = (Date.now() - mktStartTime) / 1000;
-    const rate = (done/elapsed*60).toFixed(1);
-    const remaining = pending.length - done;
-    const etaSecs = remaining * (delay/1000);
-    const eta = etaSecs > 60 ? `${Math.ceil(etaSecs/60)}m` : `${Math.ceil(etaSecs)}s`;
-    document.getElementById('progressBar').style.width = pct + '%';
-    document.getElementById('progressPct').textContent = pct + '%';
-    document.getElementById('pSent').textContent = mktSentCount;
-    document.getElementById('pFail').textContent = mktFailCount;
-    document.getElementById('pRem').textContent  = remaining;
-    document.getElementById('pEta').textContent  = eta;
-    document.getElementById('pRate').textContent = `${rate}/min`;
-    updateStats();
-    if ((i+1) % batchSize === 0 && i < pending.length-1 && !mktStopFlag) {
-      log('warn', `⏸ Batch pause (${batchPause/1000}s)`);
-      await mktSleep(batchPause);
-    } else if (i < pending.length-1) { await mktSleep(delay); }
+  } catch(err) {
+    log('err', `✗ Network error: ${err.message}`);
+    showAlert('Error: ' + err.message, 'err');
   }
+  
   mktIsSending = false;
   document.getElementById('sendBtn').disabled = false;
   document.getElementById('sendTplBtn').disabled = false;
   document.getElementById('sendSpinner').style.display = 'none';
   document.getElementById('sendBtnText').innerHTML = '<i class="bi bi-megaphone-fill me-1"></i> Start Broadcast';
-  document.getElementById('stopBtn').style.display = 'none';
   document.getElementById('exportBtn').style.display = 'inline-flex';
-  document.getElementById('progressEmoji').textContent = mktStopFlag ? '⏹' : '✅';
-  document.getElementById('progressTitle').textContent = mktStopFlag ? 'Stopped' : 'Complete!';
-  log('info', `━━━ Broadcast ${mktStopFlag?'stopped':'complete'} ━━━ Sent: ${mktSentCount} | Failed: ${mktFailCount}`);
+  document.getElementById('pSent').textContent = mktSentCount;
+  document.getElementById('progressEmoji').textContent = '✅';
+  document.getElementById('progressTitle').textContent = 'Job Submitted!';
+  updateStats();
 }
 
 async function startTemplateBroadcast() {
