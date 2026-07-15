@@ -2373,6 +2373,7 @@ def crm_revenue_analytics():
 # ── Phase 8.3A: Multi-Course Admission Selection ────────────────────────────
 
 @admin_bp.route("/crm/course-admissions/<phone>", methods=["POST"])
+@admin_required
 def crm_course_admissions(phone):
     """
     POST /crm/course-admissions/<phone>?key=ADMIN_KEY
@@ -2407,11 +2408,6 @@ def crm_course_admissions(phone):
         conversation_state = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
         if conversation_state is None:
             return _not_found(phone)
-            
-        actor = get_current_actor()
-        is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
-        if is_staff:
-            return _deny()
             
         staff_name = conversation_state.assigned_staff if conversation_state and conversation_state.assigned_staff else ""
 
@@ -3618,6 +3614,7 @@ def crm_unassigned_leads():
     )
 
 @admin_bp.route("/crm/leads/unassigned/assign", methods=["POST"])
+@admin_required
 def crm_unassigned_assign():
     if not check_auth():
         return _deny()
@@ -3653,6 +3650,7 @@ def crm_unassigned_assign():
     return redirect(url_for("admin.crm_unassigned_leads", key=key))
 
 @admin_bp.route("/crm/leads/unassigned/auto-assign-preview", methods=["POST"])
+@admin_required
 def crm_auto_assign_preview():
     if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
@@ -3754,6 +3752,7 @@ def crm_reassignment_center():
     )
 
 @admin_bp.route("/crm/reassignment-center/preview", methods=["POST"])
+@admin_required
 def crm_reassignment_preview():
     if not check_auth():
         return jsonify({"error": "Unauthorized"}), 401
