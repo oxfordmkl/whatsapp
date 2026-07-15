@@ -44,6 +44,30 @@ def normalize_staff_name(name):
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
 
+from functools import wraps
+from flask import abort
+
+def super_admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('admin.crm_super_login'))
+        if getattr(current_user, 'role', None) != 'SUPER_ADMIN':
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    """Decorator: allows ADMIN and SUPER_ADMIN only. STAFF receives 403."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('admin.crm_login'))
+        if getattr(current_user, 'role', None) not in ('ADMIN', 'SUPER_ADMIN'):
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
 # ── Phase 13-B3D: Hardened Tenant Isolation Helpers ──────────────────────────
 
 def tenant_query(model, tenant_id=None):
@@ -4732,30 +4756,6 @@ def add_cache_control_headers(response):
 
 
 # ── Phase 13-A3C: Super Admin Control Center ─────────────────────────────────
-
-from functools import wraps
-from flask import abort
-
-def super_admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return redirect(url_for('admin.crm_super_login'))
-        if getattr(current_user, 'role', None) != 'SUPER_ADMIN':
-            abort(403)
-        return f(*args, **kwargs)
-    return decorated_function
-
-def admin_required(f):
-    """Decorator: allows ADMIN and SUPER_ADMIN only. STAFF receives 403."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            return redirect(url_for('admin.crm_login'))
-        if getattr(current_user, 'role', None) not in ('ADMIN', 'SUPER_ADMIN'):
-            abort(403)
-        return f(*args, **kwargs)
-    return decorated_function
 
 @admin_bp.route("/crm/super/login", methods=["GET", "POST"])
 def crm_super_login():
