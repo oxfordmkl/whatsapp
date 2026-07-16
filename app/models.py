@@ -1,6 +1,8 @@
 from datetime import datetime
 from app.extensions import db
 from flask_login import UserMixin
+from sqlalchemy import case, select, func
+from sqlalchemy.ext.hybrid import hybrid_property
 import uuid
 
 class Tenant(db.Model):
@@ -111,11 +113,30 @@ class ConversationState(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     phone        = db.Column(db.String(20),  nullable=False, index=True)
     name         = db.Column(db.String(200), default="")
-    stage        = db.Column(db.String(50),  default="new")
-    course       = db.Column(db.String(200), default="")
+
+    # ══ Phase 16.5A5-I: Enterprise ORM dual-write adapters ══════════════════
+    # The five attributes below (stage, course, batch_time, offer_course,
+    # is_admitted) are now hybrid_property ADAPTERS defined further down. Their
+    # PHYSICAL columns are retained here under underscore-prefixed names mapped
+    # to the SAME database column names — NO migration, NO data change.
+    #
+    #   read : prefer the new relational model when the row is relationally
+    #          activated (pipeline_stage_id IS NOT NULL, set by Phase 16.5A6
+    #          backfill); otherwise fall back to the legacy column.
+    #   write: ALWAYS update the legacy column, AND keep an EXISTING relational
+    #          link in sync. Creating a brand-new link is backfill (16.5A6) and
+    #          is intentionally NOT done here.
+    #
+    # Because every production row currently has pipeline_stage_id = NULL, both
+    # the Python getters and the SQL expressions reduce EXACTLY to the legacy
+    # columns — zero behaviour and zero extra queries until backfill runs.
+    _stage        = db.Column('stage',        db.String(50),  default="new")
+    _course       = db.Column('course',       db.String(200), default="")
+    _batch_time   = db.Column('batch_time',   db.String(100), default="")
+    _offer_course = db.Column('offer_course', db.String(50),  default="")
+    _is_admitted  = db.Column('is_admitted',  db.Boolean, nullable=True, default=False)
+
     goal         = db.Column(db.String(50),  default="")
-    batch_time   = db.Column(db.String(100), default="")
-    offer_course = db.Column(db.String(50),  default="")
     last_msg     = db.Column(db.String(50),  default="")
     last_text    = db.Column(db.Text,        default="")
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow,
@@ -123,10 +144,13 @@ class ConversationState(db.Model):
 
     # ── Phase 4A: CRM Expansion Fields ──
     created_at     = db.Column(db.DateTime,    default=datetime.utcnow, nullable=False)
+    # lead_status: RETAINED as a legacy column (Phase 16.5A5-I keeps it intact).
+    #   Migration to TagDefinition is DEFERRED — no adapter is applied yet, only a
+    #   future hook. group_by(lead_status) analytics in admin.py depend on this
+    #   physical column and MUST keep working unchanged.
     lead_status    = db.Column(db.String(50),  nullable=True, default="Lead")
     assigned_staff = db.Column(db.String(100), nullable=True)
     lead_score     = db.Column(db.Integer,     nullable=True, default=0)
-    is_admitted    = db.Column(db.Boolean,     nullable=True, default=False)
     notes          = db.Column(db.Text,        nullable=True)
 
     # ── Phase 11-D1: Opt-Out Safety ──
@@ -137,9 +161,7 @@ class ConversationState(db.Model):
 
     # ── Phase 16.5A5: Enterprise ORM Adapter Foundation ──
     # Nullable FK into the new relational pipeline model. NULL until Phase 16.5A6
-    # backfill maps legacy `stage` strings to PipelineStage rows. The legacy
-    # `stage` (String) and `is_admitted` (Boolean) columns are RETAINED — the
-    # dual-write @property adapters (a later Phase 16.5A5 step) bridge the two.
+    # backfill maps legacy `stage` strings to PipelineStage rows.
     pipeline_stage_id = db.Column(db.Integer, db.ForeignKey('pipeline_stages.id'),
                                   nullable=True, index=True)
 
@@ -151,6 +173,206 @@ class ConversationState(db.Model):
     __table_args__ = (
         db.UniqueConstraint('phone', 'tenant_id', name='uq_conversation_state_phone_tenant'),
     )
+
+    # ── Adapter constructor bridge ──────────────────────────────────────────
+    # ConversationState(stage="new", course="", ...) must keep working now that
+    # those names are hybrid_property adapters (not accepted by the default
+    # SQLAlchemy __init__). Route adapter kwargs through the hybrid setters.
+    _ADAPTER_INIT_KEYS = ('stage', 'course', 'batch_time', 'offer_course', 'is_admitted')
+
+    def __init__(self, **kwargs):
+        adapter_vals = {k: kwargs.pop(k) for k in self._ADAPTER_INIT_KEYS if k in kwargs}
+        super().__init__(**kwargs)
+        for k, v in adapter_vals.items():
+            setattr(self, k, v)
+
+    # ── Adapter helpers (instance-level; honour the no-relationship convention)
+    def _lookup_pipeline_stage(self):
+        """Load the linked PipelineStage, or None. Only called when the row is
+        relationally activated, so it never queries on un-backfilled data."""
+        if self.pipeline_stage_id is None:
+            return None
+        from app.models import PipelineStage
+        return db.session.get(PipelineStage, self.pipeline_stage_id)
+
+    def _first_offering(self):
+        """First linked Offering via the bridge, or None. Guarded by the caller
+        on pipeline_stage_id, so no query runs pre-backfill."""
+        if self.id is None:
+            return None
+        from app.models import ConversationOffering, Offering
+        link = (ConversationOffering.query
+                .filter_by(conversation_state_id=self.id)
+                .order_by(ConversationOffering.id)
+                .first())
+        if link is None:
+            return None
+        return db.session.get(Offering, link.offering_id)
+
+    def _set_custom_attr(self, key, value):
+        """Write/clear a key in the custom_attributes JSON blob. Empty values are
+        removed so new leads keep custom_attributes = NULL until real data lands."""
+        attrs = dict(self.custom_attributes or {})
+        if value in (None, ""):
+            attrs.pop(key, None)
+        else:
+            attrs[key] = value
+        self.custom_attributes = attrs or None
+
+    def _sync_stage_link(self, value):
+        """Keep an EXISTING pipeline link in sync when the legacy stage changes.
+        No-op until the row is relationally activated (Phase 16.5A6). Never
+        creates a link (that is backfill)."""
+        if self.pipeline_stage_id is None:
+            return
+        from app.models import PipelineStage
+        current = db.session.get(PipelineStage, self.pipeline_stage_id)
+        if current is None:
+            return
+        match = (PipelineStage.query
+                 .filter_by(pipeline_id=current.pipeline_id, internal_key=value)
+                 .first())
+        if match is not None:
+            self.pipeline_stage_id = match.id
+
+    def _sync_admitted_link(self, value):
+        """When relationally activated, move the linked stage to a 'won' stage in
+        the same pipeline to reflect a legacy admission. No-op pre-backfill. Does
+        not auto-demote on value=False (ambiguous which open stage to restore) —
+        the legacy column stays the source of truth for that case."""
+        if self.pipeline_stage_id is None:
+            return
+        from app.models import PipelineStage
+        current = db.session.get(PipelineStage, self.pipeline_stage_id)
+        if current is None:
+            return
+        if value and current.stage_category != 'won':
+            match = (PipelineStage.query
+                     .filter_by(pipeline_id=current.pipeline_id, stage_category='won')
+                     .order_by(PipelineStage.order_index)
+                     .first())
+            if match is not None:
+                self.pipeline_stage_id = match.id
+
+    def _sync_offering_link(self, value):
+        """Placeholder sync hook for the course→Offering bridge. Creating the
+        first bridge row is backfill (Phase 16.5A6); nothing to keep in sync here
+        yet, so this is a documented no-op until the relational layer is active."""
+        return
+
+    # ── stage adapter ───────────────────────────────────────────────────────
+    @hybrid_property
+    def stage(self):
+        if self.pipeline_stage_id is not None:
+            ps = self._lookup_pipeline_stage()
+            if ps is not None:
+                return ps.internal_key
+        return self._stage
+
+    @stage.setter
+    def stage(self, value):
+        self._stage = value
+        self._sync_stage_link(value)
+
+    @stage.expression
+    def stage(cls):
+        from app.models import PipelineStage
+        return case(
+            (cls.pipeline_stage_id.is_(None), cls._stage),
+            else_=select(PipelineStage.internal_key)
+                  .where(PipelineStage.id == cls.pipeline_stage_id)
+                  .scalar_subquery()
+        )
+
+    # ── is_admitted adapter ─────────────────────────────────────────────────
+    @hybrid_property
+    def is_admitted(self):
+        if self.pipeline_stage_id is not None:
+            ps = self._lookup_pipeline_stage()
+            if ps is not None:
+                return ps.stage_category == 'won'
+        return self._is_admitted
+
+    @is_admitted.setter
+    def is_admitted(self, value):
+        self._is_admitted = value
+        self._sync_admitted_link(value)
+
+    @is_admitted.expression
+    def is_admitted(cls):
+        from app.models import PipelineStage
+        return case(
+            (cls.pipeline_stage_id.is_(None), cls._is_admitted),
+            else_=(select(PipelineStage.stage_category)
+                   .where(PipelineStage.id == cls.pipeline_stage_id)
+                   .scalar_subquery() == 'won')
+        )
+
+    # ── course adapter ──────────────────────────────────────────────────────
+    @hybrid_property
+    def course(self):
+        if self.pipeline_stage_id is not None:
+            off = self._first_offering()
+            if off is not None:
+                return off.name
+        return self._course
+
+    @course.setter
+    def course(self, value):
+        self._course = value
+        self._sync_offering_link(value)
+
+    @course.expression
+    def course(cls):
+        from app.models import Offering, ConversationOffering
+        first_off = (select(Offering.name)
+                     .where(Offering.id == ConversationOffering.offering_id)
+                     .where(ConversationOffering.conversation_state_id == cls.id)
+                     .order_by(ConversationOffering.id)
+                     .limit(1)
+                     .scalar_subquery())
+        return case(
+            (cls.pipeline_stage_id.is_(None), cls._course),
+            else_=func.coalesce(first_off, cls._course)
+        )
+
+    # ── offer_course adapter (legacy column + custom_attributes JSON) ───────
+    @hybrid_property
+    def offer_course(self):
+        attrs = self.custom_attributes or {}
+        val = attrs.get('offer_course')
+        if val not in (None, ""):
+            return val
+        return self._offer_course
+
+    @offer_course.setter
+    def offer_course(self, value):
+        self._offer_course = value
+        self._set_custom_attr('offer_course', value)
+
+    @offer_course.expression
+    def offer_course(cls):
+        # No SQL predicate (WHERE/GROUP BY) uses offer_course — the legacy column
+        # is the SQL source of truth; JSON preference is instance-level only.
+        return cls._offer_course
+
+    # ── batch_time adapter (legacy column + custom_attributes JSON) ─────────
+    @hybrid_property
+    def batch_time(self):
+        attrs = self.custom_attributes or {}
+        val = attrs.get('batch_time')
+        if val not in (None, ""):
+            return val
+        return self._batch_time
+
+    @batch_time.setter
+    def batch_time(self, value):
+        self._batch_time = value
+        self._set_custom_attr('batch_time', value)
+
+    @batch_time.expression
+    def batch_time(cls):
+        return cls._batch_time
 
     def to_dict(self) -> dict:
         return {
