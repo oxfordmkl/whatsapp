@@ -135,6 +135,19 @@ class ConversationState(db.Model):
     # ── Phase 12-B: SaaS Architecture ──
     tenant_id      = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False, index=True)
 
+    # ── Phase 16.5A5: Enterprise ORM Adapter Foundation ──
+    # Nullable FK into the new relational pipeline model. NULL until Phase 16.5A6
+    # backfill maps legacy `stage` strings to PipelineStage rows. The legacy
+    # `stage` (String) and `is_admitted` (Boolean) columns are RETAINED — the
+    # dual-write @property adapters (a later Phase 16.5A5 step) bridge the two.
+    pipeline_stage_id = db.Column(db.Integer, db.ForeignKey('pipeline_stages.id'),
+                                  nullable=True, index=True)
+
+    # JSON blob for legacy attributes without a dedicated relational home
+    # (offer_course, batch_time). db.JSON: TEXT on SQLite, JSON on PostgreSQL.
+    # Enterprise Baseline v1.1 — upgraded from db.Text per ADR-013.
+    custom_attributes = db.Column(db.JSON, nullable=True)
+
     __table_args__ = (
         db.UniqueConstraint('phone', 'tenant_id', name='uq_conversation_state_phone_tenant'),
     )
@@ -700,4 +713,145 @@ class AudienceRule(db.Model):
     __table_args__ = (
         # Note: index=True on tenant_id FK already generates ix_audience_rules_tenant_id.
         db.Index('idx_audience_rule_active', 'tenant_id', 'is_active'),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 16.5A5 — Enterprise ORM Adapter Foundation (Schema Expansion)
+#
+# Approved in the Phase 16.5A5-B Discovery Audit (implementation_plan).
+# This block adds ONLY the schema expansion required before the dual-write ORM
+# adapters can be written. There are intentionally NO @property / @hybrid_property
+# setters here — those are a separate, later step within Phase 16.5A5, added only
+# after this migration is applied and verified on Railway.
+#
+# Conventions (identical to the Phase 16.5A3 block above):
+#   - JSON stored as db.Text (SQLite + Postgres safe) — NEVER JSONB.
+#   - No db.relationship() — cross-table lookups remain explicit queries.
+#   - Bridge tables derive tenant scope via conversation_state_id (mirrors
+#     PipelineStage deriving tenant via pipeline_id); tenant_id is NOT
+#     denormalized onto bridges.
+#   - internal_key: immutable slug (a-z, 0-9, _), unique per tenant.
+#
+# Legacy → new target mapping (adapters implemented in a later step):
+#   course        → Offering via conversation_state_offerings bridge
+#   offer_course  → ConversationState.custom_attributes['offer_course']
+#   batch_time    → ConversationState.custom_attributes['batch_time']
+#   stage         → ConversationState.pipeline_stage_id → PipelineStage.display_name
+#   is_admitted   → ConversationState.pipeline_stage_id → PipelineStage.stage_category=='won'
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class Offering(db.Model):
+    """
+    Phase 16.5A5: Tenant-owned sellable / deliverable item.
+    Generalizes the legacy ConversationState.course string into a first-class,
+    industry-agnostic entity (course, product, service, plan, treatment, ...).
+
+    internal_key: Immutable slug. Unique per tenant. Used in business logic and
+                  automation rules — never use `name` in conditionals.
+    M:M with ConversationState via the conversation_state_offerings bridge.
+    No db.relationship() — lookups stay explicit (codebase convention).
+    """
+    __tablename__ = 'offering'
+
+    id           = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id    = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                             nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    internal_key = db.Column(db.String(50),  nullable=False)
+    # internal_key: Immutable slug. Example: "python_fullstack", "data_science".
+
+    name         = db.Column(db.String(200), nullable=False)
+    # name: Human-readable display label. Never used in conditionals.
+
+    description  = db.Column(db.Text, nullable=True)
+    # description: Optional freeform description for the Tenant Admin UI.
+
+    # ── State ──────────────────────────────────────────────────────────────
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+
+    # ── Pricing (Enterprise Baseline v1.1 / ADR-016) ───────────────────────
+    # Nullable — not all verticals have list pricing. Per-tenant requiredness
+    # enforced at application layer via TenantSettings.
+    price        = db.Column(db.Numeric(12, 2), nullable=True)
+
+    # ── Enterprise Extension (Enterprise Baseline v1.1 / ADR-013, ADR-014) ──
+    # db.JSON: TEXT on SQLite, JSON on PostgreSQL. Name is `custom_attributes`
+    # — `metadata` is SQLAlchemy-reserved and un-implementable on ORM models.
+    custom_attributes = db.Column(db.JSON, nullable=True)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'internal_key',
+                            name='uq_offering_tenant_key'),
+        # Note: index=True on tenant_id FK already generates ix_offering_tenant_id.
+    )
+
+
+class ConversationOffering(db.Model):
+    """
+    Phase 16.5A5: M:M bridge — ConversationState ↔ Offering.
+    Backs the legacy `course` adapter. A conversation may link to multiple
+    offerings; the legacy `course` getter returns the first linked offering name.
+
+    Tenant scope is derived via conversation_state_id → conversation_state.tenant_id
+    (mirrors PipelineStage deriving tenant via pipeline_id — no denormalized
+    tenant_id column). Application queries MUST join through ConversationState to
+    enforce tenant isolation.
+    """
+    __tablename__ = 'conversation_state_offerings'
+
+    id                    = db.Column(db.Integer, primary_key=True)
+
+    conversation_state_id = db.Column(db.Integer,
+                                      db.ForeignKey('conversation_state.id'),
+                                      nullable=False, index=True)
+    offering_id           = db.Column(db.Integer,
+                                      db.ForeignKey('offering.id'),
+                                      nullable=False, index=True)
+
+    created_at            = db.Column(db.DateTime, default=datetime.utcnow,
+                                      nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('conversation_state_id', 'offering_id',
+                            name='uq_conv_offering'),
+    )
+
+
+class ConversationTag(db.Model):
+    """
+    Phase 16.5A5: M:M bridge — ConversationState ↔ TagDefinition.
+    Fulfils the bridge referenced in the TagDefinition docstring, enabling
+    multi-dimensional lead segmentation without altering pipeline stages.
+
+    Tenant scope is derived via conversation_state_id → conversation_state.tenant_id
+    (no denormalized tenant_id). Application queries MUST join through
+    ConversationState to enforce tenant isolation.
+    """
+    __tablename__ = 'conversation_state_tags'
+
+    id                    = db.Column(db.Integer, primary_key=True)
+
+    conversation_state_id = db.Column(db.Integer,
+                                      db.ForeignKey('conversation_state.id'),
+                                      nullable=False, index=True)
+    tag_definition_id     = db.Column(db.Integer,
+                                      db.ForeignKey('tag_definitions.id'),
+                                      nullable=False, index=True)
+
+    created_at            = db.Column(db.DateTime, default=datetime.utcnow,
+                                      nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('conversation_state_id', 'tag_definition_id',
+                            name='uq_conv_tag'),
     )
