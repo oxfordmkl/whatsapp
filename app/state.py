@@ -133,6 +133,6 @@ def get_stage_breakdown() -> dict:
         "offer_menu", "payment_pending", "enrolled", "not_sure", "done",
     }
     return {
-        s: ConversationState.query.filter_by(stage=s).count()
+        s: ConversationState.query.filter(ConversationState.stage == s).count()
         for s in stages
     }

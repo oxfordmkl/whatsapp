@@ -547,7 +547,7 @@ def calculate_home_kpis(tenant_id=None):
 
     # Future Tenant Scope: total_leads = ConversationState.query.filter_by(tenant_id=tid).count()
     total_leads = tenant_query(ConversationState, tenant_id).count()
-    admissions  = tenant_query(ConversationState, tenant_id).filter_by(is_admitted=True).count()
+    admissions  = tenant_query(ConversationState, tenant_id).filter(ConversationState.is_admitted == True).count()
 
     # HOT leads: consistent with EVENT_SCORE_MAP logic in calculate_lead_intelligence
     # Using lead_score column as lightweight proxy — full intelligence calc runs on leads page
