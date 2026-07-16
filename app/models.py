@@ -297,3 +297,407 @@ class BillingInvoice(db.Model):
     billing_period_end   = db.Column(db.DateTime, nullable=True)
     created_at           = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 16.5A3 — Enterprise Configuration Foundation
+#
+# These models implement the frozen data model defined in:
+#   docs/04_DATABASE/OXFORD_CRM_ENTERPRISE_DATA_MODEL_FREEZE_v1.0.md
+#
+# Architecture review: Phase 16.5A3-R1 (approved before implementation).
+#
+# Strict rules enforced in this phase:
+#   - ZERO changes to any existing model above this line.
+#   - No Alembic migration in this file; migration is a separate phase (16.5A3-M).
+#   - Every model is tenant-isolated via explicit tenant_id FK.
+#   - internal_key fields are immutable slug identifiers (a-z, 0-9, _).
+#   - JSON stored as db.Text (matches existing meta_json pattern; SQLite + Postgres safe).
+#   - No db.relationship() — all cross-table lookups remain explicit queries.
+#   - ConversationState integration deferred to Phase 16.5A4 (ORM adapter layer).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TenantSettings(db.Model):
+    """
+    Phase 16.5A3: Global tenant preferences.
+    One row per tenant. Created on tenant registration.
+    Lifecycle is tied to the parent Tenant — deleted when the Tenant is deleted.
+
+    settings (JSON text) top-level keys:
+      branding:      { primary_color, logo_url }
+      locale:        { language, timezone, currency }
+      working_hours: { monday: ["09:00","18:00"], tuesday: [...], ... }
+      features:      { enable_ai_booking: true, enable_google_sheets: true, ... }
+
+    Access pattern: json.loads(ts.settings or '{}')
+    Never query this field server-side (no JSONB operator usage).
+    """
+    __tablename__ = 'tenant_settings'
+
+    id         = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership (1:1) ─────────────────────────────────────────────
+    # unique=True enforces 1:1 at the DB level — one settings row per tenant.
+    tenant_id  = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                           nullable=False, index=True, unique=True)
+
+    # ── Settings Blob (JSON text, parsed in Python) ────────────────────────
+    settings   = db.Column(db.Text, nullable=False, default='{}')
+    # settings: JSON text. Parse with json.loads(ts.settings or '{}').
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+
+class PipelineDefinition(db.Model):
+    """
+    Phase 16.5A3: Named lifecycle funnel owned by a tenant.
+    A tenant may define multiple pipelines (Sales, Support, Onboarding, etc.).
+    Exactly one pipeline per tenant should carry is_default=True; this is
+    enforced at the application layer, not the DB layer.
+
+    Industry examples:
+      Education : "Admissions Pipeline"  (Lead → Demo → Admitted)
+      Ecommerce : "Sales Pipeline"       (Visitor → Cart → Purchased)
+      Healthcare: "Patient Journey"      (Inquiry → Appointment → Treated)
+
+    internal_key: Immutable slug (a-z, 0-9, _ only). Used in business logic and
+                  automation rules. NEVER use display name in conditionals.
+                  Unique per tenant enforced by composite unique constraint.
+
+    ConversationState integration: Deferred to Phase 16.5A4 (adapter layer).
+    Stages queried explicitly: PipelineStage.query.filter_by(pipeline_id=x).all()
+    No db.relationship() — follows existing codebase convention.
+    """
+    __tablename__ = 'pipeline_definitions'
+
+    id           = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id    = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                             nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    internal_key = db.Column(db.String(50),  nullable=False)
+    # internal_key: Immutable slug. Example: "admissions_pipeline", "ecommerce_sales".
+
+    name         = db.Column(db.String(100), nullable=False)
+    # name: Human-readable display label. Never used in conditionals.
+
+    description  = db.Column(db.Text, nullable=True)
+    # description: Optional freeform description for Tenant Admin UI.
+
+    # ── State ──────────────────────────────────────────────────────────────
+    is_default   = db.Column(db.Boolean, nullable=False, default=False)
+    # is_default: True for the primary pipeline shown in CRM widgets.
+    #             Only one pipeline per tenant should be default (app-layer enforced).
+
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'internal_key',
+                            name='uq_pipeline_def_tenant_key'),
+        # Note: index=True on tenant_id FK already generates ix_pipeline_definitions_tenant_id.
+        # No standalone index needed here (duplicate index cleanup — Phase 16.5A3-M2).
+    )
+
+
+class PipelineStage(db.Model):
+    """
+    Phase 16.5A3: Ordered step within a PipelineDefinition.
+    Each stage maps to the universal CRM concept of Open / Won / Lost via
+    stage_category, enabling industry-agnostic KPI dashboards.
+
+    stage_category values:
+      'open'  — lead is actively being worked.
+      'won'   — lead converted (admitted, purchased, booked, closed).
+      'lost'  — lead dropped off (not interested, refunded, disqualified).
+
+    is_entry: True for the default entry stage for NEW leads in this pipeline.
+              Exactly one stage per pipeline should carry is_entry=True.
+              Enforced at the application layer. Used by adapters to auto-assign
+              ConversationState records when pipeline_stage_id is NULL.
+
+    is_terminal: True for stages after which no automation rules should fire.
+                 Both 'won' and 'lost' stages are typically terminal.
+                 Explicit flag is safer than inferring from stage_category alone.
+
+    Backward compatibility (Phase 16.5A4 adapter):
+      Legacy is_admitted=True  → stage_category='won'
+      Legacy stage string      → display_name
+
+    internal_key: Immutable slug. Examples: "lead","demo","admitted","purchased".
+    ConversationState integration: Deferred to Phase 16.5A4 (FK + ORM adapter).
+    """
+    __tablename__ = 'pipeline_stages'
+
+    id             = db.Column(db.Integer, primary_key=True)
+
+    # ── Parent Pipeline ────────────────────────────────────────────────────
+    pipeline_id    = db.Column(db.Integer, db.ForeignKey('pipeline_definitions.id'),
+                               nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    internal_key   = db.Column(db.String(50),  nullable=False)
+    # internal_key: Immutable slug. Unique per pipeline (composite constraint below).
+
+    display_name   = db.Column(db.String(100), nullable=False)
+    # display_name: UI label. Never used in conditionals.
+
+    # ── Category ───────────────────────────────────────────────────────────
+    stage_category = db.Column(db.String(10), nullable=False, default='open')
+    # stage_category: 'open' | 'won' | 'lost'
+
+    # ── Ordering ───────────────────────────────────────────────────────────
+    order_index    = db.Column(db.Integer, nullable=False, default=0)
+    # order_index: Display and logical ordering within the pipeline. 0-based.
+
+    # ── Behavioral Flags ───────────────────────────────────────────────────
+    is_entry       = db.Column(db.Boolean, nullable=False, default=False)
+    # is_entry: Exactly one per pipeline. Used to auto-assign new leads.
+
+    is_terminal    = db.Column(db.Boolean, nullable=False, default=False)
+    # is_terminal: No automation fires after this stage. Both won/lost are terminal.
+
+    is_active      = db.Column(db.Boolean, nullable=False, default=True)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at     = db.Column(db.DateTime, default=datetime.utcnow,
+                               onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('pipeline_id', 'internal_key',
+                            name='uq_pipeline_stage_pipeline_key'),
+        # Note: index=True on pipeline_id FK already generates ix_pipeline_stages_pipeline_id.
+        # Keeping composite and category indexes; removing duplicate standalone FK index.
+        db.Index('idx_pipeline_stage_active',   'pipeline_id', 'is_active'),
+        db.Index('idx_pipeline_stage_category', 'stage_category'),
+    )
+
+
+class TagDefinition(db.Model):
+    """
+    Phase 16.5A3: Tenant-owned assignable label for leads / contacts.
+    Tags enable multi-dimensional segmentation without modifying pipeline stages.
+
+    category values: 'marketing' | 'sales' | 'support' | 'system'
+    is_system: True for platform-seeded tags (e.g. 'OPT_OUT').
+               Staff cannot delete system tags; Tenant Admin can deactivate.
+    color_hex: 6-digit hex (#RRGGBB). Rendered as badge colour in CRM UI.
+
+    M:M relationship with ConversationState via bridge table.
+    Bridge table (ConversationTag) defined in Phase 16.5A4.
+    """
+    __tablename__ = 'tag_definitions'
+
+    id           = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id    = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                             nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    internal_key = db.Column(db.String(50),  nullable=False)
+    # internal_key: Immutable slug. Example: "vip", "payment_pending", "high_intent".
+
+    display_name = db.Column(db.String(100), nullable=False)
+    # display_name: UI label. Example: "VIP", "Payment Pending".
+
+    category     = db.Column(db.String(20),  nullable=False, default='marketing')
+    # category: 'marketing' | 'sales' | 'support' | 'system'
+
+    color_hex    = db.Column(db.String(7),   nullable=False, default='#EEEEEE')
+    # color_hex: #RRGGBB format. Default neutral grey.
+
+    is_system    = db.Column(db.Boolean, nullable=False, default=False)
+    # is_system: Platform-seeded tags. Staff cannot delete; Admin can deactivate.
+
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'internal_key',
+                            name='uq_tag_def_tenant_key'),
+        # Note: index=True on tenant_id FK already generates ix_tag_definitions_tenant_id.
+        db.Index('idx_tag_def_category', 'tenant_id', 'category'),
+    )
+
+
+class MessageTemplate(db.Model):
+    """
+    Phase 16.5A3: Database cache of approved omnichannel message templates.
+    Primary use: Meta WhatsApp Business Cloud API approved templates.
+    Future use:  SMS, Email.
+
+    Lifecycle states:
+      'draft'            → Created by Tenant Admin; not yet submitted to provider.
+      'approval_pending' → Submitted to Meta / SMS provider for review.
+      'approved'         → Cleared for broadcast use by campaign_service.
+      'rejected'         → Provider rejected; see rejection_reason for context.
+      'archived'         → Deprecated; removed from UI selectors.
+
+    Meta Cloud API specific fields (nullable for non-WhatsApp channels):
+      category:             'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+                            Meta billing tier — required before submission.
+      header_type:          'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'NONE'
+      button_config:        JSON array of CTA / Quick Reply button definitions.
+      provider_template_id: Meta WABA template name/ID. NULL until approval.
+      rejection_reason:     Populated by Meta webhook callback on rejection.
+
+    variables (JSON text array): Ordered list of placeholder names.
+      Example: '["name", "course_name", "fee_amount"]'
+      Used by Marketing Hub to render the variable-fill UI.
+
+    UNIQUE constraint note: (tenant_id, provider_template_id) correctly allows
+    multiple NULL provider_template_id rows (draft templates) because PostgreSQL
+    treats each NULL as distinct — no false uniqueness violation on drafts.
+    """
+    __tablename__ = 'message_templates'
+
+    id                   = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id            = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                                     nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    template_key         = db.Column(db.String(100), nullable=False)
+    # template_key: Internal slug. Example: "welcome_education_ml", "cart_reminder_en".
+
+    display_name         = db.Column(db.String(200), nullable=False)
+    # display_name: Human label shown in Marketing Hub dropdowns.
+
+    # ── Channel & Language ─────────────────────────────────────────────────
+    channel              = db.Column(db.String(20), nullable=False, default='whatsapp')
+    # channel: 'whatsapp' | 'sms' | 'email' | 'ai'
+
+    language             = db.Column(db.String(10), nullable=False, default='en')
+    # language: ISO 639-1. Example: 'en', 'ml', 'hi'.
+
+    # ── Meta Cloud API Fields ──────────────────────────────────────────────
+    category             = db.Column(db.String(20), nullable=True)
+    # category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'. NULL for non-WhatsApp.
+
+    header_type          = db.Column(db.String(20), nullable=True, default='NONE')
+    # header_type: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'NONE'.
+
+    provider_template_id = db.Column(db.String(200), nullable=True)
+    # provider_template_id: Meta WABA template name/ID. NULL until approved.
+
+    body_text            = db.Column(db.Text, nullable=True)
+    # body_text: Preview copy of the approved template body. Not used for sending.
+
+    button_config        = db.Column(db.Text, nullable=True, default='[]')
+    # button_config: JSON array of button definitions (CTA / Quick Reply).
+    # Example: '[{"type":"QUICK_REPLY","text":"Yes, interested"}]'
+
+    variables            = db.Column(db.Text, nullable=False, default='[]')
+    # variables: JSON array of placeholder names. Parse with json.loads().
+    # Example: '["name", "course", "fee"]'
+
+    rejection_reason     = db.Column(db.Text, nullable=True)
+    # rejection_reason: Populated from Meta webhook callback on 'rejected' status.
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────
+    status               = db.Column(db.String(20), nullable=False, default='draft')
+    # status: 'draft' | 'approval_pending' | 'approved' | 'rejected' | 'archived'
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at           = db.Column(db.DateTime, default=datetime.utcnow,
+                                     nullable=False)
+    updated_at           = db.Column(db.DateTime, default=datetime.utcnow,
+                                     onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'provider_template_id',
+                            name='uq_msg_template_tenant_provider'),
+        # Note: index=True on tenant_id FK already generates ix_message_templates_tenant_id.
+        db.Index('idx_msg_template_status',  'tenant_id', 'status'),
+        db.Index('idx_msg_template_channel', 'tenant_id', 'channel'),
+    )
+
+
+class AudienceRule(db.Model):
+    """
+    Phase 16.5A3: Dynamic contact segmentation rule for a tenant.
+    Defines a named audience that the Audience Engine (Phase 16.5A5) evaluates
+    at runtime by translating rule_json into SQLAlchemy filters against
+    ConversationState.
+
+    rule_json (JSON text) — logic tree consumed ONLY by the Audience Engine:
+      {
+        "operator": "AND",
+        "conditions": [
+          {"field": "pipeline_stage_key", "op": "==",       "value": "demo"},
+          {"field": "lead_score",         "op": ">=",       "value": 60},
+          {"field": "tags",               "op": "contains", "value": "vip"}
+        ]
+      }
+    Business logic MUST NOT parse rule_json outside the Audience Engine.
+
+    estimated_count:    Cached audience size from last evaluation.
+                        Displayed in Campaign Center UI ("HOT Leads (142)").
+                        Prevents full-table scan on every Campaign Center page load.
+                        NULL = not yet evaluated.
+
+    last_evaluated_at:  Timestamp of last count evaluation.
+                        UI can display staleness ("Evaluated 3 hours ago").
+                        NULL = not yet evaluated.
+
+    internal_key:       Optional slug for programmatic reference by AutomationRules.
+                        NULL for ad-hoc / one-off audience rules.
+
+    Replaces: Hardcoded segments in _calculate_audiences() — Phase 16.5A5.
+    ConversationState integration: Deferred to Phase 16.5A5 (Audience Engine).
+    """
+    __tablename__ = 'audience_rules'
+
+    id                = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id         = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                                  nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    name              = db.Column(db.String(200), nullable=False)
+    # name: Human label for Campaign Center. Example: "HOT Leads", "Cart Abandoned".
+
+    internal_key      = db.Column(db.String(100), nullable=True)
+    # internal_key: Optional slug for automation references. NULL for ad-hoc rules.
+
+    description       = db.Column(db.Text, nullable=True)
+    # description: Freeform explanation for Tenant Admin UI.
+
+    # ── Rule Logic ─────────────────────────────────────────────────────────
+    rule_json         = db.Column(db.Text, nullable=False, default='{}')
+    # rule_json: JSON logic tree. Parse and evaluate ONLY in the Audience Engine.
+
+    # ── Cached Evaluation Metadata ─────────────────────────────────────────
+    estimated_count   = db.Column(db.Integer, nullable=True)
+    # estimated_count: Last evaluated audience size. NULL = not yet evaluated.
+
+    last_evaluated_at = db.Column(db.DateTime, nullable=True)
+    # last_evaluated_at: Timestamp of last count. NULL = not yet evaluated.
+
+    # ── State ──────────────────────────────────────────────────────────────
+    is_active         = db.Column(db.Boolean, nullable=False, default=True)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at        = db.Column(db.DateTime, default=datetime.utcnow,
+                                  onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # Note: index=True on tenant_id FK already generates ix_audience_rules_tenant_id.
+        db.Index('idx_audience_rule_active', 'tenant_id', 'is_active'),
+    )
