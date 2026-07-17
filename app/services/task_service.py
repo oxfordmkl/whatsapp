@@ -358,11 +358,12 @@ class TaskForbidden(TaskError):
     """Raised when the actor may not mutate this task (403, not 400)."""
 
 
-def _authorize_mutation(task, actor, is_admin):
-    """Phase 16.5A7-B (B1): who may mutate this task.
+def authorize_assignee(assignee, actor, is_admin):
+    """The single authorization rule for mutating a task — Phase 16.5A7-B/D.
 
     Admin / Super Admin  -> any task in their tenant.
-    Staff                -> only a task assigned to them.
+    Assigned staff       -> only their own task.
+    Everyone else        -> TaskForbidden (403).
 
     Closes the horizontal (staff-to-staff) escalation found by the 16.5A7-A
     audit, where any staff member could re-status, overwrite the notes of, and
@@ -371,13 +372,35 @@ def _authorize_mutation(task, actor, is_admin):
 
     An UNASSIGNED task is admin-only: leaving it open to any staff member would
     reintroduce the same hijack through the back door.
+
+    Phase 16.5A7-D (B1-R): this takes the assignee as a plain string rather than
+    a Task, so the legacy completion path — whose assignee lives in a LeadEvent
+    JSON payload and has no Task row — reaches the SAME decision instead of a
+    parallel reimplementation. 16.5A7-C proved the legacy branch had no
+    authorization at all: HTTP 200 and completed_by set to the caller.
+
+    Names are compared normalized. Legacy payloads were written by the
+    pre-16.5A7 route, which did NOT normalize `staff`, so a raw-case value must
+    still match its owner rather than lock them out of their own task.
     """
     if is_admin:
         return
-    assignee = (task.assigned_staff or "").strip()
-    if not assignee:
+    clean_assignee = _norm(assignee)
+    if not clean_assignee or clean_assignee == "Unassigned":
         raise TaskForbidden(
             "this task is unassigned; only an admin may modify it")
-    if assignee != (actor or "").strip():
+    if clean_assignee != _norm(actor):
         raise TaskForbidden(
             f"task is assigned to {assignee!r}; {actor!r} may not modify it")
+
+
+def _norm(name):
+    """Mirror of admin.normalize_staff_name() — kept here so the service layer
+    does not import from the routes layer (CODE_CONVENTIONS §3)."""
+    cleaned = (name or "").strip()
+    return cleaned.title() if cleaned else ""
+
+
+def _authorize_mutation(task, actor, is_admin):
+    """Authorize a mutation of a Task row. Delegates to authorize_assignee()."""
+    authorize_assignee(task.assigned_staff, actor, is_admin)

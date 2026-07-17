@@ -4332,6 +4332,45 @@ def crm_tasks_complete():
             return jsonify({"error": "Missing parameters"}), 400
         return redirect(url_for("admin.crm_my_tasks"))
 
+    # ── Phase 16.5A7-D (B1-R): authorize BEFORE writing ───────────────────
+    # 16.5A7-C proved this branch had NO authorization: any staff member could
+    # complete a colleague's pre-16.5A7 task and have completed_by set to
+    # themselves (HTTP 200), stealing credit and corrupting staff_productivity,
+    # which keys on completed_by. The Task path already returned 403; this
+    # reaches the SAME decision via task_service.authorize_assignee().
+    #
+    # The assignee lives in the FOLLOW_UP_TASK payload's `staff` field — there
+    # is no Task row to read it from.
+    _legacy_assignee = None
+    _found_legacy = False
+    for _ev in (tenant_query(LeadEvent, _tid)
+                .filter_by(phone=phone, event_type="FOLLOW_UP_TASK").all()):
+        try:
+            _p = json.loads(_ev.event_data or "{}")
+        except (ValueError, TypeError):
+            continue
+        if _p.get("task_id") == task_id:
+            _legacy_assignee = _p.get("staff")
+            _found_legacy = True
+            break
+
+    if not _found_legacy:
+        # No Task row and no legacy event: nothing to complete. Refuse rather
+        # than log a completion for a task that does not exist in this tenant.
+        if is_json:
+            return jsonify({"error": "Task not found"}), 404
+        return redirect(url_for("admin.crm_lead_detail", phone=phone))
+
+    try:
+        task_service.authorize_assignee(_legacy_assignee, completed_by,
+                                        _actor_is_admin())
+    except task_service.TaskForbidden as e:
+        logging.warning("legacy task completion denied tenant=%s task=%s "
+                        "actor=%s: %s", _tid, task_id, completed_by, e)
+        if is_json:
+            return jsonify({"error": str(e)}), 403
+        return _deny()
+
     # Duplicate completion protection
     existing = tenant_query(LeadEvent, _tid).filter_by(phone=phone, event_type="FOLLOW_UP_COMPLETED").all()
     already_completed = False
