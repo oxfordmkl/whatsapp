@@ -1216,21 +1216,33 @@ def crm_lead_detail(phone):
     active_staff.sort()
 
     # ── Phase 9.3A: Task Summary ─────────────────────────────────────────────
+    # Phase 16.5A7-B (B2): sourced from the Task table (System of Record) with
+    # the pre-16.5A7 legacy replay as the compatibility layer. Previously this
+    # replayed LeadEvents exclusively, so edits/deletes on this lead's tasks
+    # never reached the summary. Task rows win; legacy fills the gap.
     task_summary = {"open": 0, "overdue": 0, "completed": 0}
     task_map = {}
-    
+    seen_uids = set()
+
+    from app.models import Task as _Task
+    for _t in tenant_query(_Task, _tid).filter(_Task.lead_phone == phone).all():
+        seen_uids.add(_t.task_uid)
+        task_map[_t.task_uid] = {
+            "due_date": _t.due_date or "",
+            "_completed": (_t.status == "COMPLETED"),
+        }
+
     for ev in events:
+        payload = event_payload_map.get(ev.id, {})
+        tid = payload.get("task_id")
+        if not tid or tid in seen_uids:
+            continue                      # Task row is authoritative
         if ev.event_type == "FOLLOW_UP_TASK":
-            payload = event_payload_map.get(ev.id, {})
-            tid = payload.get("task_id")
-            if tid:
-                task_map[tid] = payload
+            task_map[tid] = dict(payload)
         elif ev.event_type == "FOLLOW_UP_COMPLETED":
-            payload = event_payload_map.get(ev.id, {})
-            tid = payload.get("task_id")
             if tid in task_map:
                 task_map[tid]["_completed"] = True
-                
+
     today_dt = datetime.now()
     for tid, t in task_map.items():
         if t.get("_completed"):
@@ -3915,56 +3927,113 @@ def crm_reassignment_confirm():
 
 
 def get_all_tasks(tenant_id=None):
-    from app.models import LeadEvent, ConversationState
+    """Unified task reader — Phase 16.5A7-B (B2).
+
+    The `tasks` table is the System of Record. Tasks created BEFORE Phase 16.5A7
+    exist only as LeadEvents (no Task row) and are replayed here so they keep
+    appearing — that is the compatibility layer. A Task row always wins over a
+    legacy replay of the same task_uid.
+
+    Before 16.5A7-B this replayed LeadEvents exclusively, so the Task table had
+    no reader: admin edits were invisible, deletes left zombies, and priority /
+    IN_PROGRESS / staff_notes never rendered (16.5A7-A audit, B2).
+
+    The return contract is UNCHANGED — (open_tasks, completed_tasks) with the
+    same dict keys — so all four callers (dashboard KPIs, /crm/tasks/my,
+    /crm/tasks/admin, staff performance) and their templates keep working. New
+    keys are purely additive: id, task_status, priority, notes, staff_notes,
+    is_legacy.
+    """
+    from app.models import LeadEvent, ConversationState, Task
     from datetime import datetime
     import json
-    
-    events = tenant_query(LeadEvent, tenant_id).filter(LeadEvent.event_type.in_(["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"])).all()
+
     leads = tenant_query(ConversationState, tenant_id).all()
-    
     lead_map = {l.phone: l for l in leads}
-    
+
+    def _lead_name(phone):
+        lead = lead_map.get(phone)
+        return (getattr(lead, "name", None) or "Unknown") if lead else "Unknown"
+
     tasks = {}
-    completed_task_ids = set()
-    
+
+    # ── 1. Task table — the System of Record ────────────────────────────
+    for t in tenant_query(Task, tenant_id).all():
+        tasks[t.task_uid] = {
+            "task_id":      t.task_uid,
+            "id":           t.id,            # real PK for the 16.5A7 routes
+            "phone":        t.lead_phone,
+            "lead_name":    _lead_name(t.lead_phone),
+            "task":         t.title,
+            "due_date":     t.due_date or "",
+            "staff":        t.assigned_staff or "Unassigned",
+            "created_by":   t.created_by or "",
+            "created_at":   t.created_at,
+            # `status` keeps the legacy OPEN/COMPLETED contract the templates
+            # and the open/completed split rely on; IN_PROGRESS is surfaced
+            # separately via task_status so it can render without breaking them.
+            "status":       "COMPLETED" if t.status == "COMPLETED" else "OPEN",
+            "task_status":  t.status,
+            "priority":     t.priority,
+            "notes":        t.notes,
+            "staff_notes":  t.staff_notes,
+            "completed_by": t.completed_by,
+            "completed_at": t.completed_at,
+            "is_legacy":    False,
+        }
+
+    # ── 2. Compatibility layer: pre-16.5A7 tasks with no Task row ───────
+    events = (tenant_query(LeadEvent, tenant_id)
+              .filter(LeadEvent.event_type.in_(["FOLLOW_UP_TASK",
+                                                "FOLLOW_UP_COMPLETED"]))
+              .order_by(LeadEvent.id)
+              .all())
+
+    legacy = {}
     for ev in events:
         try:
             data = json.loads(ev.event_data or "{}")
-        except:
+        except Exception:
             data = {}
-            
-        if ev.event_type == "FOLLOW_UP_COMPLETED":
-            tid = data.get("task_id")
-            if tid:
-                completed_task_ids.add(tid)
-        elif ev.event_type == "FOLLOW_UP_TASK":
-            tid = data.get("task_id")
-            if tid:
-                tasks[tid] = {
-                    "task_id": tid,
-                    "phone": ev.phone,
-                    "lead_name": lead_map.get(ev.phone, type("obj", (object,), {"name": "Unknown"})).name or "Unknown",
-                    "task": data.get("task", ""),
-                    "due_date": data.get("due_date", ""),
-                    "staff": data.get("staff", "Unassigned"),
-                    "created_by": data.get("created_by", ""),
-                    "created_at": ev.created_at,
-                    "status": "OPEN",
-                    "completed_by": None,
-                    "completed_at": None
-                }
+        tid = data.get("task_id")
+        if not tid or tid in tasks:
+            continue                      # no id, or the Task row already won
+        if ev.event_type == "FOLLOW_UP_TASK":
+            legacy[tid] = {
+                "task_id":      tid,
+                "id":           None,     # legacy tasks have no Task row
+                "phone":        ev.phone,
+                "lead_name":    _lead_name(ev.phone),
+                "task":         data.get("task", ""),
+                "due_date":     data.get("due_date", ""),
+                "staff":        data.get("staff", "Unassigned"),
+                "created_by":   data.get("created_by", ""),
+                "created_at":   ev.created_at,
+                "status":       "OPEN",
+                "task_status":  "OPEN",
+                "priority":     "NORMAL",   # legacy payload has no priority
+                "notes":        data.get("notes"),
+                "staff_notes":  None,
+                "completed_by": None,
+                "completed_at": None,
+                "is_legacy":    True,
+            }
 
     for ev in events:
-        if ev.event_type == "FOLLOW_UP_COMPLETED":
-            try:
-                data = json.loads(ev.event_data or "{}")
-            except:
-                continue
-            tid = data.get("task_id")
-            if tid in tasks:
-                tasks[tid]["status"] = "COMPLETED"
-                tasks[tid]["completed_by"] = data.get("completed_by", "")
-                tasks[tid]["completed_at"] = ev.created_at
+        if ev.event_type != "FOLLOW_UP_COMPLETED":
+            continue
+        try:
+            data = json.loads(ev.event_data or "{}")
+        except Exception:
+            continue
+        tid = data.get("task_id")
+        if tid in legacy:
+            legacy[tid]["status"] = "COMPLETED"
+            legacy[tid]["task_status"] = "COMPLETED"
+            legacy[tid]["completed_by"] = data.get("completed_by", "")
+            legacy[tid]["completed_at"] = ev.created_at
+
+    tasks.update(legacy)
 
     open_tasks = []
     completed_tasks = []
@@ -4026,16 +4095,38 @@ def _actor_tenant_id():
     (Tenant.query.first()), which resolves to an arbitrary unrelated tenant and
     had already mis-filed 18 production lead_event rows. Returns None when the
     tenant cannot be resolved; callers must refuse to write.
+
+    Phase 16.5A7-B: honours session['impersonate_tenant_id'] for SUPER_ADMIN,
+    matching tenant_query() (admin.py:73). A SUPER_ADMIN has tenant_id = NULL,
+    so without this it could neither create tasks nor read notifications even
+    while impersonating a tenant.
     """
-    if current_user.is_authenticated:
-        return getattr(current_user, 'tenant_id', None)
-    return None
+    if not current_user.is_authenticated:
+        return None
+    if getattr(current_user, 'role', None) == 'SUPER_ADMIN':
+        impersonated = session.get('impersonate_tenant_id')
+        if impersonated:
+            return impersonated
+        # Not impersonating: no tenant context. Callers refuse to write, which
+        # is correct — a platform-level task has no tenant to belong to.
+        return None
+    return getattr(current_user, 'tenant_id', None)
 
 
 def _actor_name():
     """Display name of the acting user, normalized like staff names."""
     actor = get_current_actor()
     return normalize_staff_name(actor.get("username") or "Admin")
+
+
+def _actor_is_admin():
+    """True for ADMIN / SUPER_ADMIN, or legacy ADMIN_KEY auth.
+
+    Phase 16.5A7-B (B1): drives task mutation authority. STAFF may only touch
+    their own tasks; admins may touch any task in their tenant.
+    """
+    actor = get_current_actor()
+    return actor.get("role") in ("ADMIN", "SUPER_ADMIN")
 
 
 @admin_bp.route("/crm/tasks/create", methods=["POST"])
@@ -4153,7 +4244,15 @@ def crm_tasks_staff_update(task_id):
         task = task_service.staff_update(
             tenant_id=tenant_id, task_id=task_id, actor=_actor_name(),
             status=payload.get("status"), staff_notes=payload.get("staff_notes"),
+            is_admin=_actor_is_admin(),
         )
+    except task_service.TaskForbidden as e:
+        # B1: staff attempting to modify another staff member's task.
+        logging.warning("task mutation denied tenant=%s task=%s actor=%s: %s",
+                        tenant_id, task_id, _actor_name(), e)
+        if request.is_json:
+            return jsonify({"error": str(e)}), 403
+        return _deny()
     except task_service.TaskError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -4178,7 +4277,10 @@ def crm_tasks_complete():
         phone = request.form.get("phone")
         completed_by = "Admin"
         
-    if not task_id or not phone:
+    # Phase 16.5A7-B (B2): `phone` is no longer required up-front. A standalone
+    # Task has no lead, and demanding a phone made it impossible to complete
+    # from the UI. The legacy event path below still requires one.
+    if not task_id:
         if is_json:
             return jsonify({"error": "Missing parameters"}), 400
         else:
@@ -4204,15 +4306,32 @@ def crm_tasks_complete():
     task = Task.query.filter_by(tenant_id=_tid, task_uid=task_id).first()
     if task is not None:
         try:
-            task_service.complete_task(_tid, task.id, completed_by)
+            task_service.complete_task(_tid, task.id, completed_by,
+                                       is_admin=_actor_is_admin())
+        except task_service.TaskForbidden as e:
+            # B1: only the assignee (or an admin) may complete — completed_by is
+            # the credit record that feeds staff_productivity.
+            logging.warning("task completion denied tenant=%s task=%s actor=%s: %s",
+                            _tid, task_id, completed_by, e)
+            if is_json:
+                return jsonify({"error": str(e)}), 403
+            return _deny()
         except task_service.TaskError as e:
             if is_json:
                 return jsonify({"error": str(e)}), 400
         if is_json:
             return jsonify({"success": True})
-        return redirect(url_for("admin.crm_lead_detail", phone=phone))
+        if phone:
+            return redirect(url_for("admin.crm_lead_detail", phone=phone))
+        return redirect(request.referrer or url_for("admin.crm_my_tasks"))
 
     # ── Legacy path: event-sourced task with no Task row ──────────────────
+    # Requires a phone: legacy tasks are lead-scoped by construction.
+    if not phone:
+        if is_json:
+            return jsonify({"error": "Missing parameters"}), 400
+        return redirect(url_for("admin.crm_my_tasks"))
+
     # Duplicate completion protection
     existing = tenant_query(LeadEvent, _tid).filter_by(phone=phone, event_type="FOLLOW_UP_COMPLETED").all()
     already_completed = False

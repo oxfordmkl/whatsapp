@@ -15,8 +15,8 @@ This is the machine-readable, canonical summary of the Oxford CRM Enterprise Rep
 - **Current Version**: 2.0.0-alpha
 
 ## Development State
-- **Current Architecture Phase**: Phase 16.5A7 (Task & Notification Foundation — complete, pending deployment)
-- **Current Documentation Phase**: Phase 16.5A7
+- **Current Architecture Phase**: Phase 16.5A7-B (Task Engine Completion — complete, pending deployment)
+- **Current Documentation Phase**: Phase 16.5A7-B
 - **Documentation Status**: Validated
 - **Knowledge Repository Version**: 1.4
 - **Current Active Development Phase**: None

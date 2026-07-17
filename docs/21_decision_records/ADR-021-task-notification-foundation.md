@@ -110,6 +110,38 @@ funnel, so `kiran`, `KIRAN`, ` Kiran ` all resolve to `Kiran`. A staff **rename*
 would orphan prior notifications. Logged as technical debt; a future phase may
 introduce a stable staff identity.
 
+### D1a — AMENDED by Phase 16.5A7-B: the legacy mirror is deleted with the Task
+
+> **Amendment (16.5A7-B, 2026-07-17).** D1 originally kept the legacy
+> `FOLLOW_UP_TASK` event after `delete_task()` as "audit history". The 16.5A7-A
+> audit proved that produced a **zombie**: the unified reader replays any
+> `task_uid` with no Task row as a legacy task, so a deleted task reappeared in
+> every task list, still OPEN, and staff kept working it.
+>
+> For a 16.5A7 task the legacy events are a **mirror** of the Task row, not
+> independent history — the Task table is the System of Record. Leaving the
+> mirror lets it act as a phantom source of truth: the ADR-020 failure mode.
+> `delete_task()` therefore removes the mirrored events for that `task_uid`.
+>
+> Pre-16.5A7 tasks are unaffected — they have no Task row, so `delete_task()`
+> can never be invoked on them and their events remain untouched history.
+> Create/complete dual-write is unchanged.
+
+### D2a — AMENDED by Phase 16.5A7-B: mutation authority is explicit
+
+> **Amendment (16.5A7-B).** D2 enforced ownership only at the route
+> (`@admin_required` on create/edit/delete) and relied on `staff_update()` being
+> structurally unable to reassign. That closed **vertical** escalation but left
+> **horizontal** escalation open: `_get()` scoped by tenant alone, so any staff
+> member could re-status, overwrite the notes of, and claim completion credit for
+> a colleague's task — corrupting `staff_productivity`, which keys on
+> `completed_by`.
+>
+> `_authorize_mutation(task, actor, is_admin)` now gates `staff_update()` and
+> `complete_task()`: **admin → any task in tenant; staff → only their own.** An
+> **unassigned** task is admin-only, so the hijack cannot return via the back
+> door. Tenant scoping is not authorization — it only blocks tenant-to-tenant.
+
 ### D5 — Notifications are detached on task delete, never cascaded
 
 `notifications.task_id` is nullable with **no** `ondelete=CASCADE`

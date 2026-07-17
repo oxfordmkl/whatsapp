@@ -25,6 +25,22 @@
     .sev-red { background: rgba(248,81,73,0.15); color: #f85149; }
     .sev-orange { background: rgba(210,153,34,0.15); color: #d29922; }
     .sev-green { background: rgba(37,211,102,0.15); color: #25D366; }
+
+    /* Phase 16.5A7-B (B2): Task table fields surfaced in the UI */
+    .prio {
+      display: inline-block; margin-left: 6px; padding: 2px 6px;
+      border-radius: 3px; font-size: 0.62rem; font-weight: 700;
+      letter-spacing: 0.04em; vertical-align: middle;
+    }
+    .prio-urgent   { background: rgba(248,81,73,0.18);  color: #f85149; }
+    .prio-high     { background: rgba(227,129,58,0.18); color: #e3813a; }
+    .prio-low      { background: rgba(139,148,158,0.18); color: #8b949e; }
+    .prio-progress { background: rgba(88,166,255,0.18); color: #58a6ff; }
+    .tnote {
+      margin-top: 3px; font-size: 0.72rem; color: #8b949e;
+      line-height: 1.35; white-space: pre-wrap; word-break: break-word;
+    }
+    .tnote-staff { color: #58a6ff; opacity: 0.85; }
   </style>
 </head>
 <body>
@@ -39,7 +55,6 @@
     </div>
     <div class="d-flex gap-3">
       <form method="GET" class="d-flex gap-2 align-items-center">
-        <input type="hidden" name="key" value="{{ key }}">
         <select name="staff" class="form-select form-select-sm" style="background: var(--card-bg); color: var(--text-color); border-color: var(--border);" onchange="this.form.submit()">
           <option value="">-- All Staff --</option>
           {% for s in active_staff %}
@@ -47,7 +62,7 @@
           {% endfor %}
         </select>
       </form>
-      <a href="/panel?key={{ key }}" class="btn-crm-outline"><i class="bi bi-arrow-left"></i> Back to Panel</a>
+      <a href="/panel" class="btn-crm-outline"><i class="bi bi-arrow-left"></i> Back to Panel</a>
     </div>
   </div>
 
@@ -71,8 +86,30 @@
           <tbody>
             {% for t in overdue %}
             <tr>
-              <td><a href="/crm/lead/{{ t.phone }}?key={{ key }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a><br><small class="text-muted">{{ t.phone }}</small></td>
-              <td>{{ t.task }}</td>
+              {# Phase 16.5A7-B (B2): a standalone task has no lead — do not
+                 render a /crm/lead/None link. #}
+              <td>
+                {% if t.phone %}
+                  <a href="/crm/lead/{{ t.phone }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a>
+                  <br><small class="text-muted">{{ t.phone }}</small>
+                {% else %}
+                  <span class="text-muted"><i class="bi bi-dash-circle"></i> No lead</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ t.task }}
+                {# Phase 16.5A7-B (B2): Task table fields now reach the UI. #}
+                {% if t.priority and t.priority != 'NORMAL' %}
+                  <span class="prio prio-{{ t.priority|lower }}">{{ t.priority }}</span>
+                {% endif %}
+                {% if t.task_status == 'IN_PROGRESS' %}
+                  <span class="prio prio-progress">IN PROGRESS</span>
+                {% endif %}
+                {% if t.notes %}<div class="tnote">{{ t.notes }}</div>{% endif %}
+                {% if t.staff_notes %}
+                  <div class="tnote tnote-staff"><i class="bi bi-chat-left-text"></i> {{ t.staff_notes }}</div>
+                {% endif %}
+              </td>
               <td><span class="severity-badge sev-red">{{ t.severity }}</span></td>
               <td class="text-muted">{{ t.due_date }}</td>
               <td>
@@ -102,8 +139,27 @@
           <tbody>
             {% for t in today %}
             <tr>
-              <td><a href="/crm/lead/{{ t.phone }}?key={{ key }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a></td>
-              <td>{{ t.task }}</td>
+              <td>
+                {% if t.phone %}
+                  <a href="/crm/lead/{{ t.phone }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a>
+                {% else %}
+                  <span class="text-muted"><i class="bi bi-dash-circle"></i> No lead</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ t.task }}
+                {# Phase 16.5A7-B (B2): Task table fields now reach the UI. #}
+                {% if t.priority and t.priority != 'NORMAL' %}
+                  <span class="prio prio-{{ t.priority|lower }}">{{ t.priority }}</span>
+                {% endif %}
+                {% if t.task_status == 'IN_PROGRESS' %}
+                  <span class="prio prio-progress">IN PROGRESS</span>
+                {% endif %}
+                {% if t.notes %}<div class="tnote">{{ t.notes }}</div>{% endif %}
+                {% if t.staff_notes %}
+                  <div class="tnote tnote-staff"><i class="bi bi-chat-left-text"></i> {{ t.staff_notes }}</div>
+                {% endif %}
+              </td>
               <td>
                 <button class="btn btn-sm btn-outline-success" onclick="completeTask('{{ t.task_id }}', '{{ t.phone }}')"><i class="bi bi-check2"></i> Done</button>
               </td>
@@ -132,8 +188,27 @@
           <tbody>
             {% for t in upcoming %}
             <tr>
-              <td><a href="/crm/lead/{{ t.phone }}?key={{ key }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a></td>
-              <td>{{ t.task }}</td>
+              <td>
+                {% if t.phone %}
+                  <a href="/crm/lead/{{ t.phone }}" style="color: var(--primary); text-decoration: none; font-weight: 600;">{{ t.lead_name }}</a>
+                {% else %}
+                  <span class="text-muted"><i class="bi bi-dash-circle"></i> No lead</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ t.task }}
+                {# Phase 16.5A7-B (B2): Task table fields now reach the UI. #}
+                {% if t.priority and t.priority != 'NORMAL' %}
+                  <span class="prio prio-{{ t.priority|lower }}">{{ t.priority }}</span>
+                {% endif %}
+                {% if t.task_status == 'IN_PROGRESS' %}
+                  <span class="prio prio-progress">IN PROGRESS</span>
+                {% endif %}
+                {% if t.notes %}<div class="tnote">{{ t.notes }}</div>{% endif %}
+                {% if t.staff_notes %}
+                  <div class="tnote tnote-staff"><i class="bi bi-chat-left-text"></i> {{ t.staff_notes }}</div>
+                {% endif %}
+              </td>
               <td class="text-muted">{{ t.due_date }}</td>
               <td>
                 <button class="btn btn-sm btn-outline-success" onclick="completeTask('{{ t.task_id }}', '{{ t.phone }}')"><i class="bi bi-check2"></i> Done</button>
@@ -157,9 +232,19 @@
         <div style="max-height: 400px; overflow-y: auto;">
           {% for t in completed %}
           <div class="p-2 mb-2" style="background: rgba(255,255,255,0.05); border-radius: 6px;">
-            <div style="font-weight: 600; font-size: 0.85rem;">{{ t.task }}</div>
+            <div style="font-weight: 600; font-size: 0.85rem;">
+              {{ t.task }}
+              {% if t.priority and t.priority != 'NORMAL' %}
+                <span class="prio prio-{{ t.priority|lower }}">{{ t.priority }}</span>
+              {% endif %}
+            </div>
             <div class="text-muted" style="font-size: 0.75rem;">Lead: {{ t.lead_name }}</div>
-            <div class="text-success" style="font-size: 0.7rem; margin-top: 4px;">Completed {{ t.completed_at.strftime('%d %b %Y') }}</div>
+            {% if t.staff_notes %}
+              <div class="tnote tnote-staff"><i class="bi bi-chat-left-text"></i> {{ t.staff_notes }}</div>
+            {% endif %}
+            <div class="text-success" style="font-size: 0.7rem; margin-top: 4px;">
+              Completed{% if t.completed_at %} {{ t.completed_at.strftime('%d %b %Y') }}{% endif %}{% if t.completed_by %} by {{ t.completed_by }}{% endif %}
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -175,7 +260,7 @@
 <script>
 async function completeTask(taskId, phone) {
   try {
-    const res = await fetch('/crm/tasks/complete?key={{ key }}', {
+    const res = await fetch('/crm/tasks/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskId, phone: phone, completed_by: '{{ staff_name or "Admin" }}' })

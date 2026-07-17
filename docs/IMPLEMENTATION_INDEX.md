@@ -39,6 +39,7 @@ This registry maps abstract Modules from the Knowledge Registry down to physical
 | `IMP-UI-003` | `templates/crm_sidebar.html` | Jinja Partial (Notification Bell) | `IMP-SRV-005` |
 | `IMP-TST-002` | `tests/test_adapter_sync_16_5a6j.py` | Mutation Test Suite | `IMP-MDL-001` |
 | `IMP-TST-003` | `tests/test_task_notification_16_5a7.py` | Task/Notification Test Suite | `IMP-SRV-004` |
+| `IMP-TST-004` | `tests/test_task_engine_16_5a7b.py` | Task Engine Test Suite (B1/B2) | `IMP-SRV-004` |
 | `IMP-DOC-16A6-1` | `docs/09_MIGRATIONS/PHASE_16_5A6_ENTERPRISE_BACKFILL_RUNBOOK.md` | Runbook | `DOM-INFR` |
 | `IMP-DOC-16A6-2` | `docs/09_MIGRATIONS/PHASE_16_5A6_MIGRATION_CHECKLIST.md` | Checklist | `DOM-INFR` |
 | `IMP-DOC-16A6-3` | `docs/09_MIGRATIONS/PHASE_16_5A6_ROLLBACK_CHECKLIST.md` | Checklist | `DOM-INFR` |

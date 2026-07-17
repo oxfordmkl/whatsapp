@@ -38,6 +38,29 @@ class TaskError(Exception):
     """Raised when a task operation is invalid or not permitted."""
 
 
+def _delete_legacy_mirror(tenant_id, task_uid):
+    """Remove the mirrored legacy events for one task_uid — Phase 16.5A7-B (B2).
+
+    Tenant-scoped, and matches on the JSON payload's task_id. Never raises: a
+    mirror-cleanup failure must not block the delete of the Task itself.
+    """
+    try:
+        from app.models import LeadEvent
+        rows = (LeadEvent.query
+                .filter(LeadEvent.tenant_id == tenant_id)
+                .filter(LeadEvent.event_type.in_(
+                    ("FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED")))
+                .all())
+        for ev in rows:
+            try:
+                if json.loads(ev.event_data or "{}").get("task_id") == task_uid:
+                    db.session.delete(ev)
+            except (ValueError, TypeError):
+                continue
+    except Exception:
+        logger.exception("legacy mirror cleanup failed for task_uid=%s", task_uid)
+
+
 def _log_legacy_event(tenant_id, phone, event_type, payload):
     """Mirror to the legacy event log (ADR-021 dual-write).
 
@@ -175,17 +198,21 @@ def update_task(tenant_id, task_id, actor, title=None, notes=None,
     return task
 
 
-def staff_update(tenant_id, task_id, actor, status=None, staff_notes=None):
+def staff_update(tenant_id, task_id, actor, status=None, staff_notes=None,
+                 is_admin=False):
     """Staff updates progress: status and/or notes. Cannot reassign or retitle.
 
     Completing via this path routes to complete_task() so the legacy event and
     the TASK_COMPLETED notification always fire.
+
+    Phase 16.5A7-B (B1): a non-admin actor must be the task's assignee.
     """
     task = _get(tenant_id, task_id)
+    _authorize_mutation(task, actor, is_admin)
 
     if status is not None and status.upper() == "COMPLETED":
         return complete_task(tenant_id, task_id, actor,
-                             staff_notes=staff_notes)
+                             staff_notes=staff_notes, is_admin=is_admin)
 
     if task.status == "COMPLETED":
         raise TaskError("cannot update a completed task")
@@ -216,13 +243,18 @@ def staff_update(tenant_id, task_id, actor, status=None, staff_notes=None):
     return task
 
 
-def complete_task(tenant_id, task_id, actor, staff_notes=None):
+def complete_task(tenant_id, task_id, actor, staff_notes=None, is_admin=False):
     """Complete a task. Idempotent: completing twice is a no-op.
 
     Side effects: legacy FOLLOW_UP_COMPLETED event + TASK_COMPLETED notification
     to the admin who created it.
+
+    Phase 16.5A7-B (B1): a non-admin actor must be the task's assignee.
+    `completed_by` is the credit record, so allowing a non-assignee to complete
+    let one staff member claim another's work and skewed staff_productivity.
     """
     task = _get(tenant_id, task_id)
+    _authorize_mutation(task, actor, is_admin)
     if task.status == "COMPLETED":
         return task                      # idempotent
 
@@ -253,16 +285,33 @@ def delete_task(tenant_id, task_id, actor):
 
     Notifications referencing it are detached (task_id -> NULL) rather than
     deleted: no FK uses CASCADE (SCHEMA_RULES §12), and a delivered
-    notification is a record of something that genuinely happened. The legacy
-    FOLLOW_UP_TASK event is also retained as audit history (ADR-021).
+    notification is a record of something that genuinely happened.
+
+    Phase 16.5A7-B (B2) — AMENDS ADR-021. The mirrored legacy events for this
+    task_uid are now DELETED with the Task row.
+
+    ADR-021 kept them as "audit history". The 16.5A7-A audit proved that choice
+    produced a zombie: the unified reader replays any task_uid with no Task row
+    as a legacy task, so a deleted task reappeared in every task list, still
+    OPEN, and staff kept working it.
+
+    For a 16.5A7 task the legacy events are a MIRROR of the Task row, not
+    independent history — the Task table is the System of Record. Leaving the
+    mirror behind lets it act as a phantom source of truth, which is exactly the
+    ADR-020 failure mode. Pre-16.5A7 tasks are unaffected: they have no Task
+    row, so delete_task() can never be invoked on them, and their events remain
+    untouched history.
     """
     task = _get(tenant_id, task_id)
     staff = task.assigned_staff
     title = task.title
+    uid = task.task_uid
 
     for n in Notification.query.filter_by(tenant_id=tenant_id,
                                           task_id=task.id).all():
         n.task_id = None
+
+    _delete_legacy_mirror(tenant_id, uid)
 
     db.session.delete(task)
     db.session.commit()
@@ -291,10 +340,44 @@ def list_tasks(tenant_id, assigned_staff=None, status=None, lead_phone=None):
 
 
 def _get(tenant_id, task_id):
-    """Tenant-scoped fetch. Never Task.query.get() — that would cross tenants."""
+    """Tenant-scoped fetch. Never Task.query.get() — that would cross tenants.
+
+    Tenant scoping alone is NOT authorization: it stops tenant A touching
+    tenant B, but not staff A touching staff B inside the same tenant. Callers
+    that mutate must also pass through _authorize_mutation() (B1).
+    """
     if not tenant_id:
         raise TaskError("tenant_id is required")
     task = Task.query.filter_by(id=task_id, tenant_id=tenant_id).first()
     if task is None:
         raise TaskError(f"task {task_id} not found in this tenant")
     return task
+
+
+class TaskForbidden(TaskError):
+    """Raised when the actor may not mutate this task (403, not 400)."""
+
+
+def _authorize_mutation(task, actor, is_admin):
+    """Phase 16.5A7-B (B1): who may mutate this task.
+
+    Admin / Super Admin  -> any task in their tenant.
+    Staff                -> only a task assigned to them.
+
+    Closes the horizontal (staff-to-staff) escalation found by the 16.5A7-A
+    audit, where any staff member could re-status, overwrite the notes of, and
+    claim completion credit for a colleague's task. Tenant scoping never
+    covered this — it only blocks tenant-to-tenant.
+
+    An UNASSIGNED task is admin-only: leaving it open to any staff member would
+    reintroduce the same hijack through the back door.
+    """
+    if is_admin:
+        return
+    assignee = (task.assigned_staff or "").strip()
+    if not assignee:
+        raise TaskForbidden(
+            "this task is unassigned; only an admin may modify it")
+    if assignee != (actor or "").strip():
+        raise TaskForbidden(
+            f"task is assigned to {assignee!r}; {actor!r} may not modify it")
