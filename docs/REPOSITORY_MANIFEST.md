@@ -15,11 +15,12 @@ This is the machine-readable, canonical summary of the Oxford CRM Enterprise Rep
 - **Current Version**: 2.0.0-alpha
 
 ## Development State
-- **Current Architecture Phase**: Phase 16.5A6-J (Course Adapter Synchronization Correction — Complete)
-- **Current Documentation Phase**: Phase 16.5A6-J
+- **Current Architecture Phase**: Phase 16.5A6 (Enterprise Data Backfill — EXECUTED 2026-07-17)
+- **Current Documentation Phase**: Phase 16.5A6
 - **Documentation Status**: Validated
 - **Knowledge Repository Version**: 1.3
-- **Current Active Development Phase**: Phase 16.5A6 (Data Backfill — **LIVE NOT APPROVED**; pending re-run of Phase 16.5A6-LA against ADR-020)
+- **Current Active Development Phase**: Phase 16.5A7 (Audience Engine — unblocked; relational layer populated)
+- **Enterprise Layer Status**: **POPULATED** (1 compat pipeline, 12 stages, 8 offerings, 25 bridges, 29 linked leads)
 - **Current Migration Revision**: `b6e1d4f82c9e`
 - **Current Production Status**: Active (Railway Deployment)
 

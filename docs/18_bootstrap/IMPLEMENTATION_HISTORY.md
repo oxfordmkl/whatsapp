@@ -52,6 +52,19 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Phase 16.5A6 unblocked.
 - **Related ADR**: `ADR-018`, `ADR-019`.
 
+## Phase 16.5A6 (Enterprise Data Backfill — EXECUTED)
+- **Objective**: Populate the Enterprise Configuration layer from the legacy `ConversationState` string columns.
+- **Executed**: 2026-07-17, LIVE against Railway production. Online — no downtime, no maintenance window, no DDL.
+- **Pre-flight**: verified `pg_dump` logical backup (`oxfordcrm_before_backfill.dump`, custom format, all 19 tables, every row count matched production, full-archive decode passed). Both NO-GO gates passed (`orphan_leads=0`, `pipeline_stage_id IS NOT NULL=0`). Migration head `b6e1d4f82c9e`. ADR-020 confirmed deployed to the live instance (commit `9acf6c2`, container boot +33s).
+- **Result** (1 tenant, 29 leads, single batch, 84.4s):
+  - 1 `legacy_compat` pipeline · 12 canonical stages · 8 Offerings · 25 bridges · 29 `pipeline_stage_id` links · 15 JSON enrichments (2 pre-existing keys preserved).
+  - 0 unlinkable, 0 slug collisions, 0 extra stages — matching the audited dry-run plan exactly.
+- **Validation**: V1–V11 all pass. **V6 (ADR-018 hard gate): `admitted_total` 7 == 7.** **V8 (ADR-019 hard gate): `internal_key` == legacy `stage` drift = 0.** V10 cross-tenant leak detectors both 0. Stage breakdown, `lead_status` group_by, and admissions count all byte-identical to pre-migration.
+- **V11 idempotency**: 2nd LIVE run reported 0 creates / 0 links / 0 enrichments (all reused/skipped). Running the migration again produces an identical database.
+- **ADR-018 vindicated in production data**: 6 of 7 admitted leads have `stage <> 'enrolled'` (e.g. lead id=5: `demo_time_ask` + `is_admitted=True`). The original pre-ADR-018 design would have erased **86% of all admissions** on first run.
+- **Production Status**: Active. Enterprise layer populated; legacy behaviour unchanged. Public site, CRM login, webhook, scheduler, WhatsApp and AI Router all healthy.
+- **Related ADR**: `ADR-018`, `ADR-019`, `ADR-020`.
+
 ## Phase 16.5A6-J (Course Adapter Synchronization Correction)
 - **Objective**: Fix the blocking defect found by the Phase 16.5A6-LA LIVE Readiness Audit, before any production data was migrated.
 - **Trigger**: Phase 16.5A6-LA returned **FAIL**. The `course` adapter returned a **stale** `Offering.name` after backfill: Step 5 opens the adapter gate, the router writes `course` at 4 sites (`router.py:219,396,443,457`), and `_sync_offering_link` was a documented no-op — so the bridge was never repointed. Reproduced deterministically (3 of 4 adapters passed; only `course` failed). Blast radius: the 25 of 29 production leads holding a bridge.

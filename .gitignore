@@ -13,3 +13,9 @@ instance/*.sqlite3
 *.sqlite
 *.sqlite3
 node_modules/
+
+# Database dumps — contain lead PII, user password hashes and encrypted
+# WABA tokens. Never commit these to the remote.
+*.dump
+*.sql.gz
+*.backup
