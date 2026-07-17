@@ -1652,7 +1652,11 @@ async function testConnection() {
   document.getElementById('connectionStatus').textContent = 'Connecting...';
 
   try {
-    const resp = await fetch(url + '/', { signal: AbortSignal.timeout(8000) });
+    // Phase 16.5B0: probe '/health', not '/'. public_bp registers '/' and is
+    // registered before health_bp, so GET / returns the HTML landing page and
+    // resp.json() threw "Unexpected token '<'" -> OFFLINE. Same payload, same
+    // check, reachable path.
+    const resp = await fetch(url + '/health', { signal: AbortSignal.timeout(8000) });
     const data = await resp.json();
     if (data.status && data.status.includes('running')) {
       document.getElementById('connectionStatus').textContent = '✓ Connected';

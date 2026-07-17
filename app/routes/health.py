@@ -10,7 +10,15 @@ from app.extensions import db
 health_bp = Blueprint("health", __name__)
 
 
+# Phase 16.5B0: "/" is registered by BOTH public_bp (index) and health_bp.
+# public_bp is registered first (app/__init__.py:143), so Flask resolves GET /
+# to public.index and this JSON endpoint became unreachable — the Broadcast
+# Panel's Test button fetched "/", received the HTML landing page, and
+# JSON.parse failed with "Unexpected token '<'", showing OFFLINE.
+# "/health" gives the SAME response a reachable path. The "/" rule is left in
+# place so nothing that still points at it changes behaviour.
 @health_bp.route("/", methods=["GET"])
+@health_bp.route("/health", methods=["GET"])
 def health():
     # 1. Database check (Lightweight query)
     db_status = "disconnected"
