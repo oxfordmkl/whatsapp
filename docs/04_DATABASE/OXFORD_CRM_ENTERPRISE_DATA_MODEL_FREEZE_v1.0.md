@@ -1,4 +1,4 @@
-# OXFORD CRM ENTERPRISE DATA MODEL FREEZE v1.2
+# OXFORD CRM ENTERPRISE DATA MODEL FREEZE v1.3
 
 > **Supersedes:** v1.1 (same file, updated in place per ADR-018, ADR-019)
 > **Governance Phase:** 16.5A5-J — Enterprise Architecture Correction
@@ -175,10 +175,16 @@ The following models constitute the Enterprise Configuration Foundation. No addi
 > **v1.2 (ADR-018, ADR-019).** Corrected against repository evidence during Phase
 > 16.5A5-J. The v1.1 rows for `is_admitted` and `stage` were disproven by
 > implementation discovery *before* any production data was migrated.
+>
+> **v1.3 (ADR-020).** The `course` row is amended. The Phase 16.5A6-LA audit
+> proved the adapter returned a **stale** `Offering.name` after backfill, because
+> `_sync_offering_link` was a no-op while the router writes `course` at four
+> sites. The write contract below is now part of the frozen model — a read
+> strategy alone is insufficient for any bridge-backed adapter.
 
 | Legacy Field (ConversationState) | Future Model / Field | Adapter Strategy | Removal Phase |
 | :--- | :--- | :--- | :--- |
-| `course` | `Offering` (via Bridge) | `hybrid_property` returns first `Offering.name`; fallback legacy column. **`Offering.name` must store the EXACT legacy string** (ADR-019) | Never (Abstracted) |
+| `course` | `Offering` (via Bridge) | **Read:** `hybrid_property` returns first `Offering.name`; fallback legacy column. **Write:** `_sync_offering_link` repoints the bridge to the Offering matching the exact `(tenant_id, name)`; removes the bridge on empty/no-match so the legacy fallback engages (ADR-020). **`Offering.name` must store the EXACT legacy string** (ADR-019) | Never (Abstracted) |
 | `offer_course` | `custom_attributes` | Map to JSON `custom_attributes['offer_course']`; fallback legacy column | Never |
 | `batch_time` | `custom_attributes` | Map to JSON `custom_attributes['batch_time']`; fallback legacy column | Never |
 | `is_admitted` | **NONE — independent attribute** | **No adapter.** Plain `db.Boolean` column. **NEVER** derived from `stage_category` (ADR-018) | Never |
@@ -202,6 +208,23 @@ business concepts.
 value byte-identical to the legacy string, so it reads `internal_key`, and the
 Compatibility Pipeline pins `internal_key` to the twelve legacy stage strings.
 `display_name` is free-text and would break the router.
+
+### Why a bridge-backed adapter needs a write contract (ADR-020)
+
+An adapter whose read resolves through a relational link is only correct if its
+**write** keeps that link synchronized. `course` shipped with a read strategy and
+an inert `_sync_offering_link`, which was safe only while every row had
+`pipeline_stage_id = NULL`. The moment backfill opens the gate, the router's four
+`course` writes (`app/bot/router.py:219,396,443,457`) leave the bridge pointing at
+the previous Offering and the getter returns a **stale** course.
+
+The corruption is invisible to migration validation: bridge and column agree at
+migration time and diverge only on the next bot write. **A green parity report is
+therefore not evidence that a bridge-backed adapter is safe.** Any future adapter
+that reads through a link must specify its write contract in this matrix.
+
+`stage` was never exposed to this because `_sync_stage_link` was implemented;
+`offer_course` and `batch_time` resync through `_set_custom_attr`.
 
 ---
 

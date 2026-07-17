@@ -28,6 +28,10 @@ This registry maps abstract Modules from the Knowledge Registry down to physical
 | `IMP-ADR-014` | `docs/21_decision_records/ADR-014-reserved-orm-attribute-naming.md` | ADR | `DOM-INFR` |
 | `IMP-ADR-018` | `docs/21_decision_records/ADR-018-business-conversion-independence.md` | ADR | `DOM-CORE` |
 | `IMP-ADR-019` | `docs/21_decision_records/ADR-019-compatibility-pipeline-standard.md` | ADR | `DOM-CORE` |
+| `IMP-ADR-020` | `docs/21_decision_records/ADR-020-course-offering-synchronization.md` | ADR | `DOM-CORE` |
+| `IMP-SRV-003` | `app/services/backfill_service.py` | Service (Backfill Engine) | `IMP-MDL-001` |
+| `IMP-SCR-001` | `scripts/run_backfill_16_5a6.py` | Migration Runner | `IMP-SRV-003` |
+| `IMP-TST-002` | `tests/test_adapter_sync_16_5a6j.py` | Mutation Test Suite | `IMP-MDL-001` |
 | `IMP-DOC-16A6-1` | `docs/09_MIGRATIONS/PHASE_16_5A6_ENTERPRISE_BACKFILL_RUNBOOK.md` | Runbook | `DOM-INFR` |
 | `IMP-DOC-16A6-2` | `docs/09_MIGRATIONS/PHASE_16_5A6_MIGRATION_CHECKLIST.md` | Checklist | `DOM-INFR` |
 | `IMP-DOC-16A6-3` | `docs/09_MIGRATIONS/PHASE_16_5A6_ROLLBACK_CHECKLIST.md` | Checklist | `DOM-INFR` |

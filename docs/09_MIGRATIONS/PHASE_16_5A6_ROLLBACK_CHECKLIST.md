@@ -17,6 +17,10 @@ rollback**.
 adapter gate. Every adapter immediately falls back to its legacy column — which was never
 modified. The system returns byte-identical to pre-migration state.
 
+**ADR-020 note:** closing the gate also makes `_sync_offering_link` inert again, so no
+further bridge writes can occur once step 2 has run. This is why the unlink MUST precede
+the bridge delete.
+
 ## Trigger conditions
 
 ```
@@ -53,8 +57,15 @@ Do not "fix" such an error by adding CASCADE.
 □ 3. Step 4 — delete bridges
        DELETE FROM conversation_state_offerings
        WHERE offering_id IN (SELECT id FROM offering WHERE tenant_id = :tid);
-       ✓ Safe: ALL bridges are backfill-created (_sync_offering_link is a no-op,
-         so the bot never creates bridges)
+       ✓ Safe: every bridge belongs to a backfilled row.
+         AMENDED (ADR-020): _sync_offering_link is no longer a no-op — the bot
+         now creates, repoints, and removes bridges when a lead's course changes.
+         It does so ONLY when pipeline_stage_id IS NOT NULL, i.e. only on rows
+         this backfill linked. So the claim "all bridges are backfill-created" is
+         superseded, but the DELETE remains correct and complete: no bridge can
+         exist on a row the backfill did not link.
+       ✓ Run this AFTER step 2 (unlink) so no further bridge writes can occur —
+         once pipeline_stage_id is NULL the sync hook is inert again.
 
 □ 4. Step 3 — delete unreferenced offerings
        DELETE FROM offering

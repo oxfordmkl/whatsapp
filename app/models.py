@@ -258,10 +258,59 @@ class ConversationState(db.Model):
             self.pipeline_stage_id = match.id
 
     def _sync_offering_link(self, value):
-        """Placeholder sync hook for the course→Offering bridge. Creating the
-        first bridge row is backfill (Phase 16.5A6); nothing to keep in sync here
-        yet, so this is a documented no-op until the relational layer is active."""
-        return
+        """Keep the course→Offering bridge in sync when the legacy course changes.
+
+        Symmetric with _sync_stage_link (ADR-020): a no-op until the row is
+        relationally activated, then the relational link is kept tracking the
+        legacy value so `course` round-trips.
+
+        Deliberate divergence from _sync_stage_link: when no Offering matches,
+        this REMOVES the stale bridge rather than leaving it. _sync_stage_link can
+        leave a stale link because every stage the router writes is guaranteed to
+        be seeded. `course` has no such guarantee — the bot can assign any of the
+        10 ALL_COURSES entries, while only courses actually present in production
+        received an Offering — so keeping the link would return a stale course.
+        Removing it makes _first_offering() return None and the getter fall back to
+        _course, which is always correct (the Fail-Safe Property).
+
+        Never creates an Offering: minting enterprise rows is backfill's job
+        (Phase 16.5A6). Offerings are only ever reused, matched on the EXACT name
+        within this tenant — no normalization, no case-folding (ADR-019).
+        """
+        if self.pipeline_stage_id is None:
+            return          # gate closed — the getter reads _course directly
+        if self.id is None:
+            return          # not yet persisted — no bridge can exist to go stale
+
+        from app.models import ConversationOffering, Offering
+
+        links = (ConversationOffering.query
+                 .filter_by(conversation_state_id=self.id)
+                 .order_by(ConversationOffering.id)
+                 .all())
+
+        target_id = None
+        if value not in (None, ""):
+            offering = (Offering.query
+                        .filter_by(tenant_id=self.tenant_id, name=value)
+                        .first())
+            if offering is not None:
+                target_id = offering.id
+
+        # Drop every bridge that is not the target, keeping at most one. When
+        # target_id is None (empty course, or no Offering for this name) they are
+        # all cleared and the getter falls back to _course.
+        keep = None
+        for link in links:
+            if (target_id is not None and link.offering_id == target_id
+                    and keep is None):
+                keep = link
+                continue
+            db.session.delete(link)
+
+        if target_id is not None and keep is None:
+            db.session.add(ConversationOffering(
+                conversation_state_id=self.id, offering_id=target_id))
 
     # ── stage adapter ───────────────────────────────────────────────────────
     @hybrid_property

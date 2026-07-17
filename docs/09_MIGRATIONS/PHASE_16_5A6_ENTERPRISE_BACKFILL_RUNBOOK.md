@@ -254,9 +254,10 @@ Each step: Purpose · Input · Output · Skip · Failure · Retry · Rollback ·
 | **Skip** | `uq_conv_offering` pair exists → skip. Preload existing pairs for the batch in **one** query |
 | **Failure** | Unique violation → concurrent/rerun → skip. FK violation → lead deleted mid-run → skip row, continue |
 | **Retry** | ✅ Safe |
-| **Rollback** | `DELETE FROM conversation_state_offerings WHERE conversation_state_id IN (tenant leads)` — safe: **all** bridges are backfill-created (`_sync_offering_link` is a documented no-op, so the bot never creates bridges) |
+| **Rollback** | `DELETE FROM conversation_state_offerings WHERE conversation_state_id IN (tenant leads)` — safe: every bridge belongs to a row this backfill linked. **AMENDED (ADR-020):** `_sync_offering_link` is no longer a no-op, so the bot may create/repoint/remove bridges — but only while `pipeline_stage_id IS NOT NULL`. Unlink (Step 5 rollback) first, which makes the hook inert, then delete. |
 | **Audit** | `bridges_created`, `bridges_skipped` |
 | **Note** | Runs **before** Step 5 so that when the gate opens the bridge already exists. Either order is safe (missing bridge → `_first_offering()` returns None → legacy fallback). |
+| **⚠️ ADR-020** | Step 4 correctness now depends on `_sync_offering_link` being implemented. With the pre-16.5A6-J no-op, Step 5 opening the gate caused `course` to return a **stale** `Offering.name` on the next bot course-write — undetectable by Step 7 (see §7 note). Do not run this backfill against a build lacking ADR-020. |
 
 ### Step 5 — `pipeline_stage_id` mapping ⚠️ the activating step
 
@@ -357,6 +358,14 @@ written by the backfill and never touched by rollback**. Post-rollback, every ro
 | V9 | Scheduler compat | `follow_up_jobs` query unaffected | No change (no coupling) |
 | V10 | Tenant isolation | no bridge/link crosses tenants (see SQL below) | 0 rows |
 | V11 | Idempotency | run twice → 2nd run reports 0 creates, 0 links | 0 deltas |
+
+> ⚠️ **Known blind spot in this matrix (ADR-020).** Every check above is evaluated
+> *at migration time*. A bridge-backed adapter whose write hook does not resync
+> passes all of them and then corrupts data on the **next** bot write. This is
+> exactly how the `course` defect (Phase 16.5A6-LA) evaded V2–V8. Parity proves the
+> migration was faithful; it does **not** prove the adapters are sound. Adapter
+> write-path correctness must be established separately — see
+> `tests/test_adapter_sync_16_5a6j.py`.
 
 ### V10 — cross-tenant leak detector (must return 0)
 
@@ -486,6 +495,8 @@ LEFT JOIN tenants t ON t.id = cs.tenant_id WHERE t.id IS NULL;
 | R5 | `custom_attributes` holds live bot JSON | LOW | Step 6 merges, never overwrites |
 | R6 | Future `is_entry` auto-assign flips `''`→`'new'` | LOW | Documented hazard (§3.2); adapters must not auto-assign existing rows |
 | R7 | Step 7 snapshot cost on very large N | LOW | Snapshot per tenant, not globally |
+| R8 | **`course` returns a stale Offering after backfill** | ~~**CRITICAL**~~ **RESOLVED** | Found by Phase 16.5A6-LA; fixed by **ADR-020** (symmetric `_sync_offering_link`). Backfill MUST NOT run against a build lacking ADR-020. Verified by 30 mutation checks. |
+| R9 | Another bridge-backed adapter ships without a write hook | MEDIUM | Freeze v1.3 now requires a write contract in the §7 matrix for any link-resolving adapter |
 
 ---
 

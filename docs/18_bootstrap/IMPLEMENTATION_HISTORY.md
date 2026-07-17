@@ -52,6 +52,21 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Phase 16.5A6 unblocked.
 - **Related ADR**: `ADR-018`, `ADR-019`.
 
+## Phase 16.5A6-J (Course Adapter Synchronization Correction)
+- **Objective**: Fix the blocking defect found by the Phase 16.5A6-LA LIVE Readiness Audit, before any production data was migrated.
+- **Trigger**: Phase 16.5A6-LA returned **FAIL**. The `course` adapter returned a **stale** `Offering.name` after backfill: Step 5 opens the adapter gate, the router writes `course` at 4 sites (`router.py:219,396,443,457`), and `_sync_offering_link` was a documented no-op — so the bridge was never repointed. Reproduced deterministically (3 of 4 adapters passed; only `course` failed). Blast radius: the 25 of 29 production leads holding a bridge.
+- **Severity**: The corruption materialises **after** migration, on the next bot course-write. Phase 16.5A6 would have reported 100% parity and GO, then silently corrupted course data with no detector watching.
+- **Discovery**: `course` has exactly **one** write funnel — `st["course"]=…` → `StateProxy.__setitem__` → `_db_save` → `setattr(row,'course',…)` → the setter. No direct attribute writes, no bulk `.update({})`, no raw SQL, no import/CLI/scheduler/automation path. `admin.py:1319` is a read; `normalize_course_name` is read-time-only.
+- **Implementation**:
+  - **ADR-020 Course–Offering Synchronization** — `_sync_offering_link` implemented symmetrically with `_sync_stage_link`: no-op while the gate is closed; otherwise repoint the bridge to the Offering matching the exact `(tenant_id, name)`; reuse only (never mint); at most one bridge; remove obsolete/duplicate links.
+  - **Deliberate divergence**: on no-match the bridge is **removed** (not left, as `_sync_stage_link` does) so the legacy fallback engages. Justified: the bot can assign any of 10 `ALL_COURSES` entries while only 8 have Offerings — `GST & Payroll` and `DCA Fast Track` are assignable with no Offering.
+  - Data Model Freeze corrected v1.2 → **v1.3** (§7): bridge-backed adapters must now declare a **write** contract, not only a read strategy.
+  - Runbook §7 gained an explicit note that the validation matrix cannot detect this defect class; Rollback Checklist rationale amended (the bot can now write bridges, but only on linked rows — the DELETE stays correct, and unlink must precede it).
+  - `tests/test_adapter_sync_16_5a6j.py` — 30 deterministic mutation checks driving the real `setattr` write path.
+- **Result**: All four adapters round-trip under the gate. 30/30 checks pass. Both original 16.5A6-LA reproductions flip from FAIL to PASS unchanged. No production data touched; no schema change; no migration.
+- **Production Status**: Active. Phase 16.5A6 LIVE remains **NOT APPROVED** pending a re-run of Phase 16.5A6-LA against this correction.
+- **Related ADR**: `ADR-020` (depends on `ADR-019`; supersedes the 16.5A5-I `_sync_offering_link` no-op contract).
+
 ## Phase K1.x (Enterprise Knowledge Architecture)
 - **Objective**: Make the repository AI-native and autonomous.
 - **Implementation**: Generated Constitutional specs, Registries (Capability, Domain, Implementation), Boot Orders, and Manifests.
