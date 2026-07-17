@@ -53,7 +53,8 @@ def upgrade():
         batch_op.alter_column('custom_attributes',
                               existing_type=sa.Text(),
                               type_=sa.JSON(),
-                              existing_nullable=True)
+                              existing_nullable=True,
+                              postgresql_using='custom_attributes::json')
 
     # ── 2. ALTER offering: add price + custom_attributes ────────────────────
     # The offering table is empty — ADD COLUMN is instantaneous.
@@ -77,4 +78,5 @@ def downgrade():
         batch_op.alter_column('custom_attributes',
                               existing_type=sa.JSON(),
                               type_=sa.Text(),
-                              existing_nullable=True)
+                              existing_nullable=True,
+                              postgresql_using='custom_attributes::text')
