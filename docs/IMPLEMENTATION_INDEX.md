@@ -26,6 +26,13 @@ This registry maps abstract Modules from the Knowledge Registry down to physical
 | `IMP-MIG-003` | `migrations/versions/b6e1d4f82c9e_phase_16_5a5_h1_enterprise_baseline_v1_1.py` | Alembic Migration | `IMP-MDL-001` |
 | `IMP-ADR-013` | `docs/21_decision_records/ADR-013-json-column-standard.md` | ADR | `DOM-INFR` |
 | `IMP-ADR-014` | `docs/21_decision_records/ADR-014-reserved-orm-attribute-naming.md` | ADR | `DOM-INFR` |
+| `IMP-ADR-018` | `docs/21_decision_records/ADR-018-business-conversion-independence.md` | ADR | `DOM-CORE` |
+| `IMP-ADR-019` | `docs/21_decision_records/ADR-019-compatibility-pipeline-standard.md` | ADR | `DOM-CORE` |
+| `IMP-DOC-16A6-1` | `docs/09_MIGRATIONS/PHASE_16_5A6_ENTERPRISE_BACKFILL_RUNBOOK.md` | Runbook | `DOM-INFR` |
+| `IMP-DOC-16A6-2` | `docs/09_MIGRATIONS/PHASE_16_5A6_MIGRATION_CHECKLIST.md` | Checklist | `DOM-INFR` |
+| `IMP-DOC-16A6-3` | `docs/09_MIGRATIONS/PHASE_16_5A6_ROLLBACK_CHECKLIST.md` | Checklist | `DOM-INFR` |
+| `IMP-DOC-16A6-4` | `docs/09_MIGRATIONS/PHASE_16_5A6_PRODUCTION_VERIFICATION_CHECKLIST.md` | Checklist | `DOM-INFR` |
+| `IMP-DOC-16A6-5` | `docs/09_MIGRATIONS/PHASE_16_5A6_OPERATIONAL_RUNBOOK.md` | Runbook | `DOM-INFR` |
 
 *Note: This index is a starting foundation and will be automatically expanded in Phase K1.4.*
 
