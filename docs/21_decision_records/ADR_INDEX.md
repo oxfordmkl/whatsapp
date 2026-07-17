@@ -25,6 +25,12 @@ This registry catalogs every formal architectural decision made in the Oxford CR
 | `ADR-012-KNOWLEDGE-BASELINE.md` | Knowledge Baseline v1.0 Freeze | ACTIVE | K1.x | None | None |
 | `ADR-013-json-column-standard.md` | JSON Column Standard | ACTIVE | K2.1 | None | `ADR-012` |
 | `ADR-014-reserved-orm-attribute-naming.md` | Reserved ORM Attribute Naming | ACTIVE | K2.1 | None | `ADR-013` |
+| `ADR-018-business-conversion-independence.md` | Business Conversion Independence | ACTIVE | 16.5A5-J | Freeze v1.1 §7 (`is_admitted`) | `ADR-012` |
+| `ADR-019-compatibility-pipeline-standard.md` | Compatibility Pipeline Standard | ACTIVE | 16.5A5-J | None | `ADR-018` |
+
+*Note: ADR-015 (Tiered Cascade), ADR-016 (Pricing Standard) and ADR-017 (Architecture
+Governance) were proposed in Phase K2.1 and remain PENDING ratification. The numbering
+gap is intentional — 16.5A5-J required ADR-018/019 ahead of them.*
 
 ## References
 - [Repository Manifest](../REPOSITORY_MANIFEST.md)

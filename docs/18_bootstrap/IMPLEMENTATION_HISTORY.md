@@ -41,6 +41,17 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Adapter dormant-until-backfill.
 - **Related ADR**: `ADR-013`, `ADR-014`; Data Model Freeze v1.1 §7.
 
+## Phase 16.5A5-J (Enterprise Architecture Correction)
+- **Objective**: Correct an architectural assumption disproven by Phase 16.5A6 discovery, before any production data was migrated.
+- **Trigger**: Phase 16.5A6 returned **NO-GO**. Discovery proved `stage` (AI-router-owned) and `is_admitted` (staff-form-owned) are independent columns that legitimately disagree; one `pipeline_stage_id` FK cannot reproduce both. Backfilling would have broken either the admissions analytics or the router state machine.
+- **Implementation**:
+  - **ADR-018 Business Conversion Independence** — `is_admitted` is an independent business attribute, NEVER derived from `stage_category`. The 16.5A5-I hybrid adapter and `_sync_admitted_link` removed; reverted to a plain `db.Boolean` column.
+  - **ADR-019 Compatibility Pipeline Standard** — the first pipeline per legacy tenant must use the exact 12 legacy router stage strings as `internal_key`; `Offering.name` must preserve the exact legacy course string (no slug dedup).
+  - Data Model Freeze corrected v1.1 → **v1.2** (§2, §7). `PipelineStage`/`Offering` docstrings corrected.
+- **Result**: Enterprise Baseline now matches production reality. No data migration, no schema change, no behaviour change. `is_admitted` SQL reverts to a direct indexed column read (cheaper than the interim CASE).
+- **Production Status**: Active. Phase 16.5A6 unblocked.
+- **Related ADR**: `ADR-018`, `ADR-019`.
+
 ## Phase K1.x (Enterprise Knowledge Architecture)
 - **Objective**: Make the repository AI-native and autonomous.
 - **Implementation**: Generated Constitutional specs, Registries (Capability, Domain, Implementation), Boot Orders, and Manifests.

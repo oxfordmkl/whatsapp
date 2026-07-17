@@ -15,21 +15,22 @@ This is the machine-readable, canonical summary of the Oxford CRM Enterprise Rep
 - **Current Version**: 2.0.0-alpha
 
 ## Development State
-- **Current Architecture Phase**: Phase 16.5A5-H1 (Enterprise Baseline v1.1 Hotfix — Complete)
-- **Current Documentation Phase**: Phase K2.1
+- **Current Architecture Phase**: Phase 16.5A5-J (Enterprise Architecture Correction — Complete)
+- **Current Documentation Phase**: Phase 16.5A5-J
 - **Documentation Status**: Validated
-- **Knowledge Repository Version**: 1.1
-- **Current Active Development Phase**: Phase 16.5A6 (Data Backfill — Next)
+- **Knowledge Repository Version**: 1.2
+- **Current Active Development Phase**: Phase 16.5A6 (Data Backfill — Unblocked, pending production discovery)
 - **Current Migration Revision**: `b6e1d4f82c9e`
 - **Current Production Status**: Active (Railway Deployment)
 
 ## Registry Versions
 - **Current Constitution Version**: v1.0 (Phase K1.3A.5)
-- **Current Knowledge Version**: v1.1 (Phase K2.1)
+- **Current Knowledge Version**: v1.2 (Phase 16.5A5-J)
 - **Current Capability Version**: v1.0 (Phase K1.2B)
 - **Current Registry Version**: v1.0 (Phase K1.2C)
-- **Current ADR**: ADR-014 (Reserved ORM Attribute Naming)
-- **Knowledge Baseline**: 1.1
+- **Current ADR**: ADR-019 (Compatibility Pipeline Standard)
+- **Enterprise Data Model Freeze**: v1.2 (ADR-018, ADR-019)
+- **Knowledge Baseline**: 1.2
 - **Knowledge Baseline Status**: Active
 
 ## References

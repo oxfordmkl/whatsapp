@@ -115,10 +115,14 @@ class ConversationState(db.Model):
     name         = db.Column(db.String(200), default="")
 
     # ══ Phase 16.5A5-I: Enterprise ORM dual-write adapters ══════════════════
-    # The five attributes below (stage, course, batch_time, offer_course,
-    # is_admitted) are now hybrid_property ADAPTERS defined further down. Their
-    # PHYSICAL columns are retained here under underscore-prefixed names mapped
-    # to the SAME database column names — NO migration, NO data change.
+    # Phase 16.5A5-J CORRECTION: `is_admitted` is NO LONGER an adapter. It is an
+    # independent business attribute and is declared as a plain column in the
+    # Phase 4A block below. See ADR-018 (Business Conversion Independence).
+    #
+    # The FOUR attributes below (stage, course, batch_time, offer_course) are
+    # hybrid_property ADAPTERS defined further down. Their PHYSICAL columns are
+    # retained here under underscore-prefixed names mapped to the SAME database
+    # column names — NO migration, NO data change.
     #
     #   read : prefer the new relational model when the row is relationally
     #          activated (pipeline_stage_id IS NOT NULL, set by Phase 16.5A6
@@ -130,11 +134,16 @@ class ConversationState(db.Model):
     # Because every production row currently has pipeline_stage_id = NULL, both
     # the Python getters and the SQL expressions reduce EXACTLY to the legacy
     # columns — zero behaviour and zero extra queries until backfill runs.
+    #
+    # `stage` COMPATIBILITY CONTRACT (ADR-019): app/bot/router.py dispatches on
+    # exact legacy stage strings (e.g. stage in ("new","done","enrolled",
+    # "goal_selection")). Any PipelineStage this row links to MUST carry an
+    # internal_key byte-identical to the legacy value, or the router state
+    # machine breaks. See ADR-019 (Compatibility Pipeline Standard).
     _stage        = db.Column('stage',        db.String(50),  default="new")
     _course       = db.Column('course',       db.String(200), default="")
     _batch_time   = db.Column('batch_time',   db.String(100), default="")
     _offer_course = db.Column('offer_course', db.String(50),  default="")
-    _is_admitted  = db.Column('is_admitted',  db.Boolean, nullable=True, default=False)
 
     goal         = db.Column(db.String(50),  default="")
     last_msg     = db.Column(db.String(50),  default="")
@@ -151,6 +160,17 @@ class ConversationState(db.Model):
     lead_status    = db.Column(db.String(50),  nullable=True, default="Lead")
     assigned_staff = db.Column(db.String(100), nullable=True)
     lead_score     = db.Column(db.Integer,     nullable=True, default=0)
+
+    # is_admitted: INDEPENDENT business attribute — NOT derived from the pipeline.
+    #   ADR-018 (Business Conversion Independence). Repository evidence: `stage` is
+    #   written exclusively by the AI router (app/bot/router.py, app/bot/objections.py)
+    #   and `is_admitted` exclusively by the staff form (app/routes/admin.py). No code
+    #   path couples them, so they legitimately disagree (e.g. stage="new" +
+    #   is_admitted=True when staff admit a lead the bot never advanced). A single
+    #   pipeline_stage_id FK cannot reproduce both independent values, therefore
+    #   is_admitted is NEVER derived from PipelineStage.stage_category.
+    is_admitted    = db.Column(db.Boolean,     nullable=True, default=False)
+
     notes          = db.Column(db.Text,        nullable=True)
 
     # ── Phase 11-D1: Opt-Out Safety ──
@@ -178,7 +198,9 @@ class ConversationState(db.Model):
     # ConversationState(stage="new", course="", ...) must keep working now that
     # those names are hybrid_property adapters (not accepted by the default
     # SQLAlchemy __init__). Route adapter kwargs through the hybrid setters.
-    _ADAPTER_INIT_KEYS = ('stage', 'course', 'batch_time', 'offer_course', 'is_admitted')
+    # `is_admitted` is absent by design (ADR-018) — it is a plain column and is
+    # handled natively by SQLAlchemy's __init__.
+    _ADAPTER_INIT_KEYS = ('stage', 'course', 'batch_time', 'offer_course')
 
     def __init__(self, **kwargs):
         adapter_vals = {k: kwargs.pop(k) for k in self._ADAPTER_INIT_KEYS if k in kwargs}
@@ -235,25 +257,6 @@ class ConversationState(db.Model):
         if match is not None:
             self.pipeline_stage_id = match.id
 
-    def _sync_admitted_link(self, value):
-        """When relationally activated, move the linked stage to a 'won' stage in
-        the same pipeline to reflect a legacy admission. No-op pre-backfill. Does
-        not auto-demote on value=False (ambiguous which open stage to restore) —
-        the legacy column stays the source of truth for that case."""
-        if self.pipeline_stage_id is None:
-            return
-        from app.models import PipelineStage
-        current = db.session.get(PipelineStage, self.pipeline_stage_id)
-        if current is None:
-            return
-        if value and current.stage_category != 'won':
-            match = (PipelineStage.query
-                     .filter_by(pipeline_id=current.pipeline_id, stage_category='won')
-                     .order_by(PipelineStage.order_index)
-                     .first())
-            if match is not None:
-                self.pipeline_stage_id = match.id
-
     def _sync_offering_link(self, value):
         """Placeholder sync hook for the course→Offering bridge. Creating the
         first bridge row is backfill (Phase 16.5A6); nothing to keep in sync here
@@ -282,30 +285,6 @@ class ConversationState(db.Model):
             else_=select(PipelineStage.internal_key)
                   .where(PipelineStage.id == cls.pipeline_stage_id)
                   .scalar_subquery()
-        )
-
-    # ── is_admitted adapter ─────────────────────────────────────────────────
-    @hybrid_property
-    def is_admitted(self):
-        if self.pipeline_stage_id is not None:
-            ps = self._lookup_pipeline_stage()
-            if ps is not None:
-                return ps.stage_category == 'won'
-        return self._is_admitted
-
-    @is_admitted.setter
-    def is_admitted(self, value):
-        self._is_admitted = value
-        self._sync_admitted_link(value)
-
-    @is_admitted.expression
-    def is_admitted(cls):
-        from app.models import PipelineStage
-        return case(
-            (cls.pipeline_stage_id.is_(None), cls._is_admitted),
-            else_=(select(PipelineStage.stage_category)
-                   .where(PipelineStage.id == cls.pipeline_stage_id)
-                   .scalar_subquery() == 'won')
         )
 
     # ── course adapter ──────────────────────────────────────────────────────
@@ -664,12 +643,23 @@ class PipelineStage(db.Model):
                  Both 'won' and 'lost' stages are typically terminal.
                  Explicit flag is safer than inferring from stage_category alone.
 
-    Backward compatibility (Phase 16.5A4 adapter):
-      Legacy is_admitted=True  → stage_category='won'
-      Legacy stage string      → display_name
+    Backward compatibility (Phase 16.5A5-J corrected):
+      Legacy stage string → internal_key (EXACT match — see ADR-019)
 
-    internal_key: Immutable slug. Examples: "lead","demo","admitted","purchased".
-    ConversationState integration: Deferred to Phase 16.5A4 (FK + ORM adapter).
+      NOTE: The earlier mapping "legacy is_admitted=True → stage_category='won'"
+      is DISPROVEN and REMOVED (ADR-018). `is_admitted` is written only by the
+      staff form and `stage` only by the AI router; they are independent and
+      legitimately disagree, so a single pipeline_stage_id FK cannot encode both.
+      `is_admitted` is therefore NEVER derived from stage_category.
+      stage_category remains valid for future relational KPIs, but it does not
+      and must not drive is_admitted.
+
+    internal_key: Immutable slug. For the first (Compatibility) pipeline these
+      MUST be the exact legacy router stage strings — "new", "goal_selection",
+      "course_recommendation", "course_viewed", "demo_time_ask", "demo_date_ask",
+      "demo_booked", "offer_menu", "payment_pending", "enrolled", "not_sure",
+      "done" — because app/bot/router.py dispatches on those literals (ADR-019).
+      Renaming or normalizing them breaks the router state machine.
     """
     __tablename__ = 'pipeline_stages'
 
@@ -989,6 +979,12 @@ class Offering(db.Model):
 
     name         = db.Column(db.String(200), nullable=False)
     # name: Human-readable display label. Never used in conditionals.
+    #   IDENTITY CONTRACT (ADR-019): ConversationState.course reads back
+    #   Offering.name through the bridge. The Phase 16.5A6 backfill MUST store the
+    #   EXACT legacy course string here — no normalization, no lowercasing, no
+    #   slug-based deduplication — or the course value silently changes for rows
+    #   whose raw strings differ only by case/spacing. Deduplicate on the exact
+    #   (tenant_id, name) string; resolve internal_key collisions with a suffix.
 
     description  = db.Column(db.Text, nullable=True)
     # description: Optional freeform description for the Tenant Admin UI.

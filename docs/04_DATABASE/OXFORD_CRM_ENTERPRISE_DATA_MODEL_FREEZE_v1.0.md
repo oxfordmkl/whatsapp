@@ -1,9 +1,19 @@
-# OXFORD CRM ENTERPRISE DATA MODEL FREEZE v1.1
+# OXFORD CRM ENTERPRISE DATA MODEL FREEZE v1.2
 
-> **Supersedes:** v1.0 (same file, updated in place per ADR-013, ADR-014)
-> **Governance Phase:** K2.1 — Enterprise Architecture Baseline v1.1
-> **Ratified:** 2026-07-16
-> **Changes from v1.0:**
+> **Supersedes:** v1.1 (same file, updated in place per ADR-018, ADR-019)
+> **Governance Phase:** 16.5A5-J — Enterprise Architecture Correction
+> **Ratified:** 2026-07-17
+> **Changes from v1.1:**
+> - §7: `is_admitted` is an **independent business attribute** — the
+>   `stage_category == 'won'` derivation is **DISPROVEN and REMOVED** (ADR-018)
+> - §2/§7: The first pipeline per legacy tenant is a **Compatibility Pipeline** whose
+>   `internal_key`s are the exact legacy router stage strings (ADR-019)
+> - §2: `Offering.name` must preserve the exact legacy `course` string — no
+>   normalization, no slug-based deduplication (ADR-019)
+>
+> ---
+>
+> ### v1.1 (K2.1, 2026-07-16) — changes from v1.0
 > - §3: `Offering.metadata` renamed to `Offering.custom_attributes` (ADR-014 — `metadata` is SQLAlchemy-reserved)
 > - §3: All JSONB columns re-typed to `SQLAlchemy JSON` (ADR-013 — TEXT on SQLite, JSON on PostgreSQL)
 > - §3: `Offering.price` marked nullable=Yes (multi-industry: not all verticals have list pricing)
@@ -55,6 +65,14 @@ The following models constitute the Enterprise Configuration Foundation. No addi
 
 ### PipelineStage
 - **Purpose:** Distinct steps within a pipeline (e.g., "Lead", "Demo", "Admitted").
+- **v1.2 — Compatibility Pipeline (ADR-019):** The illustrative keys above apply to
+  NEW tenant-authored pipelines only. The FIRST pipeline seeded for an existing
+  legacy tenant MUST use the exact legacy router stage strings as `internal_key`
+  (`new`, `goal_selection`, `course_recommendation`, `course_viewed`,
+  `demo_time_ask`, `demo_date_ask`, `demo_booked`, `offer_menu`, `payment_pending`,
+  `enrolled`, `not_sure`, `done`). `app/bot/router.py` dispatches on those literals.
+- **v1.2 — `stage_category` (ADR-018):** Informational / future relational KPIs only.
+  It does NOT drive `ConversationState.is_admitted`.
 - **Owner:** Tenant Admin
 - **Lifecycle:** Ordered steps.
 - **Tenant Ownership:** Implicit via `PipelineDefinition`.
@@ -66,6 +84,11 @@ The following models constitute the Enterprise Configuration Foundation. No addi
 
 ### Offering
 - **Purpose:** Generic product/service/course representation.
+- **v1.2 — Identity Contract (ADR-019):** `Offering.name` MUST store the EXACT legacy
+  `ConversationState.course` string. No normalization, no lowercasing, no slug-based
+  deduplication — `course` reads back `Offering.name`, so any rewrite silently changes
+  production data. Deduplicate on the exact `(tenant_id, name)` string; resolve
+  `internal_key` collisions with a numeric suffix.
 - **Owner:** Tenant Admin
 - **Relationships:** M:M with `ConversationState` (via `ConversationOffering` bridge).
 - **Unique Constraints:** `tenant_id` + `internal_key`.
@@ -149,13 +172,36 @@ The following models constitute the Enterprise Configuration Foundation. No addi
 
 ## 7. Backward Compatibility Matrix
 
+> **v1.2 (ADR-018, ADR-019).** Corrected against repository evidence during Phase
+> 16.5A5-J. The v1.1 rows for `is_admitted` and `stage` were disproven by
+> implementation discovery *before* any production data was migrated.
+
 | Legacy Field (ConversationState) | Future Model / Field | Adapter Strategy | Removal Phase |
 | :--- | :--- | :--- | :--- |
-| `course` | `Offering` (via Bridge) | `@property` getter returns first Offering name | Never (Abstracted) |
-| `offer_course` | `Offering` | Map to JSON `custom_attributes['offer_course']` | Never |
-| `batch_time` | `custom_attributes` | Map to JSON `custom_attributes['batch_time']` | Never |
-| `is_admitted` | `PipelineStage` | `@property` checks `stage.category == 'won'` | Never |
-| `stage` | `PipelineStage` | Map directly to `PipelineStage.display_name` | Never |
+| `course` | `Offering` (via Bridge) | `hybrid_property` returns first `Offering.name`; fallback legacy column. **`Offering.name` must store the EXACT legacy string** (ADR-019) | Never (Abstracted) |
+| `offer_course` | `custom_attributes` | Map to JSON `custom_attributes['offer_course']`; fallback legacy column | Never |
+| `batch_time` | `custom_attributes` | Map to JSON `custom_attributes['batch_time']`; fallback legacy column | Never |
+| `is_admitted` | **NONE — independent attribute** | **No adapter.** Plain `db.Boolean` column. **NEVER** derived from `stage_category` (ADR-018) | Never |
+| `stage` | `PipelineStage` | `hybrid_property` returns `PipelineStage.**internal_key**` (NOT `display_name`); fallback legacy column. Compatibility Pipeline `internal_key`s MUST equal legacy strings exactly (ADR-019) | Never |
+
+### Why `is_admitted` has no adapter (ADR-018)
+
+`stage` is written exclusively by the AI router (`app/bot/router.py`,
+`app/bot/objections.py`); `is_admitted` exclusively by the staff form
+(`app/routes/admin.py:1335`). No code path couples them, so they legitimately
+disagree (e.g. `stage="new"` + `is_admitted=True`). A single `pipeline_stage_id`
+FK cannot reproduce two independent values — every `stage_category` assignment
+breaks either the admissions analytics or the router state machine. The pipeline
+models *funnel position*; `is_admitted` records *conversion*. They are separate
+business concepts.
+
+### Why `stage` maps to `internal_key`, not `display_name` (ADR-019)
+
+`app/bot/router.py:230` dispatches on exact literals
+(`stage in ("new","done","enrolled","goal_selection")`). The adapter must return a
+value byte-identical to the legacy string, so it reads `internal_key`, and the
+Compatibility Pipeline pins `internal_key` to the twelve legacy stage strings.
+`display_name` is free-text and would break the router.
 
 ---
 
