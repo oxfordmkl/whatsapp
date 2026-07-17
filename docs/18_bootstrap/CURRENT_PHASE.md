@@ -10,19 +10,19 @@ Owner: Architecture Team
 This document tracks the immediate, active, and upcoming execution phases.
 
 ## Phase Tracking
-- **Current Phase**: Phase 16.5A7-B (Task Engine Completion) - *Complete, pending deployment*
-- **Completed Phases**: Phase 1-15, Phase 16.0-16.4, Phase 16.5A1-16.5A4.1, Phase K1.1-K1.3D, K2.1, Phase 16.5A5 + H1/H2/I/J, Phase 16.5A6-P, Phase 16.5A6-LA, Phase 16.5A6-J, Phase 16.5A6 (LIVE), Phase 16.5A7, Phase 16.5A7-A (audit), **Phase 16.5A7-B**
+- **Current Phase**: Phase 16.5A7-P (Production Deployment) - *EXECUTED / Complete*
+- **Completed Phases**: Phase 1-15, Phase 16.0-16.4, Phase 16.5A1-16.5A4.1, Phase K1.1-K1.3D, K2.1, Phase 16.5A5 + H1/H2/I/J, Phase 16.5A6-P, Phase 16.5A6-LA, Phase 16.5A6-J, Phase 16.5A6 (LIVE), Phase 16.5A7, Phase 16.5A7-A (audit), Phase 16.5A7-B, Phase 16.5A7-C (audit), Phase 16.5A7-D, **Phase 16.5A7-P (DEPLOYED)**
 - **Active Phase**: None
 - **Blocked Phases**: None
 
-## Phase 16.5A7 / 16.5A7-B Status — COMPLETE (code), PENDING DEPLOYMENT
-- Migration `c7a2f19d4e88` (tasks + notifications) is **not yet applied to production**. Requires `flask db upgrade` + deployment approval. Unchanged by 16.5A7-B.
+## Phase 16.5A7 Status — DEPLOYED TO PRODUCTION (2026-07-17)
+- Migration `c7a2f19d4e88` (tasks + notifications) **APPLIED to production**. Verified: 15/15 checks, zero data loss, 19 -> 21 tables.
 - 16.5A7 closed two live pre-existing defects: task-creation RBAC gap and task/reassignment tenant misassignment.
 - **16.5A7-A audit returned NO-GO** on two blocking defects; **16.5A7-B closed both**:
   - **B1** staff-to-staff escalation (hijack + credit theft) → `_authorize_mutation()`; unassigned tasks are admin-only; SUPER_ADMIN impersonation now consistent with `tenant_query()`.
   - **B2** Task Engine write-only (invisible edits, zombie deletes) → `get_all_tasks()` is Task-table-first with a legacy compatibility layer; return contract unchanged.
 - Validation: 136 checks green (42 16.5A7-B + 64 16.5A7 + 30 16.5A6-J); 32/32 templates; app boots.
-- **Re-audit (16.5A7-A) recommended before deployment.**
+- 16.5A7-C final audit returned **GO**; 16.5A7-P deployed and verified. Enterprise Layer and ADR-018 invariant (admitted_total=7) intact.
 
 ## Non-blocking items deferred by 16.5A7-B (explicitly out of scope)
 N2 notification retention · N3 60s badge polling · N4 `REMINDER_DUE` has no producer · websockets.

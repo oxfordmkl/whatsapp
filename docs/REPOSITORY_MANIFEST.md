@@ -15,15 +15,15 @@ This is the machine-readable, canonical summary of the Oxford CRM Enterprise Rep
 - **Current Version**: 2.0.0-alpha
 
 ## Development State
-- **Current Architecture Phase**: Phase 16.5A7-B (Task Engine Completion — complete, pending deployment)
-- **Current Documentation Phase**: Phase 16.5A7-B
+- **Current Architecture Phase**: Phase 16.5A7 (Task & Notification Foundation — DEPLOYED 2026-07-17)
+- **Current Documentation Phase**: Phase 16.5A7-P
 - **Documentation Status**: Validated
 - **Knowledge Repository Version**: 1.4
 - **Current Active Development Phase**: None
 - **Enterprise Layer Status**: **POPULATED** (1 compat pipeline, 12 stages, 8 offerings, 25 bridges, 29 linked leads)
-- **Deployed Migration Revision**: `b6e1d4f82c9e` (production)
-- **Repository Head Migration**: `c7a2f19d4e88` (Phase 16.5A7 — **not yet applied to production**)
-- **Current Migration Revision**: `b6e1d4f82c9e`
+- **Deployed Migration Revision**: `c7a2f19d4e88` (production)
+- **Repository Head Migration**: `c7a2f19d4e88` (deployed — repo and production in sync)
+- **Current Migration Revision**: `c7a2f19d4e88`
 - **Current Production Status**: Active (Railway Deployment)
 
 ## Registry Versions

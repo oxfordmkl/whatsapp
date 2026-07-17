@@ -52,6 +52,16 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Phase 16.5A6 unblocked.
 - **Related ADR**: `ADR-018`, `ADR-019`.
 
+## Phase 16.5A7-P (Production Deployment — EXECUTED)
+- **Executed**: 2026-07-17. Migration `b6e1d4f82c9e` → **`c7a2f19d4e88`** against Railway production. Additive-only; online; no downtime.
+- **Pre-flight**: verified backup `oxfordcrm_before_16_5a7.dump` (153,717 bytes; full-archive decode passed; all 19 tables present; git-ignored). Baseline row counts captured for all 19 tables.
+- **Result**: `tasks` (9 indexes) and `notifications` (6 indexes) created. Table count 19 → 21. **Zero data loss** — all 13 static tables byte-identical; 5 live tables (bot traffic) unchanged or grown only.
+- **Verification (15/15)**: alembic `c7a2f19d4e88` · app boots, no startup exceptions · Task + Notification engines operational (ORM columns == physical columns; all indexed queries execute) · no CASCADE on new FKs (SCHEMA_RULES §12) · `uq_task_tenant_uid` present · auth data intact (10 ADMIN / 3 STAFF / 1 SUPER_ADMIN, all password hashes retained) · Lead Management intact (29 leads linked; **admitted_total still 7** — ADR-018 invariant) · Scheduler / WhatsApp / AI all report healthy on the live instance.
+- **RBAC verified live**: every gated page returns 302/403 unauthenticated. (An initial 200 on `/crm/super/dashboard` was `urlopen` following a 302 to the login page, not an open endpoint — confirmed with redirects disabled.)
+- **Production Status**: **LIVE**. Phase 16.5A7 Task & Notification Foundation deployed.
+- **Not deployed by this phase**: nothing outstanding for 16.5A7. Open items remain D1 (reassignment attribution drift), N2/N3/N4, and the 18 mis-filed `lead_event` rows.
+- **Related ADR**: `ADR-021`.
+
 ## Phase 16.5A7-B (Task Engine Completion)
 - **Objective**: Fix ONLY the two blocking defects from the Phase 16.5A7-A deployment audit. No redesign, no schema change, no migration change.
 - **B1 — staff-to-staff privilege escalation (security)**: `_get()` scoped by tenant alone, so any staff member could re-status, overwrite the notes of, and **claim completion credit** for a colleague's task (`completed_by` feeds `staff_productivity`). Tenant scoping is not authorization — it only blocks tenant-to-tenant. **Fix**: `_authorize_mutation(task, actor, is_admin)` gates `staff_update()` / `complete_task()` — admin → any task in tenant; staff → only their own; **unassigned → admin-only** (closes the back door). Routes pass `_actor_is_admin()`; denial returns **403**. `_actor_tenant_id()` now honours `session['impersonate_tenant_id']`, matching `tenant_query()` — a SUPER_ADMIN (tenant_id NULL) could previously neither create tasks nor read notifications while impersonating.
