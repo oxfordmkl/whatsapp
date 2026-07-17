@@ -10,10 +10,26 @@ Owner: Architecture Team
 This document tracks the immediate, active, and upcoming execution phases.
 
 ## Phase Tracking
-- **Current Phase**: Phase 16.5A6 (Enterprise Data Backfill) - *EXECUTED / Complete*
-- **Completed Phases**: Phase 1-15, Phase 16.0-16.4, Phase 16.5A1-16.5A4.1, Phase K1.1-K1.3D, K2.1, Phase 16.5A5 + H1/H2/I/J, Phase 16.5A6-P, Phase 16.5A6-LA, Phase 16.5A6-J, **Phase 16.5A6 (LIVE)**
-- **Active Phase**: None — ready for Phase 16.5A7 (Audience Engine)
+- **Current Phase**: Phase 16.5A7 (Enterprise Task & Notification Foundation) - *Complete, pending deployment*
+- **Completed Phases**: Phase 1-15, Phase 16.0-16.4, Phase 16.5A1-16.5A4.1, Phase K1.1-K1.3D, K2.1, Phase 16.5A5 + H1/H2/I/J, Phase 16.5A6-P, Phase 16.5A6-LA, Phase 16.5A6-J, Phase 16.5A6 (LIVE), **Phase 16.5A7**
+- **Active Phase**: None
 - **Blocked Phases**: None
+
+## Phase 16.5A7 Status — COMPLETE (code), PENDING DEPLOYMENT
+- Migration `c7a2f19d4e88` (tasks + notifications) is **not yet applied to production**. Requires `flask db upgrade` + deployment approval.
+- Validation: 64/64 task/notification checks; 32/32 templates compile; migration round-trip verified; 30/30 adapter regression.
+- Closed two live pre-existing defects: task-creation RBAC gap (staff could create tasks) and task/reassignment tenant misassignment.
+
+## Open Item — Data Repair Required (NOT done by 16.5A7)
+`_get_default_tenant_id()` (`Tenant.query.first()` → `amboori`) mis-filed **18 production `lead_event` rows**
+under the wrong tenant: 2 `FOLLOW_UP_TASK`, 4 `FOLLOW_UP_COMPLETED`, 7 `LEAD_REASSIGNED`, 5 `MANUAL_MESSAGE`.
+The write paths are fixed going forward (ADR-021), but the existing rows remain invisible to
+`oxford-computers` and exposed to `amboori`. Repairing them needs its own approved migration.
+**Systemic scope (larger than 16.5A7):** `tenant_id=_get_default_tenant_id()` remains on **12 other write
+sites** (`admin.py` ×9, `campaign_service`, `followup_service`, `state.py`, `whatsapp_service`, `bot/router.py`).
+16.5A7 corrected only the 2 sites on the task / lead-reassignment path. Some remaining sites may be legitimate
+(the bot has no `current_user` and must resolve its tenant from the WABA phone_number_id instead), others are
+likely the same defect. A dedicated tenant-resolution audit is recommended before further phases.
 
 ## Phase 16.5A6 Status — COMPLETE (executed 2026-07-17)
 - Production discovery: **COMPLETE** — both NO-GO gates passed.

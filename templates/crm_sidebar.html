@@ -267,6 +267,112 @@ body {
     display: flex;
   }
 }
+
+/* ══ Phase 16.5A7: Notification Bell (ADR-021) ═══════════════════════ */
+.crm-notif { position: relative; padding: 0 0.75rem 0.5rem; }
+
+.crm-notif-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.crm-notif-btn:hover { color: var(--text-main); border-color: var(--green-dim); }
+.crm-notif-btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.crm-notif-btn i { font-size: 0.95rem; }
+
+.crm-notif-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  background: var(--red);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.crm-notif-panel {
+  position: absolute;
+  top: calc(100% - 0.25rem);
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 1200;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+
+.crm-notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.crm-notif-readall {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--blue);
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.crm-notif-readall:hover { text-decoration: underline; }
+
+.crm-notif-list { max-height: 320px; overflow-y: auto; }
+
+.crm-notif-item {
+  display: block;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  text-decoration: none;
+  border-left: 2px solid transparent;
+}
+.crm-notif-item:hover { background: var(--bg-card2); }
+.crm-notif-item.unread {
+  border-left-color: var(--green);
+  background: var(--green-glow);
+  color: var(--text-main);
+}
+.crm-notif-item .n-title { font-weight: 600; display: block; margin-bottom: 0.15rem; }
+.crm-notif-item .n-body  { display: block; opacity: 0.75; }
+.crm-notif-item .n-time  { display: block; margin-top: 0.2rem; font-size: 0.65rem; opacity: 0.55; }
+
+.crm-notif-empty { padding: 1rem 0.7rem; text-align: center; color: var(--text-muted); font-size: 0.74rem; }
+
+.crm-notif-all {
+  display: block;
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--blue);
+  text-decoration: none;
+  border-top: 1px solid var(--border);
+}
+.crm-notif-all:hover { background: var(--bg-card2); }
 </style>
 
 <!-- ── Sidebar ── -->
@@ -296,6 +402,33 @@ body {
       <span class="crm-brand-tag">Business OS v9.7</span>
     </div>
   </a>
+
+  <!-- ══ Phase 16.5A7: Notification Bell (ADR-021) ══════════════════════
+       Lives in the sidebar so every CRM page gets it from one include.
+       Badge + dropdown are populated from /crm/notifications/recent. -->
+  <div class="crm-notif" id="crmNotif">
+    <button class="crm-notif-btn" id="crmNotifBtn" type="button"
+            aria-label="Notifications" aria-expanded="false">
+      <i class="bi bi-bell"></i>
+      <span>Notifications</span>
+      <span class="crm-notif-badge" id="crmNotifBadge" hidden>0</span>
+    </button>
+
+    <div class="crm-notif-panel" id="crmNotifPanel" hidden>
+      <div class="crm-notif-head">
+        <span>Notifications</span>
+        <button type="button" class="crm-notif-readall" id="crmNotifReadAll">
+          Mark all read
+        </button>
+      </div>
+      <div class="crm-notif-list" id="crmNotifList">
+        <div class="crm-notif-empty">Loading…</div>
+      </div>
+      <a class="crm-notif-all" href="/crm/notifications?key={{ key }}">
+        View all notifications
+      </a>
+    </div>
+  </div>
 
   <!-- Nav Body -->
   <div class="crm-nav-body">
@@ -584,5 +717,108 @@ body {
       overlay.classList.remove('open');
     });
   }
+
+  // ══ Phase 16.5A7: Notification Bell (ADR-021) ═════════════════════
+  var nBtn    = document.getElementById('crmNotifBtn');
+  var nPanel  = document.getElementById('crmNotifPanel');
+  var nBadge  = document.getElementById('crmNotifBadge');
+  var nList   = document.getElementById('crmNotifList');
+  var nReadAll= document.getElementById('crmNotifReadAll');
+  if (!nBtn) return;
+
+  var KEY = {{ (key or '')|tojson }};
+  function qs(u) { return KEY ? u + (u.indexOf('?') > -1 ? '&' : '?') + 'key=' + encodeURIComponent(KEY) : u; }
+
+  function setBadge(n) {
+    if (n > 0) { nBadge.textContent = n > 99 ? '99+' : n; nBadge.hidden = false; }
+    else { nBadge.hidden = true; }
+  }
+
+  function ago(iso) {
+    if (!iso) return '';
+    var s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  // Click -> open the Lead, or the task list when it is a standalone task.
+  function target(n) {
+    if (n.lead_phone) return qs('/crm/lead/' + encodeURIComponent(n.lead_phone));
+    if (n.task_id) return qs('/crm/tasks/my');
+    return qs('/crm/notifications');
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : s;
+    return d.innerHTML;
+  }
+
+  function render(items) {
+    if (!items.length) {
+      nList.innerHTML = '<div class="crm-notif-empty">No notifications yet</div>';
+      return;
+    }
+    nList.innerHTML = items.map(function (n) {
+      return '<a class="crm-notif-item' + (n.is_read ? '' : ' unread') + '" ' +
+             'href="' + target(n) + '" data-id="' + n.id + '">' +
+             '<span class="n-title">' + esc(n.title) + '</span>' +
+             (n.body ? '<span class="n-body">' + esc(n.body) + '</span>' : '') +
+             '<span class="n-time">' + ago(n.created_at) + '</span></a>';
+    }).join('');
+
+    // Opening a notification marks it read, then follows the link.
+    nList.querySelectorAll('.crm-notif-item').forEach(function (el) {
+      el.addEventListener('click', function () {
+        fetch(qs('/crm/notifications/' + el.dataset.id + '/read'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        });
+      });
+    });
+  }
+
+  function loadRecent() {
+    fetch(qs('/crm/notifications/recent'), { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) { setBadge(d.count); render(d.items); } })
+      .catch(function () { nList.innerHTML = '<div class="crm-notif-empty">Unavailable</div>'; });
+  }
+
+  function loadCount() {
+    fetch(qs('/crm/notifications/unread-count'), { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) setBadge(d.count); })
+      .catch(function () { /* badge stays as-is */ });
+  }
+
+  nBtn.addEventListener('click', function () {
+    var open = !nPanel.hidden;
+    nPanel.hidden = open;
+    nBtn.setAttribute('aria-expanded', String(!open));
+    if (!open) loadRecent();
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!nPanel.hidden && !document.getElementById('crmNotif').contains(e.target)) {
+      nPanel.hidden = true;
+      nBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  nReadAll.addEventListener('click', function (e) {
+    e.stopPropagation();
+    fetch(qs('/crm/notifications/read-all'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    }).then(function () { setBadge(0); loadRecent(); });
+  });
+
+  loadCount();
+  setInterval(loadCount, 60000);   // badge refresh; cheap indexed COUNT
 })();
 </script>

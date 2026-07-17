@@ -1122,3 +1122,162 @@ class ConversationTag(db.Model):
         db.UniqueConstraint('conversation_state_id', 'tag_definition_id',
                             name='uq_conv_tag'),
     )
+
+
+class Task(db.Model):
+    """
+    Phase 16.5A7: First-class staff task, owned by Admin, executed by Staff.
+
+    Supersedes the event-sourced task model for the Task Engine, but does NOT
+    replace it: `FOLLOW_UP_TASK` / `FOLLOW_UP_COMPLETED` LeadEvents are still
+    written on create and complete (ADR-021), so the 15 existing analytics,
+    activity-feed and lead-detail readers keep working byte-for-byte unchanged.
+    Those events remain an immutable audit trail — edits and deletes here do NOT
+    rewrite history, which is the correct semantic for an activity feed.
+
+    Ownership (ADR-021): only ADMIN / SUPER_ADMIN may create, assign, edit or
+    delete. STAFF may view, update status, add notes, and complete.
+
+    assigned_staff is a normalized display-name string, not a FK — this mirrors
+    the established ConversationState.assigned_staff convention.
+    No db.relationship() — lookups stay explicit (codebase convention).
+    """
+    __tablename__ = 'tasks'
+
+    id             = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id      = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                               nullable=False, index=True)
+
+    # task_uid: mirrors the legacy LeadEvent payload `task_id` so a Task row and
+    # its legacy events can be correlated. Hex uuid4, as the legacy route emits.
+    task_uid       = db.Column(db.String(32), nullable=False, index=True)
+
+    # ── Subject ────────────────────────────────────────────────────────────
+    # Nullable: a task may be standalone (not attached to a lead).
+    lead_phone     = db.Column(db.String(20), nullable=True, index=True)
+
+    title          = db.Column(db.String(200), nullable=False)
+    notes          = db.Column(db.Text, nullable=True)       # admin brief
+    staff_notes    = db.Column(db.Text, nullable=True)       # staff progress notes
+
+    # ── Classification ─────────────────────────────────────────────────────
+    priority       = db.Column(db.String(10), nullable=False, default='NORMAL')
+    # priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+
+    status         = db.Column(db.String(12), nullable=False, default='OPEN')
+    # status: 'OPEN' | 'IN_PROGRESS' | 'COMPLETED'
+
+    # ── Scheduling ─────────────────────────────────────────────────────────
+    # due_date stored as a string (YYYY-MM-DD) to round-trip byte-identically
+    # with the legacy event payload, which the activity feed still reads.
+    due_date       = db.Column(db.String(10), nullable=True)
+    remind_at      = db.Column(db.DateTime, nullable=True, index=True)
+    reminder_sent  = db.Column(db.Boolean, nullable=False, default=False)
+
+    # ── Assignment / audit ─────────────────────────────────────────────────
+    assigned_staff = db.Column(db.String(100), nullable=True, index=True)
+    created_by     = db.Column(db.String(100), nullable=True)
+    completed_by   = db.Column(db.String(100), nullable=True)
+    completed_at   = db.Column(db.DateTime, nullable=True)
+
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow,
+                               nullable=False)
+    updated_at     = db.Column(db.DateTime, default=datetime.utcnow,
+                               onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'task_uid', name='uq_task_tenant_uid'),
+        db.Index('idx_task_tenant_status', 'tenant_id', 'status'),
+        db.Index('idx_task_tenant_staff', 'tenant_id', 'assigned_staff'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "task_uid": self.task_uid,
+            "lead_phone": self.lead_phone,
+            "title": self.title,
+            "notes": self.notes,
+            "staff_notes": self.staff_notes,
+            "priority": self.priority,
+            "status": self.status,
+            "due_date": self.due_date,
+            "assigned_staff": self.assigned_staff,
+            "created_by": self.created_by,
+            "completed_by": self.completed_by,
+            "completed_at": self.completed_at,
+            "created_at": self.created_at,
+        }
+
+
+class Notification(db.Model):
+    """
+    Phase 16.5A7: Per-recipient notification with read state (ADR-021).
+
+    recipient is the normalized staff display name (normalize_staff_name), which
+    is how staff identity is already expressed across the CRM
+    (ConversationState.assigned_staff, task assignment, staff registry). Using a
+    User FK here would not match how leads and tasks are assigned today.
+
+    Delivery is in-app only. No email/WhatsApp fan-out in this phase.
+    No db.relationship() — lookups stay explicit (codebase convention).
+    """
+    __tablename__ = 'notifications'
+
+    # Canonical types. Anything not in this set is rejected at the service layer.
+    TYPE_NEW_LEAD_ASSIGNED = 'NEW_LEAD_ASSIGNED'
+    TYPE_TASK_ASSIGNED     = 'TASK_ASSIGNED'
+    TYPE_TASK_UPDATED      = 'TASK_UPDATED'
+    TYPE_TASK_COMPLETED    = 'TASK_COMPLETED'
+    TYPE_LEAD_REASSIGNED   = 'LEAD_REASSIGNED'
+    TYPE_REMINDER_DUE      = 'REMINDER_DUE'
+    TYPE_SYSTEM_ALERT      = 'SYSTEM_ALERT'
+
+    VALID_TYPES = (
+        TYPE_NEW_LEAD_ASSIGNED, TYPE_TASK_ASSIGNED, TYPE_TASK_UPDATED,
+        TYPE_TASK_COMPLETED, TYPE_LEAD_REASSIGNED, TYPE_REMINDER_DUE,
+        TYPE_SYSTEM_ALERT,
+    )
+
+    id          = db.Column(db.Integer, primary_key=True)
+
+    tenant_id   = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                            nullable=False, index=True)
+
+    recipient   = db.Column(db.String(100), nullable=False, index=True)
+    notif_type  = db.Column(db.String(30), nullable=False)
+
+    title       = db.Column(db.String(200), nullable=False)
+    body        = db.Column(db.String(500), nullable=True)
+
+    # Click targets. Both nullable: a SYSTEM_ALERT has neither.
+    lead_phone  = db.Column(db.String(20), nullable=True)
+    task_id     = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=True)
+    # No ondelete=CASCADE — forbidden by SCHEMA_RULES §12. Task deletion nulls
+    # this at the application layer so the notification survives as a record.
+
+    is_read     = db.Column(db.Boolean, nullable=False, default=False)
+    read_at     = db.Column(db.DateTime, nullable=True)
+
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+    __table_args__ = (
+        # The unread-badge query: WHERE tenant_id=? AND recipient=? AND is_read=false
+        db.Index('idx_notif_recipient_unread', 'tenant_id', 'recipient', 'is_read'),
+        db.Index('idx_notif_recipient_created', 'tenant_id', 'recipient', 'created_at'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "type": self.notif_type,
+            "title": self.title,
+            "body": self.body,
+            "lead_phone": self.lead_phone,
+            "task_id": self.task_id,
+            "is_read": self.is_read,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

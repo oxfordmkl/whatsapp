@@ -1,0 +1,171 @@
+<!--
+  crm_notifications.html — Notification Centre
+  Phase 16.5A7 (ADR-021)
+
+  Context vars: key, actor, notifications (list[Notification]), unread (int)
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notifications — Oxford CRM</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+</head>
+<body>
+
+{% include 'crm_sidebar.html' %}
+
+<main class="crm-main">
+  <div class="nc-wrap">
+
+    <header class="nc-head">
+      <div>
+        <h1 class="nc-title">Notifications</h1>
+        <p class="nc-sub">
+          {% if unread %}
+            <strong>{{ unread }}</strong> unread
+          {% else %}
+            You're all caught up
+          {% endif %}
+        </p>
+      </div>
+      {% if unread %}
+      <form method="POST" action="/crm/notifications/read-all?key={{ key }}">
+        <button class="nc-btn" type="submit">
+          <i class="bi bi-check2-all"></i> Mark all read
+        </button>
+      </form>
+      {% endif %}
+    </header>
+
+    {% if not notifications %}
+      <div class="nc-empty">
+        <i class="bi bi-bell-slash"></i>
+        <p>No notifications yet.</p>
+        <span>Lead assignments, task updates and reminders will appear here.</span>
+      </div>
+    {% else %}
+      <ul class="nc-list">
+        {% for n in notifications %}
+        {% set icon = {
+             'NEW_LEAD_ASSIGNED': 'bi-person-plus',
+             'TASK_ASSIGNED':     'bi-check2-square',
+             'TASK_UPDATED':      'bi-pencil-square',
+             'TASK_COMPLETED':    'bi-check-circle',
+             'LEAD_REASSIGNED':   'bi-arrow-left-right',
+             'REMINDER_DUE':      'bi-alarm',
+             'SYSTEM_ALERT':      'bi-exclamation-triangle'
+           }.get(n.notif_type, 'bi-bell') %}
+        {% set tone = {
+             'NEW_LEAD_ASSIGNED': 'green',
+             'TASK_ASSIGNED':     'blue',
+             'TASK_UPDATED':      'yellow',
+             'TASK_COMPLETED':    'green',
+             'LEAD_REASSIGNED':   'purple',
+             'REMINDER_DUE':      'orange',
+             'SYSTEM_ALERT':      'red'
+           }.get(n.notif_type, 'blue') %}
+        <li class="nc-item {% if not n.is_read %}unread{% endif %}">
+          <span class="nc-icon tone-{{ tone }}"><i class="bi {{ icon }}"></i></span>
+
+          <a class="nc-body"
+             href="{% if n.lead_phone %}/crm/lead/{{ n.lead_phone }}?key={{ key }}{% elif n.task_id %}/crm/tasks/my?key={{ key }}{% else %}#{% endif %}">
+            <span class="nc-item-title">{{ n.title }}</span>
+            {% if n.body %}<span class="nc-item-sub">{{ n.body }}</span>{% endif %}
+            <span class="nc-meta">
+              <span class="nc-type">{{ n.notif_type.replace('_', ' ').title() }}</span>
+              <span class="nc-dot">·</span>
+              <span>{{ n.created_at.strftime('%d %b %Y, %H:%M') if n.created_at else '' }}</span>
+            </span>
+          </a>
+
+          {% if not n.is_read %}
+          <form method="POST" action="/crm/notifications/{{ n.id }}/read?key={{ key }}">
+            <button class="nc-read" type="submit" title="Mark read">
+              <i class="bi bi-check2"></i>
+            </button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+  </div>
+</main>
+
+<style>
+.nc-wrap { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+
+.nc-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1.25rem;
+}
+.nc-title { margin: 0; font-size: 1.35rem; color: var(--text-main); font-weight: 700; }
+.nc-sub   { margin: 0.2rem 0 0; font-size: 0.82rem; color: var(--text-muted); }
+.nc-sub strong { color: var(--green); }
+
+.nc-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.8rem; background: var(--bg-card2);
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-main); font-size: 0.78rem; font-family: inherit; cursor: pointer;
+  white-space: nowrap;
+}
+.nc-btn:hover { border-color: var(--green-dim); }
+
+.nc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.nc-item {
+  display: flex; align-items: flex-start; gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+}
+.nc-item.unread { border-left-color: var(--green); background: var(--bg-card2); }
+
+.nc-icon {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
+}
+.tone-green  { background: rgba(37,211,102,0.14);  color: var(--green); }
+.tone-blue   { background: rgba(88,166,255,0.14);  color: var(--blue); }
+.tone-yellow { background: rgba(210,153,34,0.14);  color: var(--yellow); }
+.tone-purple { background: rgba(188,140,255,0.14); color: var(--purple); }
+.tone-orange { background: rgba(227,129,58,0.14);  color: var(--orange); }
+.tone-red    { background: rgba(248,81,73,0.14);   color: var(--red); }
+
+.nc-body { flex: 1 1 auto; min-width: 0; text-decoration: none; display: block; }
+.nc-item-title { display: block; color: var(--text-main); font-size: 0.85rem; font-weight: 600; }
+.nc-item-sub   { display: block; color: var(--text-muted); font-size: 0.78rem; margin-top: 0.15rem; }
+.nc-meta { display: block; margin-top: 0.35rem; font-size: 0.7rem; color: var(--text-muted); opacity: 0.8; }
+.nc-type { text-transform: uppercase; letter-spacing: 0.04em; }
+.nc-dot  { margin: 0 0.35rem; }
+
+.nc-read {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 5px;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; font-size: 0.75rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.nc-read:hover { color: var(--green); border-color: var(--green-dim); }
+
+.nc-empty {
+  padding: 3rem 1rem; text-align: center;
+  background: var(--bg-card); border: 1px dashed var(--border); border-radius: 10px;
+}
+.nc-empty i { font-size: 1.8rem; color: var(--text-muted); opacity: 0.5; }
+.nc-empty p { margin: 0.6rem 0 0.2rem; color: var(--text-main); font-size: 0.9rem; }
+.nc-empty span { color: var(--text-muted); font-size: 0.78rem; }
+
+@media (max-width: 600px) {
+  .nc-head { flex-direction: column; }
+}
+</style>
+
+</body>
+</html>

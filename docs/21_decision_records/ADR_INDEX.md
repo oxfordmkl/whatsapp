@@ -28,6 +28,7 @@ This registry catalogs every formal architectural decision made in the Oxford CR
 | `ADR-018-business-conversion-independence.md` | Business Conversion Independence | ACTIVE | 16.5A5-J | Freeze v1.1 §7 (`is_admitted`) | `ADR-012` |
 | `ADR-019-compatibility-pipeline-standard.md` | Compatibility Pipeline Standard | ACTIVE | 16.5A5-J | None | `ADR-018` |
 | `ADR-020-course-offering-synchronization.md` | Course–Offering Synchronization | ACTIVE | 16.5A6-J | 16.5A5-I `_sync_offering_link` no-op contract | `ADR-019` |
+| `ADR-021-task-notification-foundation.md` | Task & Notification Foundation | ACTIVE | 16.5A7 | None | `ADR-020` |
 
 *Note: ADR-015 (Tiered Cascade), ADR-016 (Pricing Standard) and ADR-017 (Architecture
 Governance) were proposed in Phase K2.1 and remain PENDING ratification. The numbering

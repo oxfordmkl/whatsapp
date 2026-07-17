@@ -52,6 +52,24 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Phase 16.5A6 unblocked.
 - **Related ADR**: `ADR-018`, `ADR-019`.
 
+## Phase 16.5A7 (Enterprise Task & Notification Foundation)
+- **Objective**: Establish the Admin↔Staff operational workflow: Admin-owned tasks and in-app notifications.
+- **Discovery**: (a) tasks were **event-sourced**, not a table — `LeadEvent` rows (`FOLLOW_UP_TASK` / `FOLLOW_UP_COMPLETED`) replayed by `get_all_tasks()`, read by **15 sites**; append-only, so priority/edit/delete were impossible. (b) **No notification system existed** — greenfield. (c) `course` write funnel confirmed single-path. (d) **Two live defects found**, both pre-existing.
+- **Live defect 1 — RBAC**: `crm_tasks_create` called only `check_auth()`, so **any STAFF member could create tasks**. The `admin_required` decorator already existed and was simply not applied.
+- **Live defect 2 — tenant misassignment**: writes used `_get_default_tenant_id()` = `Tenant.query.first()` ("safe while only one tenant exists" — production has **10**). It resolves to `amboori` while all leads live in `oxford-computers`, so **18 production `lead_event` rows are mis-filed**: 2 `FOLLOW_UP_TASK` (invisible to the CRM that created them), 4 `FOLLOW_UP_COMPLETED` (those tasks appear open forever), 7 `LEAD_REASSIGNED`, 5 `MANUAL_MESSAGE`. Reads used `current_user.tenant_id`; writes guessed. Also a cross-tenant PII exposure (ACTIVE_CONSTRAINTS §2).
+- **Implementation** (ADR-021):
+  - New `tasks` + `notifications` tables (migration `c7a2f19d4e88`). Enterprise Data Layer untouched.
+  - `task_service` / `notification_service` — all logic out of routes (CODE_CONVENTIONS §3).
+  - **Dual-write** (ACTIVE_CONSTRAINTS §4): legacy events still emitted on create/complete, so all 15 readers work unchanged. Edit/delete do NOT rewrite history — the log is an audit trail. Deliberately avoids the ADR-020 staleness trap: legacy events are not a read path for the Task Engine.
+  - `@admin_required` on create/edit/delete; `staff_update()` structurally cannot reassign or retitle.
+  - `notify()` **raises** without an explicit tenant_id rather than guessing; both touched legacy write sites corrected to the actor's tenant.
+  - Notification bell in `crm_sidebar.html` (reaches all 27 pages from one include) + `crm_notifications.html` centre.
+  - 7 notification types; click → open Lead / open Task; mark read / mark all read.
+- **Validation**: 64/64 checks (`tests/test_task_notification_16_5a7.py`) driving the full mandated chain. 32/32 templates compile; sidebar + centre render. Migration upgrade/downgrade round-trip clean. Regression: 30/30 adapter suite (16.5A6-J) still passes; app boots; 84 routes.
+- **Production Status**: Code only — **not deployed**. Migration `c7a2f19d4e88` is pending deployment approval; no production data written this phase.
+- **Not closed**: the 18 already-mis-filed `lead_event` rows need their own approved data repair.
+- **Related ADR**: `ADR-021`.
+
 ## Phase 16.5A6 (Enterprise Data Backfill — EXECUTED)
 - **Objective**: Populate the Enterprise Configuration layer from the legacy `ConversationState` string columns.
 - **Executed**: 2026-07-17, LIVE against Railway production. Online — no downtime, no maintenance window, no DDL.

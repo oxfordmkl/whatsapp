@@ -1343,15 +1343,44 @@ def crm_lead_update(phone):
 
         # Phase 9.1: LEAD_REASSIGNED accountability audit
         if old_staff != new_staff:
-            log_lead_event(tenant_id=_get_default_tenant_id(), 
+            _actor_display = _actor_name()
+            # Phase 16.5A7 (ADR-021): tenant_id is the ACTOR's tenant. This
+            # previously used _get_default_tenant_id() (Tenant.query.first()),
+            # which mis-filed the audit row under an unrelated tenant.
+            log_lead_event(tenant_id=_tid,
                 phone=phone,
                 event_type="LEAD_REASSIGNED",
                 event_data=json.dumps({
                     "from": old_staff or "",
                     "to": new_staff or "",
-                    "by": "Admin"
+                    "by": _actor_display
                 })
             )
+
+            # ── Phase 16.5A7: lead assignment notifications (ADR-021) ──────
+            # First assignment reads as "new lead"; a handover reads as
+            # "reassigned" and also informs the staff member losing the lead.
+            if _tid:
+                from app.services import notification_service
+                from app.models import Notification as _Notif
+                _lead_label = (lead.name or "").strip() or phone
+                if new_staff:
+                    _is_new = not (old_staff or "").strip()
+                    notification_service.notify(
+                        tenant_id=_tid, recipient=new_staff,
+                        notif_type=(_Notif.TYPE_NEW_LEAD_ASSIGNED if _is_new
+                                    else _Notif.TYPE_LEAD_REASSIGNED),
+                        title=("New lead assigned: " if _is_new
+                               else "Lead reassigned to you: ") + _lead_label,
+                        body=f"Assigned by {_actor_display}",
+                        lead_phone=phone)
+                if (old_staff or "").strip():
+                    notification_service.notify(
+                        tenant_id=_tid, recipient=old_staff,
+                        notif_type=_Notif.TYPE_LEAD_REASSIGNED,
+                        title=f"Lead reassigned away: {_lead_label}",
+                        body=f"Now assigned to {new_staff or 'Unassigned'}",
+                        lead_phone=phone)
 
         # COURSE_ENQUIRY — fire once per unique course name.
         if new_course:
@@ -3990,43 +4019,147 @@ def get_all_tasks(tenant_id=None):
             
     return open_tasks, completed_tasks
 
+def _actor_tenant_id():
+    """Resolve the acting user's tenant_id.
+
+    Phase 16.5A7 (ADR-021): NEVER falls back to _get_default_tenant_id()
+    (Tenant.query.first()), which resolves to an arbitrary unrelated tenant and
+    had already mis-filed 18 production lead_event rows. Returns None when the
+    tenant cannot be resolved; callers must refuse to write.
+    """
+    if current_user.is_authenticated:
+        return getattr(current_user, 'tenant_id', None)
+    return None
+
+
+def _actor_name():
+    """Display name of the acting user, normalized like staff names."""
+    actor = get_current_actor()
+    return normalize_staff_name(actor.get("username") or "Admin")
+
+
 @admin_bp.route("/crm/tasks/create", methods=["POST"])
+@admin_required
 def crm_tasks_create():
-    if not check_auth():
-        return _deny()
-        
-    phone = request.form.get("phone")
+    """Admin creates and assigns a task.
+
+    Phase 16.5A7: @admin_required added — STAFF must not create tasks (ADR-021).
+    Previously this route only called check_auth(), so any authenticated staff
+    member could create tasks.
+    """
+    phone = request.form.get("phone") or None
     task_title = request.form.get("task", "").strip()
     notes = request.form.get("notes", "").strip()
     due_date = request.form.get("due_date", "").strip()
     staff = request.form.get("staff", "").strip()
-    if not phone or not task_title or not due_date:
+    priority = request.form.get("priority", "NORMAL").strip()
+
+    if not task_title or not due_date:
         return redirect(url_for("admin.crm_lead_detail", phone=phone))
-        
-    from app.services.log_service import log_lead_event, _get_default_tenant_id
-    import uuid
-    import json
-    
-    task_id = uuid.uuid4().hex
-    
-    payload = {
-        "task_id": task_id,
-        "lead_phone": phone,
-        "task": task_title,
-        "due_date": due_date,
-        "staff": staff,
-        "created_by": "Admin UX"
-    }
-    if notes:
-        payload["notes"] = notes
-        
-    log_lead_event(tenant_id=_get_default_tenant_id(), 
-        phone=phone,
-        event_type="FOLLOW_UP_TASK",
-        event_data=json.dumps(payload)
-    )
-    
-    return redirect(url_for("admin.crm_lead_detail", phone=phone))
+
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        logging.error("task create refused: unresolved tenant_id")
+        return _deny()
+
+    from app.services import task_service
+    try:
+        task_service.create_task(
+            tenant_id=tenant_id,
+            title=task_title,
+            created_by=_actor_name(),
+            lead_phone=phone,
+            notes=notes or None,
+            due_date=due_date,
+            priority=priority,
+            assigned_staff=normalize_staff_name(staff) if staff else None,
+        )
+    except task_service.TaskError as e:
+        logging.warning("task create rejected tenant=%s: %s", tenant_id, e)
+
+    if phone:
+        return redirect(url_for("admin.crm_lead_detail", phone=phone))
+    return redirect(url_for("admin.crm_admin_tasks"))
+
+
+@admin_bp.route("/crm/tasks/<int:task_id>/edit", methods=["POST"])
+@admin_required
+def crm_tasks_edit(task_id):
+    """Admin edits a task: title, notes, due date, priority, assignee."""
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return _deny()
+
+    from app.services import task_service
+
+    def field(name):
+        # Only fields actually present in the form are changed.
+        return request.form.get(name) if name in request.form else None
+
+    staff = field("staff")
+    try:
+        task = task_service.update_task(
+            tenant_id=tenant_id, task_id=task_id, actor=_actor_name(),
+            title=field("task"), notes=field("notes"),
+            due_date=field("due_date"), priority=field("priority"),
+            assigned_staff=(normalize_staff_name(staff)
+                            if staff not in (None, "") else staff),
+        )
+    except task_service.TaskError as e:
+        logging.warning("task edit rejected tenant=%s task=%s: %s",
+                        tenant_id, task_id, e)
+        return jsonify({"error": str(e)}), 400
+
+    if request.form.get("phone"):
+        return redirect(url_for("admin.crm_lead_detail",
+                                phone=request.form.get("phone")))
+    return redirect(url_for("admin.crm_admin_tasks"))
+
+
+@admin_bp.route("/crm/tasks/<int:task_id>/delete", methods=["POST"])
+@admin_required
+def crm_tasks_delete(task_id):
+    """Admin deletes a task. Notifications are detached, not cascaded."""
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return _deny()
+
+    from app.services import task_service
+    try:
+        task_service.delete_task(tenant_id, task_id, _actor_name())
+    except task_service.TaskError as e:
+        return jsonify({"error": str(e)}), 404
+
+    if request.is_json:
+        return jsonify({"success": True})
+    return redirect(url_for("admin.crm_admin_tasks"))
+
+
+@admin_bp.route("/crm/tasks/<int:task_id>/update", methods=["POST"])
+def crm_tasks_staff_update(task_id):
+    """Staff updates progress: status and/or notes. No reassign, no retitle."""
+    if not check_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant unresolved"}), 400
+
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    payload = payload or {}
+
+    from app.services import task_service
+    try:
+        task = task_service.staff_update(
+            tenant_id=tenant_id, task_id=task_id, actor=_actor_name(),
+            status=payload.get("status"), staff_notes=payload.get("staff_notes"),
+        )
+    except task_service.TaskError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if request.is_json:
+        return jsonify({"success": True, "task": task.to_dict()})
+    return redirect(request.referrer or url_for("admin.crm_my_tasks"))
 @admin_bp.route("/crm/tasks/complete", methods=["POST"])
 def crm_tasks_complete():
     # Supports both Form (from lead detail) and JSON (from dashboards)
@@ -4050,13 +4183,37 @@ def crm_tasks_complete():
             return jsonify({"error": "Missing parameters"}), 400
         else:
             return redirect(url_for("admin.crm_lead_detail", phone=phone))
-            
-    from app.models import LeadEvent
-    from app.services.log_service import log_lead_event, _get_default_tenant_id
+
+    from app.models import LeadEvent, Task
+    from app.services.log_service import log_lead_event
     import json
-    
+
+    # Phase 16.5A7: the acting user, not a hardcoded "Admin" (ADR-021).
+    completed_by = _actor_name()
+    _tid = _actor_tenant_id()
+    if not _tid:
+        if is_json:
+            return jsonify({"error": "Tenant unresolved"}), 400
+        return _deny()
+
+    # Phase 16.5A7 bridge: task_id here is the legacy uuid-hex payload key,
+    # which Task mirrors as task_uid. A 16.5A7 task routes through the service
+    # (legacy event + TASK_COMPLETED notification). A pre-16.5A7 task has no
+    # Task row and still completes via the legacy event path below.
+    from app.services import task_service
+    task = Task.query.filter_by(tenant_id=_tid, task_uid=task_id).first()
+    if task is not None:
+        try:
+            task_service.complete_task(_tid, task.id, completed_by)
+        except task_service.TaskError as e:
+            if is_json:
+                return jsonify({"error": str(e)}), 400
+        if is_json:
+            return jsonify({"success": True})
+        return redirect(url_for("admin.crm_lead_detail", phone=phone))
+
+    # ── Legacy path: event-sourced task with no Task row ──────────────────
     # Duplicate completion protection
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
     existing = tenant_query(LeadEvent, _tid).filter_by(phone=phone, event_type="FOLLOW_UP_COMPLETED").all()
     already_completed = False
     for ev in existing:
@@ -4067,9 +4224,12 @@ def crm_tasks_complete():
                 break
         except:
             pass
-            
+
     if not already_completed:
-        log_lead_event(tenant_id=_get_default_tenant_id(), 
+        # tenant_id is the ACTOR's tenant. Previously _get_default_tenant_id()
+        # (Tenant.query.first()) mis-filed these rows under an unrelated
+        # tenant, making completions invisible (ADR-021).
+        log_lead_event(tenant_id=_tid,
             phone=phone,
             event_type="FOLLOW_UP_COMPLETED",
             event_data=json.dumps({
@@ -4077,11 +4237,95 @@ def crm_tasks_complete():
                 "completed_by": completed_by
             })
         )
-        
+
     if is_json:
         return jsonify({"success": True})
     else:
         return redirect(url_for("admin.crm_lead_detail", phone=phone))
+
+
+# ══ Phase 16.5A7 — Notification Centre (ADR-021) ═══════════════════════════
+
+@admin_bp.route("/crm/notifications/unread-count", methods=["GET"])
+def crm_notifications_unread_count():
+    """Bell badge count. Polled by the sidebar on every CRM page."""
+    if not check_auth():
+        return jsonify({"count": 0}), 401
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return jsonify({"count": 0})
+    from app.services import notification_service
+    return jsonify({"count": notification_service.unread_count(
+        tenant_id, _actor_name())})
+
+
+@admin_bp.route("/crm/notifications/recent", methods=["GET"])
+def crm_notifications_recent():
+    """Bell dropdown payload: newest notifications + unread count."""
+    if not check_auth():
+        return jsonify({"items": [], "count": 0}), 401
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return jsonify({"items": [], "count": 0})
+    from app.services import notification_service
+    me = _actor_name()
+    rows = notification_service.recent(tenant_id, me, limit=10)
+    return jsonify({
+        "items": [r.to_dict() for r in rows],
+        "count": notification_service.unread_count(tenant_id, me),
+    })
+
+
+@admin_bp.route("/crm/notifications", methods=["GET"])
+def crm_notifications():
+    """Full notification centre page."""
+    if not check_auth():
+        return _deny()
+    tenant_id = _actor_tenant_id()
+    from app.services import notification_service
+    me = _actor_name()
+    rows = (notification_service.recent(tenant_id, me, limit=100)
+            if tenant_id else [])
+    return render_template(
+        "crm_notifications.html",
+        key=request.args.get("key", ""),
+        actor=get_current_actor(),
+        notifications=rows,
+        unread=(notification_service.unread_count(tenant_id, me)
+                if tenant_id else 0),
+    )
+
+
+@admin_bp.route("/crm/notifications/<int:notification_id>/read",
+                methods=["POST"])
+def crm_notifications_read(notification_id):
+    """Mark one notification read. Scoped to tenant AND recipient."""
+    if not check_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant unresolved"}), 400
+    from app.services import notification_service
+    ok = notification_service.mark_read(tenant_id, _actor_name(),
+                                        notification_id)
+    if request.is_json:
+        return jsonify({"success": ok})
+    return redirect(request.referrer or url_for("admin.crm_notifications"))
+
+
+@admin_bp.route("/crm/notifications/read-all", methods=["POST"])
+def crm_notifications_read_all():
+    """Mark every unread notification for the current user read."""
+    if not check_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    tenant_id = _actor_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant unresolved"}), 400
+    from app.services import notification_service
+    n = notification_service.mark_all_read(tenant_id, _actor_name())
+    if request.is_json:
+        return jsonify({"success": True, "marked": n})
+    return redirect(request.referrer or url_for("admin.crm_notifications"))
 
 @admin_bp.route("/crm/tasks/my", methods=["GET"])
 def crm_my_tasks():
