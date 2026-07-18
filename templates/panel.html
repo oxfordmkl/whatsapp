@@ -947,7 +947,19 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
         <input type="text" id="tplLang" value="en" placeholder="en">
       </div>
     </div>
-    
+
+    <!-- Image Header Template Support: optional. Leave empty for text/text-header
+         templates (e.g. oxford_special_offer) — behaviour is unchanged. Choose an
+         image ONLY for templates whose header is an image (e.g. oxford_admission_2026). -->
+    <div class="config-field" style="margin-top: 14px;">
+      <label>Header Image <span style="color:var(--text-dim); font-weight:400;">— image-header templates only (optional)</span></label>
+      <input type="file" id="tplHeaderImage" accept="image/jpeg,image/png"
+             onchange="document.getElementById('tplHeaderImageHint').textContent = (this.files && this.files[0]) ? ('Image header: ' + this.files[0].name) : 'No image selected — text templates send as before.'">
+      <div id="tplHeaderImageHint" style="font-size:12px; color:var(--text-dim); margin-top:6px;">
+        No image selected — text templates send as before.
+      </div>
+    </div>
+
     <div class="send-area" style="margin-top: 16px;">
       <button class="btn-send-main" id="sendTplBtn" onclick="startTemplateBroadcast()">
         <div class="spinner" id="sendTplSpinner"></div>
@@ -1522,8 +1534,37 @@ async function startTemplateBroadcast() {
   const batchSize = parseInt(document.getElementById('batchRange').value);
   const batchPause= parseInt(document.getElementById('pauseRange').value) * 1000;
 
-  const confirmMsg = `🏷️ Template Broadcast Confirm:\n\n• Template: ${templateName}\n• ${pending.length} contacts\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Estimated time: ~${Math.ceil(pending.length * delay / 60000)} minutes\n\nStart?`;
+  // Image Header Template Support: if an image is chosen, upload it ONCE and
+  // reuse the media_id for every recipient. No image chosen → headerImageId
+  // stays null → payload identical to the text-template flow.
+  let headerImageId = null;
+  const imgInput = document.getElementById('tplHeaderImage');
+  const imgFile  = imgInput && imgInput.files && imgInput.files[0];
+
+  const confirmMsg = `🏷️ Template Broadcast Confirm:\n\n• Template: ${templateName}\n• ${pending.length} contacts${imgFile ? `\n• Image header: ${imgFile.name}` : ''}\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Estimated time: ~${Math.ceil(pending.length * delay / 60000)} minutes\n\nStart?`;
   if (!confirm(confirmMsg)) return;
+
+  if (imgFile) {
+    try {
+      log('info', `⬆️ Uploading header image: ${imgFile.name}...`);
+      const fd = new FormData();
+      fd.append('file', imgFile);
+      const up = await fetch(`${serverUrl}/upload-media`, {
+        method: 'POST', headers: { 'X-API-Key': apiKey }, body: fd
+      });
+      const upData = await up.json();
+      if (!up.ok || !upData.media_id) {
+        showAlert('Image upload failed: ' + (upData.error || up.status), 'err');
+        log('err', 'Image upload failed: ' + (upData.error || up.status));
+        return;
+      }
+      headerImageId = upData.media_id;
+      log('ok', `✓ Header image uploaded (media_id ${headerImageId})`);
+    } catch (e) {
+      showAlert('Image upload error: ' + e.message, 'err');
+      return;
+    }
+  }
 
   isSending  = true;
   stopFlag   = false;
@@ -1563,7 +1604,9 @@ async function startTemplateBroadcast() {
           template_name: templateName,
           language: lang,
           variables: ["{name}"],
-          delay_seconds: 0
+          delay_seconds: 0,
+          // Image Header Template Support: included only when an image was chosen.
+          ...(headerImageId ? { header_image_id: headerImageId } : {})
         })
       });
 

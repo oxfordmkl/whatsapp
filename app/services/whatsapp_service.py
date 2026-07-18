@@ -96,6 +96,33 @@ def send_reply(to: str, body: str, preset: str | None, tenant_id: str = None) ->
         return send_text(to, body, tenant_id)
     return send_interactive(to, body, preset, tenant_id)
 
+def upload_media(file_bytes: bytes, filename: str, content_type: str,
+                 tenant_id: str = None) -> str:
+    """Upload media to the WhatsApp Cloud API and return its media_id.
+
+    Phase: Image Header Template Support. The returned id is used in a template
+    IMAGE-header component: {"type":"image","image":{"id":<media_id>}}.
+
+    Uses the same per-tenant WABA credentials as the send path. Multipart POST,
+    so the Authorization header is set explicitly (NOT _wa_headers, which forces
+    Content-Type: application/json).
+    """
+    phone_id, token = _get_waba_credentials(tenant_id)
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/media"
+    r = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": (filename, file_bytes, content_type)},
+        data={"messaging_product": "whatsapp", "type": content_type},
+    )
+    if r.status_code != 200:
+        raise ValueError(f"Media upload failed: HTTP {r.status_code} — {r.text}")
+    media_id = (r.json() or {}).get("id")
+    if not media_id:
+        raise ValueError(f"Media upload returned no id: {r.text}")
+    return media_id
+
+
 def send_template(to: str, template: str, lang: str = "en", components: list | None = None, tenant_id: str = None) -> requests.Response:
     phone_id, token = _get_waba_credentials(tenant_id)
     url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
