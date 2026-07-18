@@ -52,6 +52,23 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Phase 16.5A6 unblocked.
 - **Related ADR**: `ADR-018`, `ADR-019`.
 
+## Phase 17.1-B (TenantContext — Category B: CRM write paths)
+- **Objective**: Eliminate implicit tenant guessing (`_get_default_tenant_id()` = `Tenant.query.first()`) in the 11 CRM admin write sites where the acting tenant was already available. Category B only; no refactor, no new abstraction.
+- **Fix**: reuse in-scope `_tid` where the function defines it (crm_lead_update, crm_lead_send, admission); use the existing `_actor_tenant_id()` helper elsewhere (marketing/campaign start, unassigned assign, auto-assign confirm, reassignment confirm). Pure token swaps — 11 lines, `admin.py` only.
+- **Behaviour**: zero change for production (SESSION_ONLY; actor tenant == the single live tenant); correctness fixed for multi-tenant.
+- **Validation**: behavioural proof (BBB admin, AAA as `first()`) files under BBB not AAA; 155 regression checks green; app boots.
+- **Deployed**: commit `298c9e0`, Railway `83d40da8` ● Online, clean boot, all routes healthy.
+- **Out of scope (untouched)**: Category A (webhook/bot/state/followup/whatsapp), C (service seams), D (log_service fallback + `_get_default_tenant_id` definition). No TenantContext introduced.
+
+## Phase 17.1-C (Mis-filed lead_event data repair — EXECUTED)
+- **Objective**: Repair the `lead_event` rows the pre-17.1-B CRM bug filed under the wrong tenant (`amboori`) instead of `oxford-computers`.
+- **Census (read-only)**: **25** mis-filed rows (grown from the 18 seen at discovery — the bug was live and accumulating until 17.1-B stopped it). All `amboori → oxford-computers`, unambiguous. **Zero** multi-tenant-phone collisions, **zero** orphans. 25 exact IDs captured for rollback.
+- **Pre-flight**: verified backup `oxfordcrm_before_17_1c.dump` (165,162 bytes; full-archive decode passed; git-ignored).
+- **Execution**: single transaction, scoped to the 25 audited IDs, self-validating — `UPDATE lead_event SET tenant_id = lead.tenant_id (by phone)`, committed only after in-transaction census hit 0. 25 rows updated; total `lead_event` unchanged 343 → 343.
+- **Post-repair validation**: mis-filed = 0 · `amboori` now holds **0** events (cross-tenant leak closed) · `oxford-computers` owns all 343, including the previously-invisible **2 FOLLOW_UP_TASK** (now 12) and **4 FOLLOW_UP_COMPLETED** (now 7) · migration head unchanged (`c7a2f19d4e88`).
+- **Rollback (unused)**: backup + reverse-map (set the 25 IDs back to the `amboori` id). Retain backup ≥7 days.
+- **No code changed; no schema change; no migration.**
+
 ## Phase 16.5A7-P (Production Deployment — EXECUTED)
 - **Executed**: 2026-07-17. Migration `b6e1d4f82c9e` → **`c7a2f19d4e88`** against Railway production. Additive-only; online; no downtime.
 - **Pre-flight**: verified backup `oxfordcrm_before_16_5a7.dump` (153,717 bytes; full-archive decode passed; all 19 tables present; git-ignored). Baseline row counts captured for all 19 tables.
