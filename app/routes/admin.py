@@ -681,7 +681,7 @@ def crm_marketing_start_job():
     from app.services.log_service import _get_default_tenant_id
     
     try:
-        start_campaign(phones, message, campaign_name, tenant_id=_get_default_tenant_id())
+        start_campaign(phones, message, campaign_name, tenant_id=_actor_tenant_id())
         return jsonify({"success": True, "count": len(phones)})
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
@@ -1405,7 +1405,7 @@ def crm_lead_update(phone):
                 if e.event_data
             }
             if new_course.lower() not in already_logged:
-                log_lead_event(tenant_id=_get_default_tenant_id(), 
+                log_lead_event(tenant_id=_tid,
                     phone=phone,
                     event_type="COURSE_ENQUIRY",
                     event_data=json.dumps({"course": new_course}),
@@ -1422,7 +1422,7 @@ def crm_lead_update(phone):
                 if e.event_data
             }
             if new_course.lower() not in already_admitted:
-                log_lead_event(tenant_id=_get_default_tenant_id(), 
+                log_lead_event(tenant_id=_tid,
                     phone=phone,
                     event_type="COURSE_ADMISSION",
                     event_data=json.dumps({
@@ -1523,7 +1523,7 @@ def campaign_send():
     from app.services.log_service import _get_default_tenant_id
     from app.services.campaign_service import start_campaign
     try:
-        start_campaign(phones, message, name, tenant_id=_get_default_tenant_id())
+        start_campaign(phones, message, name, tenant_id=_actor_tenant_id())
         flash(f"Campaign '{name}' started successfully. Sending to {len(phones)} leads. Check dashboard later for results.", "success")
     except Exception as e:
         flash(f"Failed to start campaign: {str(e)}", "danger")
@@ -1568,7 +1568,7 @@ def crm_lead_send(phone):
         if r.status_code == 200:
             # ── Log manual outbound message (MessageLog — raw technical log) ──
             from app.services.log_service import log_message, _get_default_tenant_id
-            log_message(tenant_id=_get_default_tenant_id(), 
+            log_message(tenant_id=_tid,
                 phone=phone,
                 direction="outbound",
                 message_type="manual",
@@ -1582,7 +1582,7 @@ def crm_lead_send(phone):
 
             sender_name = actor.get("username") or "Admin"
 
-            save_conversation_message(tenant_id=_get_default_tenant_id(), 
+            save_conversation_message(tenant_id=_tid,
                 phone=phone,
                 direction="outgoing",
                 message=message,
@@ -1593,7 +1593,7 @@ def crm_lead_send(phone):
             )
 
             # Phase 9.1: MESSAGE_OWNER audit using LeadEvent
-            log_lead_event(tenant_id=_get_default_tenant_id(), 
+            log_lead_event(tenant_id=_tid,
                 phone=phone,
                 event_type="MANUAL_MESSAGE",
                 event_data=json.dumps({"staff": sender_name})
@@ -2547,7 +2547,7 @@ def crm_course_admissions(phone):
             if course.lower() in already_admitted_lower:
                 continue
             # Append-only: fire one new COURSE_ADMISSION event
-            log_lead_event(tenant_id=_get_default_tenant_id(), 
+            log_lead_event(tenant_id=_tid,
                 phone=phone,
                 event_type="COURSE_ADMISSION",
                 event_data=json.dumps({
@@ -3737,7 +3737,7 @@ def crm_unassigned_assign():
         old_staff = lead.assigned_staff
         lead.assigned_staff = target_staff
         
-        log_lead_event(tenant_id=_get_default_tenant_id(), 
+        log_lead_event(tenant_id=_actor_tenant_id(),
             phone=lead.phone,
             event_type="LEAD_REASSIGNED",
             event_data=json.dumps({
@@ -3818,7 +3818,7 @@ def crm_auto_assign_confirm():
                 old_staff = lead.assigned_staff
                 lead.assigned_staff = target_staff
                 
-                log_lead_event(tenant_id=_get_default_tenant_id(), 
+                log_lead_event(tenant_id=_actor_tenant_id(),
                     phone=lead.phone,
                     event_type="LEAD_REASSIGNED",
                     event_data=json.dumps({
@@ -3908,7 +3908,7 @@ def crm_reassignment_confirm():
             lead.assigned_staff = target_staff
             updated_count += 1
             # Add LEAD_REASSIGNED event
-            log_lead_event(tenant_id=_get_default_tenant_id(), 
+            log_lead_event(tenant_id=_actor_tenant_id(),
                 phone=lead.phone,
                 event_type="LEAD_REASSIGNED",
                 event_data=json.dumps({
