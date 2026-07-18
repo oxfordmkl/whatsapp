@@ -96,6 +96,31 @@ def send_reply(to: str, body: str, preset: str | None, tenant_id: str = None) ->
         return send_text(to, body, tenant_id)
     return send_interactive(to, body, preset, tenant_id)
 
+def fetch_templates(tenant_id: str = None) -> list:
+    """List approved WhatsApp message templates for the Broadcast Panel registry.
+
+    Phase: Template Registry. Reads the WABA's message_templates edge and returns
+    Meta's raw template objects (name, status, category, language, components) so
+    the panel can auto-detect header type / variables / buttons / status.
+
+    Uses the global WABA_ID + ACCESS_TOKEN (the primary-tenant Meta credentials
+    the broadcast flow already runs on); the Tenant model stores no WABA business
+    account id, so per-tenant template listing is not applicable here.
+    """
+    from app.config import WABA_ID, ACCESS_TOKEN as _TOKEN
+    if not WABA_ID or not _TOKEN:
+        raise ValueError("Template registry unavailable: WABA_ID / ACCESS_TOKEN not configured.")
+    url = f"https://graph.facebook.com/v21.0/{WABA_ID}/message_templates"
+    r = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {_TOKEN}"},
+        params={"fields": "name,status,category,language,components", "limit": 250},
+    )
+    if r.status_code != 200:
+        raise ValueError(f"Template fetch failed: HTTP {r.status_code} — {r.text}")
+    return (r.json() or {}).get("data", [])
+
+
 def upload_media(file_bytes: bytes, filename: str, content_type: str,
                  tenant_id: str = None) -> str:
     """Upload media to the WhatsApp Cloud API and return its media_id.

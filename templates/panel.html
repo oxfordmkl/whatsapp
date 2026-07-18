@@ -930,13 +930,21 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
   <div class="full-card">
     <div class="card-header">
       <div class="card-title"><span class="icon">🏷️</span> Template Broadcast</div>
-      <span class="card-badge">Meta Graph API</span>
+      <button class="btn-crm-outline" id="refreshTplBtn" onclick="refreshTemplates()"
+              style="padding:6px 12px; font-size:13px; cursor:pointer;">
+        🔄 Refresh Templates
+      </button>
     </div>
-    
+
     <div class="main-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 0;">
       <div class="config-field">
-        <label>Template Name</label>
-        <input type="text" id="tplName" placeholder="oxford_special_offer">
+        <label>Template</label>
+        <!-- Template Registry: searchable dropdown backed by a datalist. Free
+             text still works, so oxford_special_offer / any manual name is
+             fully backward compatible. -->
+        <input type="text" id="tplName" list="tplDatalist" autocomplete="off"
+               placeholder="Search or type a template name…" oninput="onTemplateChange()">
+        <datalist id="tplDatalist"></datalist>
       </div>
       <div class="config-field">
         <label>Variable {{1}}</label>
@@ -948,16 +956,40 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
       </div>
     </div>
 
-    <!-- Image Header Template Support: optional. Leave empty for text/text-header
-         templates (e.g. oxford_special_offer) — behaviour is unchanged. Choose an
-         image ONLY for templates whose header is an image (e.g. oxford_admission_2026). -->
-    <div class="config-field" style="margin-top: 14px;">
-      <label>Header Image <span style="color:var(--text-dim); font-weight:400;">— image-header templates only (optional)</span></label>
-      <input type="file" id="tplHeaderImage" accept="image/jpeg,image/png"
-             onchange="document.getElementById('tplHeaderImageHint').textContent = (this.files && this.files[0]) ? ('Image header: ' + this.files[0].name) : 'No image selected — text templates send as before.'">
-      <div id="tplHeaderImageHint" style="font-size:12px; color:var(--text-dim); margin-top:6px;">
-        No image selected — text templates send as before.
+    <!-- Template Registry: info card, populated when a known template is selected. -->
+    <div id="tplInfoCard" style="display:none; margin-top:14px; padding:12px 14px;
+         background:var(--surface2); border:1px solid var(--surface3); border-radius:8px;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px 16px; font-size:12px;">
+        <div><div style="color:var(--text-dim);">Template</div><div id="tiName" style="font-weight:600;">—</div></div>
+        <div><div style="color:var(--text-dim);">Category</div><div id="tiCategory">—</div></div>
+        <div><div style="color:var(--text-dim);">Language</div><div id="tiLang">—</div></div>
+        <div><div style="color:var(--text-dim);">Header</div><div id="tiHeader">—</div></div>
+        <div><div style="color:var(--text-dim);">Variables</div><div id="tiVars">—</div></div>
+        <div><div style="color:var(--text-dim);">Buttons</div><div id="tiButtons">—</div></div>
+        <div><div style="color:var(--text-dim);">Status</div><div id="tiStatus">—</div></div>
       </div>
+    </div>
+
+    <!-- Template Registry: media pickers. Exactly one is shown, chosen by the
+         selected template's header type. All hidden for text/no-header templates,
+         so those flows are unchanged (backward compat). -->
+    <div id="tplImagePicker" class="tpl-media-picker" style="display:none; margin-top:14px;">
+      <label>Header Image</label>
+      <input type="file" id="tplHeaderImage" accept="image/jpeg,image/png"
+             onchange="mediaHint('Image','tplImageHint',this)">
+      <div id="tplImageHint" style="font-size:12px; color:var(--text-dim); margin-top:6px;">Choose the header image.</div>
+    </div>
+    <div id="tplVideoPicker" class="tpl-media-picker" style="display:none; margin-top:14px;">
+      <label>Header Video</label>
+      <input type="file" id="tplHeaderVideo" accept="video/mp4,video/3gpp"
+             onchange="mediaHint('Video','tplVideoHint',this)">
+      <div id="tplVideoHint" style="font-size:12px; color:var(--text-dim); margin-top:6px;">Choose the header video.</div>
+    </div>
+    <div id="tplDocPicker" class="tpl-media-picker" style="display:none; margin-top:14px;">
+      <label>Header Document</label>
+      <input type="file" id="tplHeaderDoc" accept="application/pdf"
+             onchange="mediaHint('Document','tplDocHint',this)">
+      <div id="tplDocHint" style="font-size:12px; color:var(--text-dim); margin-top:6px;">Choose the header document.</div>
     </div>
 
     <div class="send-area" style="margin-top: 16px;">
@@ -1514,6 +1546,135 @@ async function startBroadcast() {
   log('info', `━━━ Broadcast ${stopFlag?'stopped':'complete'} ━━━ Sent: ${sentCount} | Failed: ${failCount}`);
 }
 
+// ══ Template Registry (Meta approved templates) ══════════════════════════
+let TPL_MAP = {};   // lowercased name -> Meta template object
+
+function detectHeader(tpl) {
+  const h = (tpl.components || []).find(c => c.type === 'HEADER');
+  return h ? (h.format || 'TEXT').toUpperCase() : 'NONE';  // NONE|TEXT|IMAGE|VIDEO|DOCUMENT
+}
+function detectVars(tpl) {
+  const b = (tpl.components || []).find(c => c.type === 'BODY');
+  if (!b || !b.text) return 0;
+  const m = b.text.match(/\{\{\s*\d+\s*\}\}/g);
+  return m ? new Set(m).size : 0;
+}
+function detectButtons(tpl) {
+  const b = (tpl.components || []).find(c => c.type === 'BUTTONS');
+  return (b && b.buttons) ? b.buttons.length : 0;
+}
+
+function populateDatalist() {
+  const dl = document.getElementById('tplDatalist');
+  if (!dl) return;
+  const names = Object.values(TPL_MAP).map(t => t.name).sort();
+  dl.innerHTML = names.map(n => `<option value="${n}"></option>`).join('');
+}
+
+function loadCachedTemplates() {
+  try {
+    const raw = localStorage.getItem('wa_templates');
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    TPL_MAP = {};
+    arr.forEach(t => { TPL_MAP[(t.name || '').toLowerCase()] = t; });
+    populateDatalist();
+    log('info', `Loaded ${arr.length} cached templates`);
+  } catch (e) { /* ignore cache errors */ }
+}
+
+async function refreshTemplates() {
+  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  const apiKey    = document.getElementById('apiKey').value.trim();
+  if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
+  const btn = document.getElementById('refreshTplBtn');
+  if (btn) btn.disabled = true;
+  try {
+    log('info', 'Fetching approved templates from Meta...');
+    const r = await fetch(`${serverUrl}/templates`, { headers: { 'X-API-Key': apiKey } });
+    const data = await r.json();
+    if (!r.ok) { showAlert('Template fetch failed: ' + (data.error || r.status), 'err'); return; }
+    const arr = data.templates || [];
+    TPL_MAP = {};
+    arr.forEach(t => { TPL_MAP[(t.name || '').toLowerCase()] = t; });
+    localStorage.setItem('wa_templates', JSON.stringify(arr));
+    populateDatalist();
+    onTemplateChange();
+    log('ok', `✓ ${arr.length} templates loaded`);
+    showAlert(`${arr.length} templates loaded`, 'ok');
+  } catch (e) {
+    showAlert('Template fetch error: ' + e.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function showPicker(headerType) {
+  const map = { IMAGE: 'tplImagePicker', VIDEO: 'tplVideoPicker', DOCUMENT: 'tplDocPicker' };
+  ['tplImagePicker', 'tplVideoPicker', 'tplDocPicker'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = (map[headerType] === id) ? 'block' : 'none';
+  });
+}
+
+function onTemplateChange() {
+  const name = (document.getElementById('tplName').value || '').trim().toLowerCase();
+  const tpl  = TPL_MAP[name];
+  const card = document.getElementById('tplInfoCard');
+
+  if (!tpl) {
+    // Unknown / free-text name (or registry not refreshed). Hide info + pickers.
+    // The text-template flow is unaffected. If the operator knows it is a media
+    // template, Refresh Templates will reveal the correct picker.
+    if (card) card.style.display = 'none';
+    showPicker('NONE');
+    return;
+  }
+
+  const headerType = detectHeader(tpl);
+  const vars = detectVars(tpl);
+  const btns = detectButtons(tpl);
+
+  // Auto-fill language from the template.
+  if (tpl.language) document.getElementById('tplLang').value = tpl.language;
+
+  // Info card.
+  document.getElementById('tiName').textContent     = tpl.name || '—';
+  document.getElementById('tiCategory').textContent = tpl.category || '—';
+  document.getElementById('tiLang').textContent     = tpl.language || '—';
+  document.getElementById('tiHeader').textContent   = headerType;
+  document.getElementById('tiVars').textContent     = vars;
+  document.getElementById('tiButtons').textContent  = btns;
+  document.getElementById('tiStatus').textContent   = tpl.status || '—';
+  if (card) card.style.display = 'block';
+
+  // Adapt media picker to the header type.
+  showPicker(headerType);
+}
+
+function mediaHint(kind, hintId, input) {
+  const el = document.getElementById(hintId);
+  if (el) el.textContent = (input.files && input.files[0])
+    ? `${kind} header: ${input.files[0].name}` : `Choose the header ${kind.toLowerCase()}.`;
+}
+
+function selectedHeaderMediaFile() {
+  // Return {kind, file} from the first VISIBLE picker that has a file, else null.
+  const pickers = [
+    { kind: 'Image',    wrap: 'tplImagePicker', input: 'tplHeaderImage' },
+    { kind: 'Video',    wrap: 'tplVideoPicker', input: 'tplHeaderVideo' },
+    { kind: 'Document', wrap: 'tplDocPicker',   input: 'tplHeaderDoc' },
+  ];
+  for (const p of pickers) {
+    const wrap = document.getElementById(p.wrap);
+    const inp  = document.getElementById(p.input);
+    if (wrap && wrap.style.display !== 'none' && inp && inp.files && inp.files[0]) {
+      return { kind: p.kind, file: inp.files[0] };
+    }
+  }
+  return null;
+}
+
 async function startTemplateBroadcast() {
   if (isSending) return;
 
@@ -1534,34 +1695,35 @@ async function startTemplateBroadcast() {
   const batchSize = parseInt(document.getElementById('batchRange').value);
   const batchPause= parseInt(document.getElementById('pauseRange').value) * 1000;
 
-  // Image Header Template Support: if an image is chosen, upload it ONCE and
-  // reuse the media_id for every recipient. No image chosen → headerImageId
-  // stays null → payload identical to the text-template flow.
-  let headerImageId = null;
-  const imgInput = document.getElementById('tplHeaderImage');
-  const imgFile  = imgInput && imgInput.files && imgInput.files[0];
+  // Template Registry: pick the media file from whichever header picker is
+  // VISIBLE (driven by the selected template's header type) and has a file.
+  // Text / no-header templates have all pickers hidden → mediaFile stays null →
+  // payload identical to the text-template flow (backward compatible).
+  const mediaSel = selectedHeaderMediaFile();   // {kind, file} or null
 
-  const confirmMsg = `🏷️ Template Broadcast Confirm:\n\n• Template: ${templateName}\n• ${pending.length} contacts${imgFile ? `\n• Image header: ${imgFile.name}` : ''}\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Estimated time: ~${Math.ceil(pending.length * delay / 60000)} minutes\n\nStart?`;
+  const confirmMsg = `🏷️ Template Broadcast Confirm:\n\n• Template: ${templateName}\n• ${pending.length} contacts${mediaSel ? `\n• ${mediaSel.kind} header: ${mediaSel.file.name}` : ''}\n• Delay: ${delay/1000}s each\n• Batch: ${batchSize} per group\n• Estimated time: ~${Math.ceil(pending.length * delay / 60000)} minutes\n\nStart?`;
   if (!confirm(confirmMsg)) return;
 
-  if (imgFile) {
+  // Upload the header media ONCE and reuse the media_id for every recipient.
+  let headerMedia = null;   // {type, id}
+  if (mediaSel) {
     try {
-      log('info', `⬆️ Uploading header image: ${imgFile.name}...`);
+      log('info', `⬆️ Uploading ${mediaSel.kind} header: ${mediaSel.file.name}...`);
       const fd = new FormData();
-      fd.append('file', imgFile);
+      fd.append('file', mediaSel.file);
       const up = await fetch(`${serverUrl}/upload-media`, {
         method: 'POST', headers: { 'X-API-Key': apiKey }, body: fd
       });
       const upData = await up.json();
       if (!up.ok || !upData.media_id) {
-        showAlert('Image upload failed: ' + (upData.error || up.status), 'err');
-        log('err', 'Image upload failed: ' + (upData.error || up.status));
+        showAlert(`${mediaSel.kind} upload failed: ` + (upData.error || up.status), 'err');
+        log('err', `${mediaSel.kind} upload failed: ` + (upData.error || up.status));
         return;
       }
-      headerImageId = upData.media_id;
-      log('ok', `✓ Header image uploaded (media_id ${headerImageId})`);
+      headerMedia = { type: mediaSel.kind.toLowerCase(), id: upData.media_id };
+      log('ok', `✓ ${mediaSel.kind} header uploaded (media_id ${headerMedia.id})`);
     } catch (e) {
-      showAlert('Image upload error: ' + e.message, 'err');
+      showAlert('Header media upload error: ' + e.message, 'err');
       return;
     }
   }
@@ -1605,8 +1767,8 @@ async function startTemplateBroadcast() {
           language: lang,
           variables: ["{name}"],
           delay_seconds: 0,
-          // Image Header Template Support: included only when an image was chosen.
-          ...(headerImageId ? { header_image_id: headerImageId } : {})
+          // Template Registry: included only when a header media file was chosen.
+          ...(headerMedia ? { header_media: headerMedia } : {})
         })
       });
 
@@ -1788,6 +1950,8 @@ zone.addEventListener('drop', e => {
 // Auto-test on load
 window.addEventListener('load', () => {
   setTimeout(testConnection, 800);
+  // Template Registry: show any cached templates immediately (offline-friendly).
+  loadCachedTemplates();
 });
 </script>
 </body>

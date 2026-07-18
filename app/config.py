@@ -3,6 +3,9 @@ import os
 VERIFY_TOKEN         = os.environ.get("VERIFY_TOKEN", "oxford2026")
 ACCESS_TOKEN         = os.environ.get("ACCESS_TOKEN", "")
 PHONE_NUMBER_ID      = os.environ.get("PHONE_NUMBER_ID", "")
+# WhatsApp Business Account id — required to list approved message templates
+# (the message_templates edge lives on the WABA node, not the phone number).
+WABA_ID              = os.environ.get("WABA_ID", "")
 SHEETS_ID            = os.environ.get("SHEETS_ID", "")
 GEMINI_API_KEY       = os.environ.get("GEMINI_API_KEY", "")
 BROADCAST_API_KEY    = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
