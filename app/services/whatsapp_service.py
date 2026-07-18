@@ -108,7 +108,32 @@ def send_template(to: str, template: str, lang: str = "en", components: list | N
     }
     if components:
         payload["template"]["components"] = components
-    return requests.post(url, headers=_wa_headers(token), json=payload)
+    r = requests.post(url, headers=_wa_headers(token), json=payload)
+
+    # ── Diagnostics only (no behaviour change) ──────────────────────────────
+    # Surfaces the full Meta error body, which the broadcast route discards
+    # (it reads only r.status_code). The Authorization token lives in the
+    # request HEADERS, not this payload, so logging the payload leaks nothing.
+    if r.status_code != 200:
+        try:
+            err = r.json().get("error", {})
+        except ValueError:
+            err = {}
+        print(f"❌ template '{template}' → {to}  HTTP {r.status_code}")
+        print(f"   meta.code={err.get('code')} subcode={err.get('error_subcode')} "
+              f"type={err.get('type')}")
+        print(f"   meta.message={err.get('message')}")
+        print(f"   meta.error_data={err.get('error_data')}")
+        print(f"   meta.body={r.text}")
+        _components = payload["template"].get("components") or []
+        _has_image_header = any(
+            isinstance(c, dict) and c.get("type") == "header"
+            and any(p.get("type") == "image" for p in c.get("parameters", []))
+            for c in _components
+        )
+        print(f"   sent.components={_components or '<none>'}")
+        print(f"   sent.has_image_header={_has_image_header}")
+    return r
 
 def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = None) -> requests.Response:
     """
