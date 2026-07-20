@@ -1,13 +1,16 @@
+import logging
 from google import genai
 from app.config import GEMINI_API_KEY
 from app.bot.prompts import AALIZA_PROMPT
 
+logger = logging.getLogger(__name__)
+
 if GEMINI_API_KEY:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    print("✅ Gemini AI initialised (google-genai SDK, gemini-2.0-flash)")
+    logger.info("✅ Gemini AI initialised (google-genai SDK, gemini-2.0-flash)")
 else:
     gemini_client = None
-    print("⚠️  GEMINI_API_KEY not set — AI replies disabled")
+    logger.warning("⚠️  GEMINI_API_KEY not set — AI replies disabled")
 
 def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
     if not gemini_client:
@@ -28,9 +31,9 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
     except Exception as e:
         err = str(e).lower()
         if "429" in str(e) or "quota" in err or "resource" in err:
-            print("⚠️  Gemini quota exceeded")
+            logger.warning("⚠️  Gemini quota exceeded")
         else:
-            print(f"⚠️  Gemini error: {e}")
+            logger.warning(f"⚠️  Gemini error: {e}")
         return None
 
 def smart_fallback(name: str, msg: str = "") -> str:

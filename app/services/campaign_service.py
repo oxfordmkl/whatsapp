@@ -1,9 +1,12 @@
+import logging
 import threading
 import time
 from flask import current_app
 from app.services.whatsapp_service import send_text, send_automation
 from app.services.log_service import save_conversation_message
 from app.models import ConversationState
+
+logger = logging.getLogger(__name__)
 
 def _campaign_worker(app_ref, audience_phones, message_text, campaign_name, tenant_id=None):
     """
@@ -20,7 +23,7 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name, tena
                 # Phase 11-D1 Task D: Opt-Out Check
                 state_row = ConversationState.query.filter_by(phone=phone, tenant_id=tenant_id).first()
                 if state_row and getattr(state_row, 'is_opted_out', False):
-                    print(f"🚫 Campaign skipped — {phone} opted out")
+                    logger.warning(f"🚫 Campaign skipped — {phone} opted out")
                     continue
                 
                 # Pass the name to send_automation for the template variable fallback
@@ -41,7 +44,7 @@ def _campaign_worker(app_ref, audience_phones, message_text, campaign_name, tena
                     )
             except Exception as e:
                 # Fail gracefully for individual leads without breaking the campaign
-                print(f"⚠️ Campaign worker error for {phone}: {e}")
+                logger.warning(f"⚠️ Campaign worker error for {phone}: {e}")
                 pass
                 
             # 3. Mandatory 1.5s rate limit

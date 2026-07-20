@@ -1,3 +1,4 @@
+import logging
 import threading
 from flask import Blueprint, request, jsonify, current_app
 from app.config import VERIFY_TOKEN
@@ -10,6 +11,8 @@ from app.services.log_service import log_message_in_thread, save_conversation_me
 from app.models import ConversationMessage, ConversationState
 from app.extensions import db
 
+logger = logging.getLogger(__name__)
+
 webhook_bp = Blueprint("webhook", __name__)
 
 @webhook_bp.route("/webhook", methods=["GET"])
@@ -18,7 +21,7 @@ def verify_webhook():
     token     = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        print("✅ Webhook verified")
+        logger.info("✅ Webhook verified")
         return challenge, 200
     return "Forbidden", 403
 
@@ -54,7 +57,7 @@ def receive_message():
         tenant = Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
         if tenant:
             if tenant.status not in ["ACTIVE", "TRIAL"]:
-                print(f"⚠️ Webhook dropped: Tenant {tenant.id} is {tenant.status}")
+                logger.warning(f"⚠️ Webhook dropped: Tenant {tenant.id} is {tenant.status}")
                 return jsonify({"status": "ok"}), 200
             tenant_id = tenant.id
         else:
@@ -66,16 +69,16 @@ def receive_message():
                 incoming_phone_id = str(phone_number_id).strip()    
                 if env_phone_id and incoming_phone_id == env_phone_id:
                     tenant_id = current_app.config.get("PRIMARY_TENANT_ID")
-                    print(f"⚠️ Webhook warning: Unregistered WABA Phone ID {phone_number_id}, but matched primary tenant fallback")
+                    logger.warning(f"⚠️ Webhook warning: Unregistered WABA Phone ID {phone_number_id}, but matched primary tenant fallback")
             else:
-                print(f"⚠️ Webhook dropped: Unknown WABA Phone ID {phone_number_id}")
+                logger.warning(f"⚠️ Webhook dropped: Unknown WABA Phone ID {phone_number_id}")
                 return jsonify({"status": "ok"}), 200
 
         # Phase 11-D1 Task C: Deduplication Protection
         if wamid:
             existing = ConversationMessage.query.filter_by(wa_message_id=wamid).first()
             if existing:
-                print(f"♻️ Webhook deduplicated: {wamid}")
+                logger.info(f"♻️ Webhook deduplicated: {wamid}")
                 return jsonify({"status": "ok", "reason": "duplicate"}), 200
 
         # Parse message text based on type
@@ -95,7 +98,9 @@ def receive_message():
             # Unsupported type — ignore silently
             return jsonify({"status": "ok"}), 200
 
-        print(f"📱 {contact_name} ({from_number}): {msg_text}")
+        # Truncated: full message bodies are lead PII and stay out of logs
+        # (same rationale as the Sprint 1 [DIAG] removal).
+        logger.info(f"📱 {contact_name} ({from_number}) tenant={tenant_id}: {msg_text[:40]!r}...")
 
         # Phase 11-D1 Task D & Phase 11-D2A: Opt-Out & Opt-In Infrastructure
         low_text = msg_text.lower()
@@ -104,7 +109,7 @@ def receive_message():
             if state:
                 state.is_opted_out = True
                 db.session.commit()
-                print(f"🚫 Opt-out triggered for {from_number}")
+                logger.warning(f"🚫 Opt-out triggered for {from_number}")
                 # We can optionally send an opt-out confirmation here, but we just halt workflows
                 return jsonify({"status": "ok"}), 200
         elif low_text in {"start", "resume", "unstop"}:
@@ -112,7 +117,7 @@ def receive_message():
             if state and getattr(state, 'is_opted_out', False):
                 state.is_opted_out = False
                 db.session.commit()
-                print(f"✅ Opt-in recovery triggered for {from_number}")
+                logger.info(f"✅ Opt-in recovery triggered for {from_number}")
                 # Allow the message to continue processing so AI can reply or workflows can resume
 
         is_new_lead = not phone_exists(from_number, tenant_id=tenant_id)
@@ -173,7 +178,7 @@ def receive_message():
         from app.services.whatsapp_service import send_text
         pending_msgs = PendingMessage.query.filter_by(phone=from_number, tenant_id=tenant_id).order_by(PendingMessage.created_at.asc()).all()
         if pending_msgs:
-            print(f"📦 Delivering {len(pending_msgs)} pending messages to {from_number}")
+            logger.info(f"📦 Delivering {len(pending_msgs)} pending messages to {from_number}")
             for pm in pending_msgs:
                 send_text(from_number, pm.text, tenant_id=tenant_id)
                 db.session.delete(pm)
@@ -234,6 +239,6 @@ def receive_message():
             schedule_followups(from_number, contact_name, tenant_id=tenant_id)
 
     except Exception as e:
-        print(f"❌ Webhook error: {e}")
+        logger.error(f"❌ Webhook error: {e}")
 
     return jsonify({"status": "ok"}), 200

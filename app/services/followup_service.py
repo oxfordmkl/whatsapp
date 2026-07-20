@@ -1,8 +1,11 @@
+import logging
 import time
 import threading
 from datetime import datetime, timedelta
 from app.services.whatsapp_service import send_text, send_automation
 from app.services.crm_service import update_lead_status
+
+logger = logging.getLogger(__name__)
 
 # Populated by init_followup_service() called from create_app()
 _app = None
@@ -66,7 +69,7 @@ def schedule_followups(phone: str, name: str, tenant_id: str = None):
         )
         db.session.add(job)
     db.session.commit()
-    print(f"📅 Follow-ups scheduled (DB) for {name}")
+    logger.info(f"📅 Follow-ups scheduled (DB) for {name}")
 
 
 def _followup_worker():
@@ -100,7 +103,7 @@ def _followup_worker():
                         if state_row and getattr(state_row, 'is_opted_out', False):
                             job.done = True
                             db.session.commit()
-                            print(f"🚫 Follow-up skipped — {job.name} opted out")
+                            logger.warning(f"🚫 Follow-up skipped — {job.name} opted out")
                             continue
 
                         if state_row and state_row.last_msg:
@@ -109,7 +112,7 @@ def _followup_worker():
                                 if (now - last_dt).total_seconds() < 21_600:
                                     job.done = True
                                     db.session.commit()
-                                    print(f"⏭️  Follow-up skipped — {job.name} recently active")
+                                    logger.info(f"⏭️  Follow-up skipped — {job.name} recently active")
                                     continue
                             except ValueError:
                                 pass  # Malformed datetime — proceed with sending
@@ -147,23 +150,23 @@ def _followup_worker():
                         )
                         job.done = True
                         db.session.commit()
-                        print(f"\U0001f4e4 Follow-up Day {job.day} \u2192 {job.name}")
+                        logger.info(f"\U0001f4e4 Follow-up Day {job.day} \u2192 {job.name}")
                     
                     except Exception as e:
                         # Phase 11-D1 Task E & Phase 11-D2C/D3B2: Followup Failure Protection & Retry Backoff
-                        print(f"⚠️  Follow-up failed for {job.name} ({job.phone}): {e}")
+                        logger.warning(f"⚠️  Follow-up failed for {job.name} ({job.phone}): {e}")
                         job.retry_count = (job.retry_count or 0) + 1
                         job.last_attempt_at = datetime.utcnow()
                         job.failure_reason = str(e)
 
                         if job.retry_count >= 3:
                             job.done = True # Prevent infinite retry
-                            print(f"🛑 Follow-up permanently failed after 3 retries for {job.phone}")
+                            logger.warning(f"🛑 Follow-up permanently failed after 3 retries for {job.phone}")
                         else:
                             from datetime import timedelta
                             # Exponential backoff: push send_at forward by 15 mins * retry_count
                             job.send_at = datetime.utcnow() + timedelta(minutes=15 * job.retry_count)
-                            print(f"⏳ Follow-up retrying at {job.send_at} (Attempt {job.retry_count}/3)")
+                            logger.info(f"⏳ Follow-up retrying at {job.send_at} (Attempt {job.retry_count}/3)")
 
                         db.session.commit()
                         from app.services.log_service import log_message
@@ -177,7 +180,7 @@ def _followup_worker():
                         )
 
         except Exception as e:
-            print(f"⚠️  Follow-up worker outer error: {e}")
+            logger.warning(f"⚠️  Follow-up worker outer error: {e}")
 
         time.sleep(300)
 
@@ -190,4 +193,4 @@ def init_followup_service(app):
     global _app
     _app = app
     threading.Thread(target=_followup_worker, daemon=True).start()
-    print("✅ Follow-up scheduler started (DB-backed)")
+    logger.info("✅ Follow-up scheduler started (DB-backed)")

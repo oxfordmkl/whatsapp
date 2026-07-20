@@ -1,7 +1,10 @@
+import logging
 import requests
 import threading
 from app.config import ACCESS_TOKEN, PHONE_NUMBER_ID, WHATSAPP_API_URL
 from app.bot.constants import BUTTON_PRESETS
+
+logger = logging.getLogger(__name__)
 
 token_status = "unknown"
 
@@ -47,10 +50,10 @@ def validate_token():
     )
     if r.status_code == 200:
         token_status = "valid"
-        print("✅ WhatsApp token valid")
+        logger.info("✅ WhatsApp token valid")
     else:
         token_status = "invalid"
-        print(f"❌ Token invalid: {r.status_code} — {r.text}")
+        logger.error(f"❌ Token invalid: {r.status_code} — {r.text}")
 
 threading.Thread(target=validate_token, daemon=True).start()
 
@@ -65,7 +68,7 @@ def send_text(to: str, text: str, tenant_id: str = None) -> requests.Response:
         "text": {"body": text},
     }
     r = requests.post(url, headers=_wa_headers(token), json=payload)
-    print(f"📤 text → {to}  HTTP {r.status_code}")
+    logger.info(f"📤 text → {to}  HTTP {r.status_code}")
     return r
 
 def send_interactive(to: str, body: str, preset: str, tenant_id: str = None) -> requests.Response:
@@ -86,9 +89,9 @@ def send_interactive(to: str, body: str, preset: str, tenant_id: str = None) -> 
         },
     }
     r = requests.post(url, headers=_wa_headers(token), json=payload)
-    print(f"📤 interactive[{preset}] → {to}  HTTP {r.status_code}")
+    logger.info(f"📤 interactive[{preset}] → {to}  HTTP {r.status_code}")
     if r.status_code != 200:
-        print("⚠️  Interactive failed — falling back to plain text")
+        logger.warning("⚠️  Interactive failed — falling back to plain text")
         return send_text(to, body, tenant_id)
     return r
 
@@ -173,20 +176,20 @@ def send_template(to: str, template: str, lang: str = "en", components: list | N
             err = r.json().get("error", {})
         except ValueError:
             err = {}
-        print(f"❌ template '{template}' → {to}  HTTP {r.status_code}")
-        print(f"   meta.code={err.get('code')} subcode={err.get('error_subcode')} "
+        logger.error(f"❌ template '{template}' → {to}  HTTP {r.status_code}")
+        logger.info(f"   meta.code={err.get('code')} subcode={err.get('error_subcode')} "
               f"type={err.get('type')}")
-        print(f"   meta.message={err.get('message')}")
-        print(f"   meta.error_data={err.get('error_data')}")
-        print(f"   meta.body={r.text}")
+        logger.info(f"   meta.message={err.get('message')}")
+        logger.info(f"   meta.error_data={err.get('error_data')}")
+        logger.info(f"   meta.body={r.text}")
         _components = payload["template"].get("components") or []
         _has_image_header = any(
             isinstance(c, dict) and c.get("type") == "header"
             and any(p.get("type") == "image" for p in c.get("parameters", []))
             for c in _components
         )
-        print(f"   sent.components={_components or '<none>'}")
-        print(f"   sent.has_image_header={_has_image_header}")
+        logger.info(f"   sent.components={_components or '<none>'}")
+        logger.info(f"   sent.has_image_header={_has_image_header}")
     return r
 
 def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = None) -> requests.Response:
@@ -233,9 +236,9 @@ def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = 
             # If the template fails, rollback the pending message so it isn't orphaned
             db.session.delete(pending)
             db.session.commit()
-            print(f"⚠️  Template fallback failed for {to}: HTTP {response.status_code} - {response.text}")
+            logger.warning(f"⚠️  Template fallback failed for {to}: HTTP {response.status_code} - {response.text}")
         else:
-            print(f"🛑 Interceptor active: Template fallback sent to {to}")
+            logger.warning(f"🛑 Interceptor active: Template fallback sent to {to}")
             
         return response
 
