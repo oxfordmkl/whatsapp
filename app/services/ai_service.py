@@ -11,6 +11,7 @@ else:
 
 def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
     if not gemini_client:
+        print("🔍 [DIAG] gemini_reply: gemini_client is None (no API key) — returning None")
         return None
     try:
         prompt = (
@@ -20,17 +21,22 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
             f"Student says: \"{user_msg}\"\n\n"
             f"Reply as Oxford Nova:"
         )
+        print("🔍 [DIAG] gemini_reply: calling Gemini API")
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt,
         )
+        print("🔍 [DIAG] gemini_reply: API returned OK")
         return response.text.strip()
     except Exception as e:
         err = str(e).lower()
         if "429" in str(e) or "quota" in err or "resource" in err:
-            print("⚠️  Gemini quota exceeded")
+            # ── TEMP DIAG: distinguish quota (429) from other failures ──
+            print(f"⚠️  Gemini quota exceeded")
+            print(f"🔍 [DIAG] gemini_reply: EXCEPTION type=QUOTA_429 detail={type(e).__name__}: {e}")
         else:
             print(f"⚠️  Gemini error: {e}")
+            print(f"🔍 [DIAG] gemini_reply: EXCEPTION type=OTHER detail={type(e).__name__}: {e}")
         return None
 
 def smart_fallback(name: str, msg: str = "") -> str:
