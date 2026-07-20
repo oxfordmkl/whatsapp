@@ -1,10 +1,29 @@
 from flask import Flask
+import logging
+
 from app.config import (
     DATABASE_URL, SECRET_KEY, AUTH_MODE,
     EMAIL_PROVIDER, BREVO_API_KEY, BREVO_SENDER_EMAIL,
     BREVO_SENDER_NAME, APP_URL, EMAIL_TIMEOUT_SECONDS,
-    VERIFY_EMAIL_EXPIRY_SECONDS, PRIMARY_TENANT_ID
+    VERIFY_EMAIL_EXPIRY_SECONDS, PRIMARY_TENANT_ID, SENTRY_DSN
 )
+
+# ── Phase 0 Sprint 3: structured logging + Sentry ──────────────────────────
+# One consistent line format for everything that goes through logging.
+# print() in legacy paths still reaches stdout; critical paths now use loggers.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        send_default_pii=False,   # never ship lead PII to a third party
+        traces_sample_rate=0.0,   # errors only — no performance tracing
+    )
+    logging.getLogger(__name__).info("Sentry error monitoring initialised")
 from app.extensions import db, migrate
 from pathlib import Path
 
