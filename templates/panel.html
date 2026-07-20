@@ -1007,9 +1007,10 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
                style="flex:1; min-width:180px;">
         <button class="btn-crm-outline" id="sendTestBtn" onclick="sendTestTemplate()"
                 style="padding:8px 16px; cursor:pointer; white-space:nowrap;">
-          🧪 Send Test
+          <span id="sendTestBtnText">🧪 Send Test</span>
         </button>
       </div>
+      <div id="tplTestResult" style="display:none; margin-top:8px; font-size:13px;"></div>
     </div>
 
     <div class="send-area" style="margin-top: 16px;">
@@ -1695,30 +1696,50 @@ function templateIsSendable() {
   return detectVars(tpl) <= VARIABLES_PROVIDED;
 }
 
+// Human-readable label for each variable the panel can fill. Only {{1}} is
+// available (mapped to the contact name); anything beyond is unfillable here.
+const VARIABLE_LABELS = { 1: 'Contact Name' };
+
 function updateVariableValidation(requiredVars) {
   const banner  = document.getElementById('tplValidationMsg');
   const sendBtn = document.getElementById('sendTplBtn');
   const testBtn = document.getElementById('sendTestBtn');
   const missing = Math.max(0, requiredVars - VARIABLES_PROVIDED);
 
-  if (missing > 0) {
-    banner.style.display = 'block';
-    banner.style.background = 'rgba(220,53,69,0.12)';
-    banner.style.color = 'var(--danger)';
-    banner.innerHTML =
-      `⚠ Variables Required: <b>${requiredVars}</b> &nbsp;•&nbsp; Provided: <b>${VARIABLES_PROVIDED}</b> (contact name)<br>` +
-      `Missing <b>${missing}</b> variable(s). This panel only fills {{1}} with the contact name, so this template cannot be broadcast here.`;
-    if (sendBtn) sendBtn.disabled = true;
-    if (testBtn) testBtn.disabled = true;
-  } else {
-    banner.style.display = 'block';
+  // Build the Available / Missing variable lists.
+  let available = '';
+  let missingList = '';
+  for (let i = 1; i <= requiredVars; i++) {
+    if (i <= VARIABLES_PROVIDED) {
+      const label = VARIABLE_LABELS[i] ? ` ${VARIABLE_LABELS[i]}` : '';
+      available += `<div style="margin:2px 0;">✓ <code>{{${i}}}</code>${label}</div>`;
+    } else {
+      missingList += `<div style="margin:2px 0;">✗ <code>{{${i}}}</code></div>`;
+    }
+  }
+
+  banner.style.display = 'block';
+  if (requiredVars === 0) {
     banner.style.background = 'rgba(37,211,102,0.10)';
     banner.style.color = 'var(--wa-green, #25D366)';
-    banner.innerHTML =
-      `✓ Variables Required: <b>${requiredVars}</b> &nbsp;•&nbsp; Provided: <b>${VARIABLES_PROVIDED}</b> (contact name)`;
-    if (sendBtn) sendBtn.disabled = false;
-    if (testBtn) testBtn.disabled = false;
+    banner.innerHTML = `✓ This template has no variables.`;
+  } else {
+    let html = `<div style="font-weight:600; margin-bottom:4px;">Available Variables</div>${available || '<div style="opacity:.7;">— none —</div>'}`;
+    if (missing > 0) {
+      html += `<div style="font-weight:600; margin:8px 0 4px;">Missing Variables</div>${missingList}` +
+        `<div style="margin-top:8px;">This panel only fills <code>{{1}}</code> (contact name), so this template cannot be broadcast here.</div>`;
+      banner.style.background = 'rgba(220,53,69,0.12)';
+      banner.style.color = 'var(--danger)';
+    } else {
+      banner.style.background = 'rgba(37,211,102,0.10)';
+      banner.style.color = 'var(--wa-green, #25D366)';
+    }
+    banner.innerHTML = html;
   }
+
+  const blocked = missing > 0;
+  if (sendBtn) sendBtn.disabled = blocked;
+  if (testBtn) testBtn.disabled = blocked;
 }
 
 function mediaHint(kind, hintId, input) {
@@ -1744,6 +1765,26 @@ function selectedHeaderMediaFile() {
   return null;
 }
 
+// Normalize common local formats to the WhatsApp E.164-style number Meta needs.
+// 9876543210 → 919876543210 ; 09876543210 → 919876543210 ;
+// +91 98765-43210 → 919876543210 ; already-91 numbers pass through.
+function normalizeWaNumber(raw) {
+  let n = (raw || '').replace(/[^0-9]/g, '');   // strip +, spaces, dashes
+  n = n.replace(/^0+/, '');                      // drop leading zeros
+  if (!n) return '';
+  if (!n.startsWith('91')) n = '91' + n;         // add India country code
+  return n;
+}
+
+function setTestResult(kind, msg) {
+  const el = document.getElementById('tplTestResult');
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.color = kind === 'ok' ? 'var(--wa-green, #25D366)'
+                 : kind === 'err' ? 'var(--danger)' : 'var(--text-dim)';
+  el.innerHTML = msg;
+}
+
 // ══ Send Test: one-number dry run of the selected template ════════════════
 // Reuses the existing /upload-media and /broadcast-template endpoints and the
 // same header-media picker. Does not touch the broadcast loop.
@@ -1755,22 +1796,27 @@ async function sendTestTemplate() {
     return;
   }
 
-  let num = (document.getElementById('tplTestNumber').value || '').trim().replace(/[^0-9]/g, '');
+  const num = normalizeWaNumber(document.getElementById('tplTestNumber').value);
   if (!num) { showAlert('Enter a test WhatsApp number', 'warn'); return; }
-  if (!num.startsWith('91')) num = '91' + num.replace(/^0+/, '');
 
   const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
   const apiKey    = document.getElementById('apiKey').value.trim();
   if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
   const lang = document.getElementById('tplLang').value.trim() || 'en';
 
-  const btn = document.getElementById('sendTestBtn');
+  const btn  = document.getElementById('sendTestBtn');
+  const btnT = document.getElementById('sendTestBtnText');
+  const origText = btnT ? btnT.textContent : '';
   if (btn) btn.disabled = true;
+  if (btnT) btnT.textContent = '⏳ Sending…';
+  setTestResult('info', `Sending test to <b>${num}</b>…`);
   try {
     // Header media — same picker + upload endpoint as the full broadcast.
     let headerMedia = null;
     const mediaSel = selectedHeaderMediaFile();
     if (mediaSel) {
+      if (btnT) btnT.textContent = '⬆️ Uploading…';
+      setTestResult('info', `Uploading ${mediaSel.kind.toLowerCase()} header…`);
       log('info', `⬆️ [Test] Uploading ${mediaSel.kind} header: ${mediaSel.file.name}...`);
       const fd = new FormData();
       fd.append('file', mediaSel.file);
@@ -1779,12 +1825,14 @@ async function sendTestTemplate() {
       });
       const upData = await up.json();
       if (!up.ok || !upData.media_id) {
+        setTestResult('err', `✗ Media upload failed: ${upData.error || up.status}`);
         showAlert('Test media upload failed: ' + (upData.error || up.status), 'err');
         return;
       }
       headerMedia = { type: mediaSel.kind.toLowerCase(), id: upData.media_id };
     }
 
+    if (btnT) btnT.textContent = '⏳ Sending…';
     log('info', `🧪 Sending test to ${num}...`);
     const resp = await fetch(`${serverUrl}/broadcast-template`, {
       method: 'POST',
@@ -1798,18 +1846,22 @@ async function sendTestTemplate() {
     });
     const data = await resp.json();
     if (resp.ok && data.success > 0) {
+      setTestResult('ok', `✓ Test message sent to <b>${num}</b>.`);
       showAlert(`✓ Test sent to ${num}`, 'ok');
       log('ok', `✓ Test sent to ${num}`);
     } else {
       const detail = (data.results && data.results[0])
-        ? `HTTP ${data.results[0].status}` : (data.error || resp.status);
+        ? `Meta HTTP ${data.results[0].status}` : (data.error || `HTTP ${resp.status}`);
+      setTestResult('err', `✗ Test failed for <b>${num}</b>: ${detail}`);
       showAlert(`Test failed: ${detail}`, 'err');
       log('err', `Test failed for ${num}: ${detail}`);
     }
   } catch (e) {
+    setTestResult('err', `✗ Test error: ${e.message}`);
     showAlert('Test error: ' + e.message, 'err');
   } finally {
     if (btn) btn.disabled = false;
+    if (btnT) btnT.textContent = origText || '🧪 Send Test';
   }
 }
 
