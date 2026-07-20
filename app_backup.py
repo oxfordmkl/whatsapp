@@ -78,10 +78,10 @@ follow_up_queue: list = []
 
 
 # ═══════════════════════════════════════════════════════
-#  AALIZA — SYSTEM PROMPT FOR GEMINI
+#  OXFORD NOVA — SYSTEM PROMPT FOR GEMINI
 # ═══════════════════════════════════════════════════════
-AALIZA_PROMPT = """
-You are Aaliza, Senior Admission Counselor at The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.
+OXFORD_NOVA_PROMPT = """
+You are Oxford Nova, Senior Admission Counselor at The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.
 
 YOUR SOLE GOAL:
 Convert the student into one of these three actions:
@@ -140,34 +140,34 @@ Oru free demo kaanumbo clarity varum… book cheyyatte? 🎓"
 OBJECTION HANDLING — use these exact styles:
 
 User: "fees high aanu"
-Aaliza:
+OXFORD_NOVA:
 "Athu doubt varunnath normal aanu 😊
 Pakshe ithu expense alla… skill investment aanu.
 EMI option und, so tension venda 👍
 Demo kaanumbo value clear aavum… book cheyyatte?"
 
 User: "njan nokkatte"
-Aaliza:
+OXFORD_NOVA:
 "Sure 😊 take your time.
 Pakshe demo kaanathe decision edukkaruthu.
 Just 1 free class kaanumbo clarity varum 👍
 Book cheyyatte?"
 
 User: "interest illa"
-Aaliza:
+OXFORD_NOVA:
 "Ok 😊 problem illa.
 Just ariyan… interest illa ennath course type kondaano,
 time issue aano? Njan better option suggest cheyyam 👍"
 
 User: "time illa"
-Aaliza:
+OXFORD_NOVA:
 "Athu common issue aanu 😊
 Athinu morning/evening flexible batches und.
 Schedule adjust cheythu padikkaam 👍
 Demo-il timing clear cheyyam… varamo?"
 
 User: "confused aanu"
-Aaliza:
+OXFORD_NOVA:
 "Confuse aavunnath normal aanu 😊
 Njan simple aayi guide cheyyam.
 +2 / Degree / Working aano?
@@ -179,7 +179,7 @@ Job aanu main goal alle?"
 # ═══════════════════════════════════════════════════════
 _PGDCA = (
     "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
-    "⏱ 12 Months | 🎓 Rutronix + State Approved\n"
+    "⏱ 12 Months | 🎓 Rutronix + Kerala State Approved\n"
     "📋  C++/ Java, PYTHON, DBMS, Web Dev, Networks, Mobile App, Final Project\n"
     "💡 Best for graduates seeking an Govt+IT career\n"
     "💰 Fee: ₹15,999"
@@ -485,11 +485,11 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
         return None
     try:
         prompt = (
-            f"{AALIZA_PROMPT}\n\n"
+            f"{OXFORD_NOVA_PROMPT}\n\n"
             f"{'Conversation so far:\n' + context + chr(10) if context else ''}"
             f"Student name: {name}\n"
             f"Student says: \"{user_msg}\"\n\n"
-            f"Reply as Aaliza:"
+            f"Reply as Oxford Nova:"
         )
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash",
@@ -526,7 +526,7 @@ def smart_fallback(name: str, msg: str = "") -> str:
         )
     return (
         f"😊 Nandi {name}!\n\n"
-        "Njan Aaliza — The Oxford Computers-nte counselor.\n"
+        "Njan Oxford Nova — The Oxford Computers-nte counselor.\n"
         "Ningalkku njan enthu help cheyyanam?\n\n"
         "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
         "📞 9447329972"
@@ -1302,8 +1302,8 @@ FOLLOWUP_TEMPLATES = [
         "day": 1,
         "hours": 24,
         "message": (
-            "Hi {name} 😊 Aaliza here from The Oxford Computers.\n\n"
-            "Course about alochichu nokkiyo?\n"
+            "Hi {name} 😊 Oxford Nova here from The Oxford Computers.\n\n"
+            "Course ne kurichu alochichu nokkiyo?\n"
             "Confusion undenkil njan help cheyyam.\n\n"
             "Oru free demo class attend cheythal clarity varum 🎓\n"
             "*DEMO* reply cheythal book cheyyam."
@@ -1314,7 +1314,7 @@ FOLLOWUP_TEMPLATES = [
         "hours": 72,
         "message": (
             "{name}, small reminder 😊\n\n"
-            "Next batch starting soon aanu.\n"
+            "Next batch starting cheyyan pokunnu.\n"
             "Late aayal next batch wait cheyyendi varum.\n\n"
             "Ningalkku job-oriented course venel njan best option suggest cheyyam.\n"
             "*COURSES* / *DEMO* reply cheyyoo."
