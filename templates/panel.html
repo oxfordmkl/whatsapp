@@ -992,6 +992,26 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
       <div id="tplDocHint" style="font-size:12px; color:var(--text-dim); margin-top:6px;">Choose the header document.</div>
     </div>
 
+    <!-- Variable validation banner (Template Registry). Populated by
+         onTemplateChange(); blocks broadcast when required > provided. -->
+    <div id="tplValidationMsg" style="display:none; margin-top:14px; padding:10px 12px;
+         border-radius:8px; font-size:13px;"></div>
+
+    <!-- Send Test: dry-run the selected template (with media) to one number
+         before the full broadcast. Reuses the existing /upload-media and
+         /broadcast-template endpoints. -->
+    <div class="config-field" style="margin-top:14px;">
+      <label>Send Test <span style="color:var(--text-dim); font-weight:400;">— one number, before the full broadcast</span></label>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="text" id="tplTestNumber" placeholder="91XXXXXXXXXX"
+               style="flex:1; min-width:180px;">
+        <button class="btn-crm-outline" id="sendTestBtn" onclick="sendTestTemplate()"
+                style="padding:8px 16px; cursor:pointer; white-space:nowrap;">
+          🧪 Send Test
+        </button>
+      </div>
+    </div>
+
     <div class="send-area" style="margin-top: 16px;">
       <button class="btn-send-main" id="sendTplBtn" onclick="startTemplateBroadcast()">
         <div class="spinner" id="sendTplSpinner"></div>
@@ -1628,6 +1648,13 @@ function onTemplateChange() {
     // template, Refresh Templates will reveal the correct picker.
     if (card) card.style.display = 'none';
     showPicker('NONE');
+    // No known variable requirement → clear validation, keep buttons enabled.
+    const banner = document.getElementById('tplValidationMsg');
+    if (banner) banner.style.display = 'none';
+    const sb = document.getElementById('sendTplBtn');
+    const tb = document.getElementById('sendTestBtn');
+    if (sb) sb.disabled = false;
+    if (tb) tb.disabled = false;
     return;
   }
 
@@ -1650,6 +1677,48 @@ function onTemplateChange() {
 
   // Adapt media picker to the header type.
   showPicker(headerType);
+
+  // Variable validation: the panel fills exactly one body variable ({name}).
+  updateVariableValidation(vars);
+}
+
+// The panel maps exactly one body variable ({{1}} → contact name).
+const VARIABLES_PROVIDED = 1;
+
+// Returns true when the currently selected template can be broadcast.
+// Unknown / free-text names are allowed (backward compat — the operator may
+// type a valid single-variable template that is not in the cached registry).
+function templateIsSendable() {
+  const name = (document.getElementById('tplName').value || '').trim().toLowerCase();
+  const tpl  = TPL_MAP[name];
+  if (!tpl) return true;
+  return detectVars(tpl) <= VARIABLES_PROVIDED;
+}
+
+function updateVariableValidation(requiredVars) {
+  const banner  = document.getElementById('tplValidationMsg');
+  const sendBtn = document.getElementById('sendTplBtn');
+  const testBtn = document.getElementById('sendTestBtn');
+  const missing = Math.max(0, requiredVars - VARIABLES_PROVIDED);
+
+  if (missing > 0) {
+    banner.style.display = 'block';
+    banner.style.background = 'rgba(220,53,69,0.12)';
+    banner.style.color = 'var(--danger)';
+    banner.innerHTML =
+      `⚠ Variables Required: <b>${requiredVars}</b> &nbsp;•&nbsp; Provided: <b>${VARIABLES_PROVIDED}</b> (contact name)<br>` +
+      `Missing <b>${missing}</b> variable(s). This panel only fills {{1}} with the contact name, so this template cannot be broadcast here.`;
+    if (sendBtn) sendBtn.disabled = true;
+    if (testBtn) testBtn.disabled = true;
+  } else {
+    banner.style.display = 'block';
+    banner.style.background = 'rgba(37,211,102,0.10)';
+    banner.style.color = 'var(--wa-green, #25D366)';
+    banner.innerHTML =
+      `✓ Variables Required: <b>${requiredVars}</b> &nbsp;•&nbsp; Provided: <b>${VARIABLES_PROVIDED}</b> (contact name)`;
+    if (sendBtn) sendBtn.disabled = false;
+    if (testBtn) testBtn.disabled = false;
+  }
 }
 
 function mediaHint(kind, hintId, input) {
@@ -1675,11 +1744,86 @@ function selectedHeaderMediaFile() {
   return null;
 }
 
+// ══ Send Test: one-number dry run of the selected template ════════════════
+// Reuses the existing /upload-media and /broadcast-template endpoints and the
+// same header-media picker. Does not touch the broadcast loop.
+async function sendTestTemplate() {
+  const templateName = document.getElementById('tplName').value.trim();
+  if (!templateName) { showAlert('Select or type a template first', 'warn'); return; }
+  if (!templateIsSendable()) {
+    showAlert('This template needs more variables than the panel provides.', 'err');
+    return;
+  }
+
+  let num = (document.getElementById('tplTestNumber').value || '').trim().replace(/[^0-9]/g, '');
+  if (!num) { showAlert('Enter a test WhatsApp number', 'warn'); return; }
+  if (!num.startsWith('91')) num = '91' + num.replace(/^0+/, '');
+
+  const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+  const apiKey    = document.getElementById('apiKey').value.trim();
+  if (!serverUrl) { showAlert('Server URL enter cheyyuka!', 'err'); return; }
+  const lang = document.getElementById('tplLang').value.trim() || 'en';
+
+  const btn = document.getElementById('sendTestBtn');
+  if (btn) btn.disabled = true;
+  try {
+    // Header media — same picker + upload endpoint as the full broadcast.
+    let headerMedia = null;
+    const mediaSel = selectedHeaderMediaFile();
+    if (mediaSel) {
+      log('info', `⬆️ [Test] Uploading ${mediaSel.kind} header: ${mediaSel.file.name}...`);
+      const fd = new FormData();
+      fd.append('file', mediaSel.file);
+      const up = await fetch(`${serverUrl}/upload-media`, {
+        method: 'POST', headers: { 'X-API-Key': apiKey }, body: fd
+      });
+      const upData = await up.json();
+      if (!up.ok || !upData.media_id) {
+        showAlert('Test media upload failed: ' + (upData.error || up.status), 'err');
+        return;
+      }
+      headerMedia = { type: mediaSel.kind.toLowerCase(), id: upData.media_id };
+    }
+
+    log('info', `🧪 Sending test to ${num}...`);
+    const resp = await fetch(`${serverUrl}/broadcast-template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+      body: JSON.stringify({
+        numbers: [{ phone: num, name: 'Test' }],
+        template_name: templateName, language: lang,
+        variables: ['{name}'], delay_seconds: 0,
+        ...(headerMedia ? { header_media: headerMedia } : {})
+      })
+    });
+    const data = await resp.json();
+    if (resp.ok && data.success > 0) {
+      showAlert(`✓ Test sent to ${num}`, 'ok');
+      log('ok', `✓ Test sent to ${num}`);
+    } else {
+      const detail = (data.results && data.results[0])
+        ? `HTTP ${data.results[0].status}` : (data.error || resp.status);
+      showAlert(`Test failed: ${detail}`, 'err');
+      log('err', `Test failed for ${num}: ${detail}`);
+    }
+  } catch (e) {
+    showAlert('Test error: ' + e.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function startTemplateBroadcast() {
   if (isSending) return;
 
   const templateName = document.getElementById('tplName').value.trim();
   if (!templateName) { showAlert('Template Name enter cheyyuka!', 'warn'); return; }
+
+  // Variable validation gate (defense in depth — the button is also disabled).
+  if (!templateIsSendable()) {
+    showAlert('This template needs more variables than the panel provides.', 'err');
+    return;
+  }
 
   const lang = document.getElementById('tplLang').value.trim() || 'en';
 
