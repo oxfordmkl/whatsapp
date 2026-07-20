@@ -961,6 +961,11 @@ def crm_staff_management():
                 "active": active
             }
             save_staff_registry(registry)
+            # Phase 0 Sprint 3: sovereign audit log (Constitution I.7)
+            from app.services.audit_service import log_audit, request_ip
+            log_audit("ROLE_CHANGE", actor=getattr(current_user, "email", None) or getattr(current_user, "username", None),
+                      tenant_id=_actor_tenant_id(), target=f"staff:{code}",
+                      detail={"event": "staff_added", "role": role}, ip=request_ip())
             return redirect(url_for("admin.crm_staff_management", msg="Staff added"))
             
         elif action == "edit":
@@ -978,11 +983,19 @@ def crm_staff_management():
                     err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                     return redirect(url_for("admin.crm_staff_management", err=err_msg))
                 
+            _old_role = registry[code].get("role")
             registry[code]["display_name"] = request.form.get("display_name", "").strip() or registry[code]["display_name"]
             registry[code]["role"] = request.form.get("role", "").strip() or registry[code]["role"]
             registry[code]["active"] = new_active
-            
+
             save_staff_registry(registry)
+            # Phase 0 Sprint 3: audit only actual role mutations
+            if registry[code]["role"] != _old_role:
+                from app.services.audit_service import log_audit, request_ip
+                log_audit("ROLE_CHANGE", actor=getattr(current_user, "email", None) or getattr(current_user, "username", None),
+                          tenant_id=_actor_tenant_id(), target=f"staff:{code}",
+                          detail={"event": "role_edited", "from": _old_role,
+                                  "to": registry[code]["role"]}, ip=request_ip())
             return redirect(url_for("admin.crm_staff_management", msg="Staff updated"))
             
         elif action == "toggle":
@@ -5117,9 +5130,15 @@ def crm_login():
         from app.models import User, Tenant
         from app.extensions import db
         user = User.query.filter_by(email=email).first()
-        
+
+        # Phase 0 Sprint 3: sovereign audit log (Constitution I.7)
+        from app.services.audit_service import log_audit, request_ip
+
         # Fail closed on non-existent user or invalid role
         if not user or user.role not in ('ADMIN', 'STAFF'):
+            log_audit("LOGIN_FAILURE", actor=email, target="/crm/login",
+                      detail={"reason": "unknown user or invalid role"},
+                      ip=request_ip())
             flash("Invalid credentials or inactive account.", "danger")
             return redirect(url_for("admin.crm_login"))
             
@@ -5142,13 +5161,20 @@ def crm_login():
             user.last_login = datetime.utcnow()
             db.session.commit()
             login_user(user)
+            log_audit("LOGIN_SUCCESS", actor=email, tenant_id=user.tenant_id,
+                      target="/crm/login", detail={"role": user.role},
+                      ip=request_ip())
             next_page = request.args.get('next')
             if next_page and next_page.startswith('/'):
                 return redirect(next_page)
             return redirect(url_for("admin.crm_home"))
-            
+
+        log_audit("LOGIN_FAILURE", actor=email,
+                  tenant_id=(user.tenant_id if user else None),
+                  target="/crm/login", detail={"reason": "bad password or inactive"},
+                  ip=request_ip())
         flash("Invalid credentials or inactive account.", "danger")
-        
+
     return render_template("crm_login.html")
 
 
@@ -5214,16 +5240,22 @@ def crm_super_login():
         
         from app.models import User
         from app.extensions import db
+        from app.services.audit_service import log_audit, request_ip
         user = User.query.filter_by(email=email, role='SUPER_ADMIN').first()
         if user and user.is_active and check_password_hash(user.password_hash, password):
             user.last_login = datetime.utcnow()
             db.session.commit()
             login_user(user)
+            log_audit("LOGIN_SUCCESS", actor=email, target="/crm/super/login",
+                      detail={"role": "SUPER_ADMIN"}, ip=request_ip())
             next_page = request.args.get('next')
             if next_page and next_page.startswith('/'):
                 return redirect(next_page)
             return redirect(url_for("admin.crm_super_dashboard"))
-            
+
+        log_audit("LOGIN_FAILURE", actor=email, target="/crm/super/login",
+                  detail={"reason": "bad credentials or not super admin"},
+                  ip=request_ip())
         flash("Invalid credentials or unauthorized.", "danger")
         
     return render_template("crm_super_login.html")

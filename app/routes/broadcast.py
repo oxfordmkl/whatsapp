@@ -67,6 +67,16 @@ def broadcast():
         time.sleep(delay)
 
     ok = sum(1 for x in results if x["ok"])
+    # Phase 0 Sprint 3: sovereign audit log (Constitution I.7) — counts only,
+    # never message bodies or phone lists.
+    from flask import current_app
+    from app.services.audit_service import log_audit, request_ip
+    log_audit("BROADCAST_SEND", actor="broadcast-api",
+              tenant_id=current_app.config.get("PRIMARY_TENANT_ID") or None,
+              target="/broadcast",
+              detail={"total": len(numbers), "success": ok,
+                      "failed": len(numbers) - ok},
+              ip=request_ip())
     return jsonify({"total": len(numbers), "success": ok,
                     "failed": len(numbers) - ok, "results": results})
 
@@ -127,5 +137,15 @@ def broadcast_template():
         time.sleep(delay)
 
     ok = sum(1 for x in results if x["ok"])
+    # Phase 0 Sprint 3: sovereign audit log (Constitution I.7)
+    from flask import current_app
+    from app.services.audit_service import log_audit, request_ip
+    log_audit("BROADCAST_SEND", actor="broadcast-api",
+              tenant_id=current_app.config.get("PRIMARY_TENANT_ID") or None,
+              target="/broadcast-template",
+              detail={"template": template_name, "language": language,
+                      "total": len(numbers), "success": ok,
+                      "failed": len(numbers) - ok},
+              ip=request_ip())
     return jsonify({"total": len(numbers), "success": ok,
                     "failed": len(numbers) - ok, "results": results})

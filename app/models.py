@@ -1281,3 +1281,32 @@ class Notification(db.Model):
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class AuditLog(db.Model):
+    """Phase 0 Sprint 3 — sovereign append-only security audit log.
+
+    Constitution I.7: the audit trail of security-relevant events lives in the
+    platform's own database, in the platform's own format. APPEND-ONLY by
+    convention and code review: no route, service, or job may UPDATE or DELETE
+    rows in this table. There is deliberately no to_dict()-driven edit UI.
+
+    Recorded actions (Sprint 3 scope):
+      LOGIN_SUCCESS / LOGIN_FAILURE  — CRM and super-admin logins
+      ROLE_CHANGE                    — staff-registry role mutations
+      BROADCAST_SEND                 — /broadcast and /broadcast-template runs
+      DATA_EXPORT                    — reserved; no export routes exist yet
+    """
+    __tablename__ = "audit_log"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    # Nullable: platform-level events (e.g. SUPER_ADMIN login) have no tenant.
+    tenant_id  = db.Column(db.String(36), db.ForeignKey("tenants.id"),
+                           nullable=True, index=True)
+    actor      = db.Column(db.String(120), nullable=True)   # email / staff code / 'broadcast-api'
+    action     = db.Column(db.String(40), nullable=False, index=True)
+    target     = db.Column(db.String(255), nullable=True)   # affected object/route
+    detail     = db.Column(db.Text, nullable=True)          # JSON string, no secrets
+    ip_address = db.Column(db.String(45), nullable=True)    # IPv4/IPv6
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
