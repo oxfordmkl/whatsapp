@@ -3,7 +3,7 @@ from app.config import (
     DATABASE_URL, SECRET_KEY, AUTH_MODE,
     EMAIL_PROVIDER, BREVO_API_KEY, BREVO_SENDER_EMAIL,
     BREVO_SENDER_NAME, APP_URL, EMAIL_TIMEOUT_SECONDS,
-    VERIFY_EMAIL_EXPIRY_SECONDS
+    VERIFY_EMAIL_EXPIRY_SECONDS, PRIMARY_TENANT_ID
 )
 from app.extensions import db, migrate
 from pathlib import Path
@@ -28,6 +28,9 @@ def create_app():
     app.config["APP_URL"] = APP_URL
     app.config["EMAIL_TIMEOUT_SECONDS"] = EMAIL_TIMEOUT_SECONDS
     app.config["VERIFY_EMAIL_EXPIRY_SECONDS"] = VERIFY_EMAIL_EXPIRY_SECONDS
+    # Phase 0 Sprint 2: explicit primary-tenant context. webhook.py's grace-path
+    # already reads this key; it was never loaded into config until now.
+    app.config["PRIMARY_TENANT_ID"] = PRIMARY_TENANT_ID
 
     # ── SQLAlchemy / PostgreSQL config ────────────────────────────────────
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL

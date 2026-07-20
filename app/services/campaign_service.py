@@ -56,9 +56,8 @@ def start_campaign(audience_phones, message_text, campaign_name, tenant_id=None)
         
     app_ref = current_app._get_current_object()
     
-    if tenant_id is None:
-        from app.services.log_service import _get_default_tenant_id
-        tenant_id = _get_default_tenant_id()
+    from app.services.log_service import resolve_tenant_id
+    tenant_id = resolve_tenant_id(tenant_id)
         
     thread = threading.Thread(
         target=_campaign_worker,

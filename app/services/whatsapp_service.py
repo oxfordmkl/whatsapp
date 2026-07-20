@@ -7,28 +7,30 @@ token_status = "unknown"
 
 def _get_waba_credentials(tenant_id: str = None) -> tuple[str, str]:
     from app.models import Tenant
-    from app.services.log_service import _get_default_tenant_id
+    from app.services.log_service import resolve_tenant_id
     from app.services.encryption_service import decrypt_token
-    
-    if not tenant_id:
-        tenant_id = _get_default_tenant_id()
-        
+
+    # Phase 0 Sprint 2: explicit tenant resolution (config-first). Previously
+    # fell back to _get_default_tenant_id() (Tenant.query.first()), which
+    # resolves to an arbitrary tenant in multi-tenant production.
+    tenant_id = resolve_tenant_id(tenant_id)
+
     tenant = Tenant.query.get(tenant_id)
     if not tenant:
         raise ValueError(f"Tenant {tenant_id} not found.")
-        
+
     if tenant.waba_phone_number_id and tenant.waba_access_token_encrypted:
         token = decrypt_token(tenant.waba_access_token_encrypted)
         if not token:
             raise ValueError(f"Failed to decrypt WABA token for tenant {tenant_id}.")
         return tenant.waba_phone_number_id, token
-        
-    # Backward compatibility for primary tenant
-    if tenant_id == _get_default_tenant_id():
+
+    # Backward compatibility for the primary tenant (global env credentials)
+    if tenant_id == resolve_tenant_id(None):
         if not PHONE_NUMBER_ID or not ACCESS_TOKEN:
             raise ValueError("Primary tenant missing global WABA configuration.")
         return PHONE_NUMBER_ID, ACCESS_TOKEN
-        
+
     raise ValueError(f"Tenant {tenant_id} has no WABA credentials configured.")
 
 def _wa_headers(access_token: str) -> dict:
@@ -196,11 +198,10 @@ def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = 
     from app.models import ConversationState, PendingMessage
     from app.extensions import db
     from datetime import datetime
-    # Phase 12-C2: Resolve tenant_id before any INSERT
-    from app.services.log_service import _get_default_tenant_id
+    # Phase 12-C2 / Phase 0 Sprint 2: resolve tenant_id before any INSERT
+    from app.services.log_service import resolve_tenant_id
 
-    if tenant_id is None:
-        tenant_id = _get_default_tenant_id()
+    tenant_id = resolve_tenant_id(tenant_id)
 
     state = ConversationState.query.filter_by(phone=to, tenant_id=tenant_id).first()
     

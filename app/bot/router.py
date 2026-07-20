@@ -204,9 +204,8 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     raw = msg_text.strip()
     low = raw.lower()
 
-    if tenant_id is None:
-        from app.services.log_service import _get_default_tenant_id
-        tenant_id = _get_default_tenant_id()
+    from app.services.log_service import resolve_tenant_id
+    tenant_id = resolve_tenant_id(tenant_id)
 
     st = _state(phone, name, tenant_id=tenant_id)
     st["last_msg"]  = datetime.now().isoformat()

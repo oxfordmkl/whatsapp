@@ -7,6 +7,10 @@ PHONE_NUMBER_ID      = os.environ.get("PHONE_NUMBER_ID", "")
 # (the message_templates edge lives on the WABA node, not the phone number).
 WABA_ID              = os.environ.get("WABA_ID", "")
 SHEETS_ID            = os.environ.get("SHEETS_ID", "")
+# Phase 0 Sprint 2: explicit primary-tenant context. Replaces the
+# Tenant.query.first() crutch (_get_default_tenant_id) which resolves to an
+# arbitrary tenant in multi-tenant production (proven: 'amboori', not oxford).
+PRIMARY_TENANT_ID    = os.environ.get("PRIMARY_TENANT_ID", "")
 GEMINI_API_KEY       = os.environ.get("GEMINI_API_KEY", "")
 BROADCAST_API_KEY    = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
 ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")

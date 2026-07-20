@@ -49,10 +49,9 @@ def schedule_followups(phone: str, name: str, tenant_id: str = None):
     """Write follow-up jobs to DB instead of an in-memory list."""
     from app.models import FollowUpJob
     from app.extensions import db
-    from app.services.log_service import _get_default_tenant_id
+    from app.services.log_service import resolve_tenant_id
 
-    if tenant_id is None:
-        tenant_id = _get_default_tenant_id()
+    tenant_id = resolve_tenant_id(tenant_id)
 
     now = datetime.now()
     for tmpl in FOLLOWUP_TEMPLATES:

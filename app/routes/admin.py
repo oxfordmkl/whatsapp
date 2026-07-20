@@ -678,7 +678,6 @@ def crm_marketing_start_job():
         return jsonify({"error": "Message is required"}), 400
         
     from app.services.campaign_service import start_campaign
-    from app.services.log_service import _get_default_tenant_id
     
     try:
         start_campaign(phones, message, campaign_name, tenant_id=_actor_tenant_id())
@@ -1350,7 +1349,7 @@ def crm_lead_update(phone):
 
         # ── Phase 7E & 9.1: Fire events AFTER successful commit ──────────
         import json
-        from app.services.log_service import log_lead_event, _get_default_tenant_id
+        from app.services.log_service import log_lead_event
         from app.models import LeadEvent
 
         # Phase 9.1: LEAD_REASSIGNED accountability audit
@@ -1520,7 +1519,6 @@ def campaign_send():
         flash("Campaigns are limited to 100 recipients max. Please split large batches.", "danger")
         return redirect(url_for("admin.campaigns"))
         
-    from app.services.log_service import _get_default_tenant_id
     from app.services.campaign_service import start_campaign
     try:
         start_campaign(phones, message, name, tenant_id=_actor_tenant_id())
@@ -1567,7 +1565,7 @@ def crm_lead_send(phone):
         r = send_text(phone, message)
         if r.status_code == 200:
             # ── Log manual outbound message (MessageLog — raw technical log) ──
-            from app.services.log_service import log_message, _get_default_tenant_id
+            from app.services.log_service import log_message
             log_message(tenant_id=_tid,
                 phone=phone,
                 direction="outbound",
@@ -1577,7 +1575,7 @@ def crm_lead_send(phone):
             # ── Persist manual send to ConversationMessage (CRM timeline) ──
             # Phase 10N-G Fix 1: Use authenticated actor identity, not lead owner.
             # actor is already resolved at line 1323 — no second DB query needed.
-            from app.services.log_service import save_conversation_message, _get_default_tenant_id, log_lead_event
+            from app.services.log_service import save_conversation_message, log_lead_event
             import json
 
             sender_name = actor.get("username") or "Admin"
@@ -2499,7 +2497,7 @@ def crm_course_admissions(phone):
     import json
     from app.models import LeadEvent
     from app.extensions import db
-    from app.services.log_service import log_lead_event, _get_default_tenant_id
+    from app.services.log_service import log_lead_event
 
     try:
         from app.models import ConversationState
@@ -3729,7 +3727,7 @@ def crm_unassigned_assign():
         
     from app.models import ConversationState
     from app.extensions import db
-    from app.services.log_service import log_lead_event, _get_default_tenant_id
+    from app.services.log_service import log_lead_event
     import json
     
     lead = ConversationState.query.filter_by(phone=phone).first()
@@ -3804,7 +3802,7 @@ def crm_auto_assign_confirm():
         
     from app.models import ConversationState
     from app.extensions import db
-    from app.services.log_service import log_lead_event, _get_default_tenant_id
+    from app.services.log_service import log_lead_event
     import json
     
     updated_count = 0
@@ -3896,7 +3894,7 @@ def crm_reassignment_confirm():
         
     from app.models import ConversationState
     from app.extensions import db
-    from app.services.log_service import log_lead_event, _get_default_tenant_id
+    from app.services.log_service import log_lead_event
     import json
     
     leads = ConversationState.query.filter(ConversationState.phone.in_(phones)).all()

@@ -25,7 +25,42 @@ from datetime import datetime
 _MAX_TEXT = 5000   # Prevent oversized DB rows and abuse payloads
 
 
-# ── Phase 12-C1: Tenant Resolution Helper ──────────────────────────────────
+# ── Phase 0 Sprint 2: Explicit Tenant Resolution ───────────────────────────
+
+def resolve_tenant_id(tenant_id: str = None) -> str:
+    """
+    Resolve the tenant context for a write path.
+
+    Order:
+      1. Explicit tenant_id from the caller — always wins.
+      2. PRIMARY_TENANT_ID from app config (set in production). A warning is
+         logged because the caller should have passed tenant_id explicitly.
+      3. Legacy Tenant.query.first() — ONLY for environments where
+         PRIMARY_TENANT_ID is not configured (local dev, old deploys).
+         This is the pre-Sprint-2 behavior, preserved for backward compat;
+         it never executes in production.
+
+    Replaces direct calls to _get_default_tenant_id(), whose first-row
+    strategy resolves to an arbitrary tenant in multi-tenant production
+    (TD-P0-1; caused the Phase 17.1-C mis-filing incident).
+    """
+    if tenant_id:
+        return tenant_id
+    try:
+        from flask import current_app
+        primary = (current_app.config.get("PRIMARY_TENANT_ID") or "").strip()
+        if primary:
+            logging.warning(
+                "[tenant] implicit resolution → PRIMARY_TENANT_ID "
+                "(caller passed tenant_id=None; pass it explicitly)"
+            )
+            return primary
+    except Exception:
+        logging.exception("[tenant] resolve_tenant_id: config lookup failed")
+    return _get_default_tenant_id()
+
+
+# ── Phase 12-C1: Tenant Resolution Helper (LEGACY — do not call directly) ──
 
 def _get_default_tenant_id() -> str:
     """
@@ -77,9 +112,8 @@ def log_message(
         from app.models import MessageLog
         from app.extensions import db
 
-        # Phase 12-D2B: Compatibility layer fallback
-        if tenant_id is None:
-            tenant_id = _get_default_tenant_id()
+        # Phase 0 Sprint 2: explicit tenant resolution (config-first)
+        tenant_id = resolve_tenant_id(tenant_id)
 
         entry = MessageLog(
             phone=phone,
@@ -138,9 +172,8 @@ def save_conversation_message(
         from app.models import ConversationMessage
         from app.extensions import db
 
-        # Phase 12-D2B: Compatibility layer fallback
-        if tenant_id is None:
-            tenant_id = _get_default_tenant_id()
+        # Phase 0 Sprint 2: explicit tenant resolution (config-first)
+        tenant_id = resolve_tenant_id(tenant_id)
 
         entry = ConversationMessage(
             phone=phone,
@@ -210,9 +243,8 @@ def log_lead_event(
         from app.models import LeadEvent
         from app.extensions import db
 
-        # Phase 12-D2B: Compatibility layer fallback
-        if tenant_id is None:
-            tenant_id = _get_default_tenant_id()
+        # Phase 0 Sprint 2: explicit tenant resolution (config-first)
+        tenant_id = resolve_tenant_id(tenant_id)
 
         entry = LeadEvent(
             phone=phone,
