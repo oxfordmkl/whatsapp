@@ -86,7 +86,7 @@ At 1,000+ tenants, a schema-per-tenant or database-per-tenant approach may be ev
 | `industry` | String(50) | Vertical for AI prompt defaults. Default: `Education` |
 | `waba_phone_number_id` | String(50) | Meta Phone Number ID for WhatsApp routing |
 | `waba_access_token_encrypted` | Text | Fernet-encrypted Meta access token |
-| `ai_persona_name` | String(50) | Bot display name. NULL = system default (Aaliza) |
+| `ai_persona_name` | String(50) | Bot display name. NULL = system default (Oxford Nova) |
 | `ai_prompt_override` | Text | Custom system prompt. NULL = system default |
 | `billing_provider` | String(20) | `razorpay` or `stripe` |
 | `billing_customer_id` | String(100) | Provider customer ID |
@@ -325,7 +325,7 @@ Each tenant can configure their own AI persona and system prompt.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `ai_persona_name` | NULL (→ "Aaliza") | Bot display name shown to leads |
+| `ai_persona_name` | NULL (→ "Oxford Nova") | Bot display name shown to leads |
 | `ai_prompt_override` | NULL (→ `AALIZA_PROMPT`) | Custom system prompt |
 
 ### Configuration via Tenant Portal

@@ -18,7 +18,7 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
             f"{'Conversation so far:\n' + context + chr(10) if context else ''}"
             f"Student name: {name}\n"
             f"Student says: \"{user_msg}\"\n\n"
-            f"Reply as Aaliza:"
+            f"Reply as Oxford Nova:"
         )
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash",
@@ -54,7 +54,7 @@ def smart_fallback(name: str, msg: str = "") -> str:
         )
     return (
         f"😊 Nandi {name}!\n\n"
-        "Njan Aaliza — The Oxford Computers-nte counselor.\n"
+        "Njan Oxford Nova — The Oxford Computers-nte counselor.\n"
         "Ningalkku njan enthu help cheyyanam?\n\n"
         "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
         "📞 9447329972"

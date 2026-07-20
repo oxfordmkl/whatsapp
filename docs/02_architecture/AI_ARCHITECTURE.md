@@ -117,7 +117,7 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
         f"{'Conversation so far:\n' + context + '\n' if context else ''}"
         f"Student name: {name}\n"
         f"Student says: \"{user_msg}\"\n\n"
-        f"Reply as Aaliza:"
+        f"Reply as Oxford Nova:"
     )
 
     response = gemini_client.models.generate_content(
@@ -353,7 +353,7 @@ Each tenant can customize their AI bot:
 
 | Field | Default | Configurable Via |
 |-------|---------|-----------------|
-| `ai_persona_name` | "Aaliza" (system default) | Tenant Portal → AI Settings |
+| `ai_persona_name` | "Oxford Nova" (system default) | Tenant Portal → AI Settings |
 | `ai_prompt_override` | `AALIZA_PROMPT` (from `bot/prompts.py`) | Tenant Portal → AI Settings |
 
 ### Current Implementation Gap
@@ -378,7 +378,7 @@ The per-tenant prompt override and persona name are available in the database bu
 
 The system uses a single global prompt (`AALIZA_PROMPT`) that defines the AI persona:
 
-- Persona: Aaliza — a friendly Malayalam-speaking AI counselor for The Oxford Computers
+- Persona: Oxford Nova — a friendly Malayalam-speaking AI counselor for The Oxford Computers
 - Language: Responds in Malayalam (Manglish) with some English
 - Tone: Friendly, helpful, warm
 - Goal: Guide leads toward demo booking and course enrollment
@@ -449,7 +449,7 @@ Leads are scored automatically as they interact with the AI. Leads scoring ≥ 8
 
 | Limitation | Impact | Resolution Phase |
 |-----------|--------|-----------------|
-| `ai_prompt_override` not applied in `gemini_reply()` | All tenants use Oxford Aaliza prompt | Phase 16 |
+| `ai_prompt_override` not applied in `gemini_reply()` | All tenants use Oxford Nova prompt | Phase 16 |
 | No conversation history passed to Gemini | Gemini has no memory of prior turns within session | Phase 16 |
 | AI engine is Oxford-specific (course names, fees hardcoded in `bot/constants.py`) | Cannot be used as-is for different industries | Phase 16 |
 | No rate limiting per tenant for AI calls | One tenant's Gemini quota could starve others | Phase 16 |

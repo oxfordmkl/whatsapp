@@ -35,7 +35,7 @@
       <div>
         <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Active AI Persona</div>
         <div style="font-size:1.1rem;font-weight:700;color:var(--text-main);">
-          {% if tenant.ai_persona_name %}{{ tenant.ai_persona_name }}{% else %}<span style="color:var(--text-muted);">System Default (Aaliza)</span>{% endif %}
+          {% if tenant.ai_persona_name %}{{ tenant.ai_persona_name }}{% else %}<span style="color:var(--text-muted);">System Default (Oxford Nova)</span>{% endif %}
         </div>
         <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.15rem;">
           Prompt: {% if tenant.ai_prompt_override %}<span style="color:var(--green);">Custom override active</span>{% else %}<span>Using system default</span>{% endif %}
@@ -52,7 +52,7 @@
           <label for="ai_persona_name">Persona Name</label>
           <input type="text" id="ai_persona_name" name="ai_persona_name"
             value="{{ tenant.ai_persona_name or '' }}"
-            placeholder="e.g. Aaliza, Priya, Rahul (leave blank to use system default)"
+            placeholder="e.g. Oxford Nova, Priya, Rahul (leave blank to use system default)"
             maxlength="50">
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;">This name is shown to leads in WhatsApp conversations. Leave blank to use the system default.</div>
         </div>
@@ -83,7 +83,7 @@
 
     <div class="t-alert t-alert-info" style="font-size:0.8rem;">
       <i class="bi bi-info-circle me-1"></i>
-      <strong>How it works:</strong> If Persona Name is blank, the system uses the platform default name. If Custom Prompt is blank, the platform's default Aaliza prompt is used. Changes take effect immediately for new WhatsApp conversations.
+      <strong>How it works:</strong> If Persona Name is blank, the system uses the platform default name. If Custom Prompt is blank, the platform's default Oxford Nova prompt is used. Changes take effect immediately for new WhatsApp conversations.
     </div>
 
   </div><!-- /t-page-body -->

@@ -49,7 +49,7 @@ class Tenant(db.Model):
     waba_access_token_encrypted = db.Column(db.Text, nullable=True)
 
     # ── Phase 13-A2B: Per-Tenant AI Persona Fields ────────────────────────
-    # Bot display name shown to leads (e.g., "Aaliza", "Priya", "Rahul").
+    # Bot display name shown to leads (e.g., "Oxford Nova", "Priya", "Rahul").
     # NULL = system default persona.
     ai_persona_name    = db.Column(db.String(50), nullable=True)
 

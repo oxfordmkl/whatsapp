@@ -84,7 +84,7 @@ The root entity of the entire platform. Every other tenant-owned record referenc
 | `industry` | String(50) | No | `'Education'` | Vertical for AI prompt defaults |
 | `waba_phone_number_id` | String(50) | Yes | NULL | Meta WABA phone number ID |
 | `waba_access_token_encrypted` | Text | Yes | NULL | Fernet-encrypted Meta token |
-| `ai_persona_name` | String(50) | Yes | NULL | Bot display name. NULL = "Aaliza" |
+| `ai_persona_name` | String(50) | Yes | NULL | Bot display name. NULL = "Oxford Nova" |
 | `ai_prompt_override` | Text | Yes | NULL | Custom system prompt. NULL = system default |
 | `billing_provider` | String(20) | Yes | NULL | `'razorpay'` or `'stripe'` |
 | `billing_customer_id` | String(100) | Yes | NULL | Provider customer ID |

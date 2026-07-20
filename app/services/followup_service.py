@@ -13,7 +13,7 @@ FOLLOWUP_TEMPLATES = [
         "day": 1,
         "hours": 24,
         "message": (
-            "Hi {name} 😊 Aaliza here from The Oxford Computers.\n\n"
+            "Hi {name} 😊 Oxford Nova here from The Oxford Computers.\n\n"
             "Course about alochichu nokkiyo?\n"
             "Confusion undenkil njan help cheyyam.\n\n"
             "Oru free demo class attend cheythal clarity varum 🎓\n"
