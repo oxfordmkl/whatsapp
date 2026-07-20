@@ -227,7 +227,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         st["stage"] = "done"
         return msg_exit(name)
 
-    if low in GREETING_WORDS and stage in ("new", "done", "enrolled", "goal_selection"):
+    if low in GREETING_WORDS and stage in ("new", "done", "enrolled"):
         st["stage"] = "goal_selection"
         return msg_welcome(name)
 
