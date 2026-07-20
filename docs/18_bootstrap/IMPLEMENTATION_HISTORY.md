@@ -52,6 +52,17 @@ Summary of engineering phases from inception to the present.
 - **Production Status**: Active. Phase 16.5A6 unblocked.
 - **Related ADR**: `ADR-018`, `ADR-019`.
 
+## WhatsApp Broadcast Enhancements (MERGED + DEPLOYED 2026-07-20)
+- **Merged** via feature branch `feature/whatsapp-broadcast-enhancements` → `main` (fast-forward `85456cb..0eae786`, 5 commits, 4 files). Branch deleted post-merge. Railway deploy `f00d0846` ● Online.
+- **Scope** (backend + `templates/panel.html` only; scheduler/webhook/bot/tenant logic untouched; no schema change / no migration):
+  - **Diagnostics** (`c38861a`): full Meta error body logged on template send failure.
+  - **Image/media header** (`c874404`): `/upload-media` + optional `header_image_id`; `send_template` unchanged.
+  - **Template registry** (`eb58697`): `WABA_ID` config; `fetch_templates()`; `/templates` route; searchable dropdown + info card + auto header-type detection + image/video/document pickers; generic `header_media`.
+  - **Validation + Send Test** (`cbf3725`): variable Required vs Provided gating; one-number test send.
+  - **UX polish** (`0eae786`): explicit available/missing variable lists; phone normalization; Send Test loading + result feedback.
+- **Live verification (post-deploy)**: clean boot (Gemini / scheduler / WhatsApp token all ✅); `/health` 200; **`/templates` reached Meta and returned 3 approved templates** (incl. an image-header handle) — first end-to-end confirmation of the live Meta path; `/upload-media` and `/broadcast-template` live and validating. `/templates` 401 without key.
+- **Note**: an actual image/video/document broadcast and a real Send Test still send live WhatsApp messages — confirm with one real Send Test when convenient.
+
 ## Phase 17.1-B (TenantContext — Category B: CRM write paths)
 - **Objective**: Eliminate implicit tenant guessing (`_get_default_tenant_id()` = `Tenant.query.first()`) in the 11 CRM admin write sites where the acting tenant was already available. Category B only; no refactor, no new abstraction.
 - **Fix**: reuse in-scope `_tid` where the function defines it (crm_lead_update, crm_lead_send, admission); use the existing `_actor_tenant_id()` helper elsewhere (marketing/campaign start, unassigned assign, auto-assign confirm, reassignment confirm). Pure token swaps — 11 lines, `admin.py` only.
