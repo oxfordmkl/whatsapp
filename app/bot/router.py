@@ -214,9 +214,6 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     stage   = st["stage"]
     course  = st["course"]
 
-    # ── TEMP DIAG (routing audit) — remove after production evidence gathered ──
-    print(f"🔍 [DIAG] recv msg={raw!r} stage={stage!r} course={course!r} is_new_lead={is_new_lead}")
-
     if "course details" in low or "want course details" in low:
         st["stage"] = "goal_selection"
         st["course"] = ""
@@ -231,13 +228,11 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return msg_exit(name)
 
     if low in GREETING_WORDS and stage in ("new", "done", "enrolled"):
-        print("🔍 [DIAG] branch=GREETING_WELCOME (static)")
         st["stage"] = "goal_selection"
         return msg_welcome(name)
 
     objection = detect_objection(low)
     if objection:
-        print(f"🔍 [DIAG] branch=OBJECTION:{objection} (static)")
         return handle_objection(objection, name, st)
 
     if low in {"demo", "free demo", "free class", "book demo"}:
@@ -308,7 +303,6 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return (FULL_FEE_TABLE + "\n\nExact course select cheythal EMI/monthly idea paranjutharam."), "FEES"
 
     if low in {"courses", "course", "list", "all courses", "padikkaan", "study"}:
-        print("🔍 [DIAG] branch=COURSES_KEYWORD (static)")
         if stage == "goal_selection":
             return (
                 f"😊 {name}, oru number reply cheyyoo!\n\n"
@@ -320,12 +314,10 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return msg_welcome(name)
 
     if any(w in low for w in VISIT_WORDS):
-        print("🔍 [DIAG] branch=VISIT_WORDS (static)")
         threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested", "", tenant_id)).start()
         return msg_visit()
 
     if any(w in low for w in CALL_WORDS):
-        print("🔍 [DIAG] branch=CALL_WORDS (static)")
         threading.Thread(target=update_lead_status, args=(phone, "Call Requested", "", tenant_id)).start()
         return msg_call_us(name)
 
@@ -378,15 +370,12 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
             return msg_goal_courses(goal, name)
 
         if low == "5":
-            print("🔍 [DIAG] branch=GOAL_5_NOTSURE — calling gemini_reply()")
             st["stage"] = "not_sure"
             ai = gemini_reply(
                 f"Student {name} is not sure which course to choose. "
                 "Ask one friendly question about their qualification and career goal to recommend the right course.",
                 name,
             )
-            print(f"🔍 [DIAG] gemini={'SUCCESS' if ai else 'NONE'} — "
-                  f"{'AI reply' if ai else 'smart_fallback EXECUTED'} (GOAL_5)")
             return (ai or smart_fallback(name, low)), "GOAL"
 
         if low.isdigit():
@@ -450,7 +439,6 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     for kw, idx in KEYWORD_TO_COURSE.items():
         if kw in low:
-            print(f"🔍 [DIAG] branch=KEYWORD_TO_COURSE kw={kw!r} (static course card)")
             c_name = ALL_COURSES[idx][0]
             st["course"] = c_name
             st["stage"]  = "course_viewed"
@@ -479,11 +467,8 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         ).start()
         return msg_course_detail(low)
 
-    print("🔍 [DIAG] branch=AI_FALLTHROUGH — calling gemini_reply()")
     ai = gemini_reply(raw, name)
     if ai:
-        print(f"🔍 [DIAG] gemini=SUCCESS len={len(ai)} — returning AI reply")
         return ai, "COURSE"
 
-    print("🔍 [DIAG] gemini=NONE — smart_fallback EXECUTED (AI_FALLTHROUGH)")
     return smart_fallback(name, raw), "COURSE"
