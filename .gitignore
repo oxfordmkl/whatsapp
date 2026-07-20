@@ -20,3 +20,4 @@ node_modules/
 *.sql.gz
 *.backup
 backups/
+tests/_test_*.db

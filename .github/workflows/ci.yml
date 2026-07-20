@@ -1,0 +1,62 @@
+# Phase 0 Sprint 2 — minimal CI (Constitution VII.4).
+# Pipeline: install → import validation → regression tests → tenant-isolation
+# suite (BLOCKING, per Immutable Core I.1). Deliberately no Docker, no deploy
+# stage, no lint yet — later sprints extend this file; they do not replace it.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      # NOTE: DATABASE_URL is deliberately NOT set job-wide — each regression
+      # test self-configures its own database via os.environ.setdefault().
+      SECRET_KEY: ci-secret
+      ADMIN_KEY: ci-admin
+      BROADCAST_API_KEY: ci-broadcast
+      GEMINI_API_KEY: ""
+      WABA_ENCRYPTION_KEY: "FZsAc8GY_ayHq0cAxKXMMlUvSbJO2hKhpZOdGnaxO18="
+      PRIMARY_TENANT_ID: ""
+      FLASK_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Application import validation
+        env:
+          DATABASE_URL: "sqlite:///ci_import_check.db"
+        run: |
+          python -c "
+          from app import create_app
+          app = create_app()
+          n = len(list(app.url_map.iter_rules()))
+          assert n > 50, f'suspiciously few routes: {n}'
+          print(f'create_app() OK — {n} routes registered')
+          "
+
+      - name: Regression — adapter sync (ADR-020)
+        run: python tests/test_adapter_sync_16_5a6j.py
+
+      - name: Regression — task engine (16.5A7-B)
+        run: python tests/test_task_engine_16_5a7b.py
+
+      - name: Regression — task & notification foundation (ADR-021)
+        run: python tests/test_task_notification_16_5a7.py
+
+      - name: Regression — legacy completion authorization (16.5A7-D)
+        run: python tests/test_legacy_completion_auth_16_5a7d.py
+
+      - name: Tenant isolation suite (BLOCKING — Constitution I.1)
+        run: python tests/test_tenant_isolation.py
