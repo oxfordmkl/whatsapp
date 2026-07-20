@@ -1,0 +1,58 @@
+# Phase 0 Sprint 4 — off-machine encrypted nightly backup (Constitution VI.5:
+# backups on a different provider than production). GitHub = second provider.
+#
+# DORMANT until two repository secrets are set (Settings → Secrets → Actions):
+#   BACKUP_DATABASE_URL   — the Railway Postgres connection string
+#   BACKUP_PASSPHRASE     — same passphrase as backups/.backup_passphrase
+# Without them the job exits early with a notice (no failure spam).
+#
+# Encrypted BEFORE upload; artifacts retained 30 days (rotation by retention).
+name: Nightly Backup
+
+on:
+  schedule:
+    - cron: "45 20 * * *"   # 20:45 UTC = 02:15 IST nightly
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets configured
+        id: gate
+        run: |
+          if [ -z "${{ secrets.BACKUP_DATABASE_URL }}" ] || [ -z "${{ secrets.BACKUP_PASSPHRASE }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Backup secrets not configured — skipping (see workflow header)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install PostgreSQL client
+        if: steps.gate.outputs.configured == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump, verify, encrypt
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DBURL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          STAMP=$(date +%Y%m%d_%H%M)
+          pg_dump --format=custom --no-owner --file="oxfordcrm_${STAMP}.dump" "$DBURL"
+          pg_restore --list "oxfordcrm_${STAMP}.dump" > /dev/null
+          TABLES=$(pg_restore --list "oxfordcrm_${STAMP}.dump" | grep -c "TABLE DATA")
+          echo "dump ok — ${TABLES} tables"
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "oxfordcrm_${STAMP}.dump" -out "oxfordcrm_${STAMP}.dump.enc" \
+            -pass env:PASS
+          rm "oxfordcrm_${STAMP}.dump"
+          echo "ENC_FILE=oxfordcrm_${STAMP}.dump.enc" >> "$GITHUB_ENV"
+
+      - name: Upload encrypted backup artifact
+        if: steps.gate.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ENC_FILE }}
+          path: ${{ env.ENC_FILE }}
+          retention-days: 30
