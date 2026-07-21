@@ -1,5 +1,6 @@
 import logging
 from google import genai
+from google.genai import types
 from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.bot.prompts import AALIZA_PROMPT
 
@@ -12,12 +13,19 @@ else:
     gemini_client = None
     logger.warning("⚠️  GEMINI_API_KEY not set — AI replies disabled")
 
+# Phase 1.2A: persona moved from inlined `contents` to a stable
+# `system_instruction`, plus a conservative output cap. temperature / top_p /
+# top_k / thinking_config are intentionally left at model defaults (unchanged).
+_GENERATION_CONFIG = types.GenerateContentConfig(
+    system_instruction=AALIZA_PROMPT,
+    max_output_tokens=200,
+)
+
 def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
     if not gemini_client:
         return None
     try:
         prompt = (
-            f"{AALIZA_PROMPT}\n\n"
             f"{'Conversation so far:\n' + context + chr(10) if context else ''}"
             f"Student name: {name}\n"
             f"Student says: \"{user_msg}\"\n\n"
@@ -28,6 +36,7 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
+            config=_GENERATION_CONFIG,
         )
         _perf_mark("gemini_end")
         return response.text.strip()
