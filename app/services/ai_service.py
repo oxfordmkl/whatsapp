@@ -1,13 +1,13 @@
 import logging
 from google import genai
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.bot.prompts import AALIZA_PROMPT
 
 logger = logging.getLogger(__name__)
 
 if GEMINI_API_KEY:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    logger.info("✅ Gemini AI initialised (google-genai SDK, gemini-2.0-flash)")
+    logger.info(f"✅ Gemini AI initialised (google-genai SDK, {GEMINI_MODEL})")
 else:
     gemini_client = None
     logger.warning("⚠️  GEMINI_API_KEY not set — AI replies disabled")
@@ -24,7 +24,7 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
             f"Reply as Oxford Nova:"
         )
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=GEMINI_MODEL,
             contents=prompt,
         )
         return response.text.strip()

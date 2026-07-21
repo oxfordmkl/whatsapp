@@ -15,6 +15,7 @@ PRIMARY_TENANT_ID    = os.environ.get("PRIMARY_TENANT_ID", "")
 # (local dev, CI). Set the DSN in Railway service variables to activate.
 SENTRY_DSN           = os.environ.get("SENTRY_DSN", "")
 GEMINI_API_KEY       = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL         = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 BROADCAST_API_KEY    = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
 ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
