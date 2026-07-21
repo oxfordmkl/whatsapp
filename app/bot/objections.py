@@ -2,8 +2,9 @@ from app.bot.constants import FEES_VALUE_LINES, pick
 
 def detect_objection(low: str) -> str | None:
     """Return objection type string or None."""
-    if any(x in low for x in ["fees high", "fee high", "rate high", "expensive",
-                               "costly", "kooduthal", "\u0d15\u0d42\u0d1f\u0d41\u0d24\u0d32\u0d4d", "high aanu"]):
+    if any(x in low for x in ["fees high", "fee high", "high fee", "rate high", "expensive",
+                               "costly", "afford", "budget", "kooduthal",
+                               "\u0d15\u0d42\u0d1f\u0d41\u0d24\u0d32\u0d4d", "high aanu"]):
         return "fees_high"
     if any(x in low for x in ["think", "nokkatte", "alochikkam", "later", "pinne",
                                "\u0d28\u0d4b\u0d15\u0d4d\u0d15\u0d1f\u0d4d\u0d1f\u0d46", "\u0d06\u0d32\u0d4b\u0d1a\u0d3f\u0d15\u0d4d\u0d15\u0d3e\u0d02"]):

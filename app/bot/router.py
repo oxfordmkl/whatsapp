@@ -19,6 +19,29 @@ CALL_WORDS    = {"call me", "call", "counselor", "talk to counselor",
 GREETING_WORDS = {"hi", "hello", "hai", "hii", "hey", "namaskaram",
                   "നമസ്കാരം", "hy", "helo", "helloo"}
 
+# Words that open a question (first token signals interrogative intent)
+_QUESTION_STARTERS = frozenset({
+    "is", "does", "will", "can", "how", "what", "when",
+    "why", "which", "are", "has", "have", "should", "would",
+})
+# Words that, when co-occurring with a course keyword in a longer message,
+# indicate the message is a question rather than a bare course name lookup.
+_QUESTION_SIGNALS = frozenset({
+    "fee", "fees", "high", "cost", "price", "expensive", "worth",
+    "better", "vs", "compare", "placement", "job", "salary",
+    "difficult", "easy", "eligible", "difference", "good", "best",
+})
+
+
+def _is_question(low: str) -> bool:
+    """Return True when the message appears to be a question, not a bare keyword lookup."""
+    if "?" in low:
+        return True
+    tokens = low.split()
+    if tokens and tokens[0] in _QUESTION_STARTERS:
+        return True
+    return len(tokens) > 3 and bool(_QUESTION_SIGNALS.intersection(tokens))
+
 
 def _state(phone: str, name: str, tenant_id: str = None):
     """Load or create DB-backed state. Returns a StateProxy that auto-saves."""
@@ -449,6 +472,13 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                             event_data=c_name, tenant_id=tenant_id),
                 daemon=True,
             ).start()
+            # Phase 1.1: if the message is a question, answer it conversationally.
+            # Bare keywords (e.g. "pgdca", "dca") keep the deterministic fast-path.
+            if _is_question(low):
+                _, card = ALL_COURSES[idx]
+                ai = gemini_reply(raw, name, context=f"Course details:\n{card}")
+                if ai:
+                    return ai, "COURSE"
             return msg_course_detail(idx)
 
     if low in ALL_COURSES:
