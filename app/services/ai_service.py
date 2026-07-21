@@ -56,11 +56,10 @@ def smart_fallback(name: str, msg: str = "") -> str:
     m = msg.lower()
     if any(w in m for w in ["fee", "price", "cost", "vila", "ethra","fees"]):
         return (
-            f"😊 {name}, fees ariyaan government approved rates und!\n\n"
-            "Courses ₹1,999 muthal thudangunnu.\n"
-            "EMI / installment option um und! 📊\n\n"
+            f"😊 {name}, government approved rates-il courses und!\n\n"
+            "₹4,499 muthal thudangi — EMI / installment option um und! 📊\n\n"
             "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
-            "Coursukal kanan *COURSES* ennu reply cheyyuka 📚\n"
+            "Courses kaanan: *COURSES* reply cheyyoo 📚\n"
             "📞 9447329972"
         )
     if any(w in m for w in ["job", "placement", "work", "career"]):

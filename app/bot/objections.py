@@ -83,10 +83,10 @@ def handle_objection(kind: str, name: str, st: dict) -> tuple[str, str | None]:
 
     if kind == "free_ask":
         text = (
-            "Full course free alla 😊\n\n"
-            "Pakshe free demo class und 👍\n"
-            "Athil course, fees, timing ellaam clear aayi explain cheyyam.\n\n"
-            "Demo book cheyyatte?"
+            "Free demo class und 👍\n\n"
+            "Athil course, fees, batch timing ellaam\n"
+            "clear aayi explain cheyyam — zero commitment.\n\n"
+            "Demo book cheyyatte? 🎓"
         )
         return text, "COURSE"
 

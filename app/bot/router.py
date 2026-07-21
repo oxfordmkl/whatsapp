@@ -5,7 +5,8 @@ from app.state import get_or_create_state
 from app.bot.constants import (
     ALL_COURSES, COURSE_FEES, KEYWORD_TO_COURSE, GOAL_COURSES,
     OFFER_MENU, COURSE_PAYMENT_LINKS, FULL_FEE_TABLE,
-    DEMO_CTA, COURSE_CLOSE, URGENCY_LINES, TRUST_LINES, FEES_VALUE_LINES, pick
+    DEMO_CTA, COURSE_CLOSE, URGENCY_LINES, TRUST_LINES, FEES_VALUE_LINES, pick,
+    RUTRONIX_FULL, PSC_NOTE, NORKA_NOTE, LEARNING_MODES,
 )
 from app.bot.objections import detect_objection, handle_objection
 from app.services.ai_service import gemini_reply, smart_fallback
@@ -52,7 +53,7 @@ def msg_welcome(name: str) -> tuple[str, str]:
     text = (
         f"👋 നമസ്കാരം *{name}*!\n\n"
         "*The Oxford Computers*-ലേക്ക് സ്വാഗതം! 🎓\n"
-        "Kerala Govt Certified • AI-Enabled Courses\n\n"
+        f"{RUTRONIX_FULL} • AI-Enabled Courses\n\n"
         "Ningalude lakshyam enthanu? 🤔\n\n"
         "1️⃣ Job Oriented — IT / Software career\n"
         "2️⃣ Business / Freelance\n"
@@ -157,7 +158,7 @@ def msg_offer_menu() -> tuple[str, str]:
 
 def msg_payment_link(code, full_name, price, dur, link) -> tuple[str, str]:
     text = (
-        f"✅ *{code} — Nalla choice aanu!* 🎯\n\n"
+        f"🎉 *{code} — Seat Reserve Cheyyam!*\n\n"
         f"📚 {full_name}\n"
         f"⏱ Duration: {dur}\n"
         f"🎓 Kerala State Rutronix Approved\n"
@@ -284,9 +285,11 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
             return text, "COURSE"
         else:
             return (
-                f"😊 {name}, aadhyam oru course select cheyyoo!\n\n"
-                "Course list kaanan *COURSES* reply cheyyoo.\n"
-                "Athil ningalkku best option njan suggest cheyyam 🎓"
+                f"😊 {name}, enroll cheyyan ready aano — super! 🎉\n\n"
+                "Aadhyam oru course select cheyyoo:\n\n"
+                "1️⃣ PGDCA — ₹15,999 | 12 Months\n"
+                "2️⃣ DCA Fast Track — ₹6,400 | 6 Months\n\n"
+                "Full list kaanan: *COURSES* reply cheyyoo 📚"
             ), "GOAL"
 
     if low in {"offer", "today offer", "offer undo", "discount"} or ("offer" in low and "discount" in low):
@@ -345,23 +348,26 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     if "certificate" in low or "certific" in low:
         text = (
-            "🏆 *Government Certified Certificate*\n\n"
-            "✅ Kerala State Rutronix Approved\n"
-            "✅ Valid for job applications\n"
-            "✅ Accepted for higher studies\n\n"
-            "Real government-backed certification! 💪"
+            "🏆 *Government Recognised Certificate*\n\n"
+            f"✅ {RUTRONIX_FULL}\n"
+            "✅ Valid for government & private job applications\n"
+            "✅ Accepted for higher studies & skill upgradation\n\n"
+            f"📋 {PSC_NOTE}\n"
+            f"🌐 {NORKA_NOTE}\n\n"
+            "Ithu real government-backed certification aanu 💪\n"
+            "Demo kaanumbo full clarity varum — book cheyyatte? 🎓"
         )
         return text, "COURSE"
 
     if low in {"placement", "job assistance", "placement support", "job guarantee"}:
         text = (
             "💼 *Placement Support*\n\n"
-            "✅ 100% placement assistance\n"
-            "✅ Resume preparation & interview coaching\n"
-            "✅ Job referral network\n\n"
-            "Students Kerala & Gulf-il working aanu! 🌍\n\n"
-            "(Note: We provide placement *assistance*,\n"
-            "not a job guarantee — but our track record is strong! 💪)"
+            "✅ Dedicated placement assistance — resume to offer letter\n"
+            "✅ Interview coaching & referral network\n"
+            "✅ Students Kerala & Gulf-il working aanu 🌍\n\n"
+            "Njangal honest aanu — placement *support* tharum,\n"
+            "nalla track record und 💪\n\n"
+            "Demo kaanumbo full idea varum — book cheyyatte? 🎓"
         )
         # ── Phase 6A: PLACEMENT_ASKED event ──
         _app = current_app._get_current_object()
@@ -379,7 +385,9 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
             "☀️  Afternoon: 12 PM – 2 PM\n"
             "🌆 Evening:   5 PM – 7 PM\n\n"
             "Weekend batches also available! 📅\n"
-            "Preferred time parañju — book cheyyam!"
+            f"📱 {LEARNING_MODES}\n\n"
+            "Ningalude schedule-ku best time parayoo —\n"
+            "njan demo book cheyyam! 🎓"
         )
         return text, "COURSE"
 

@@ -5,6 +5,32 @@ def pick(items: list) -> str:
     return random.choice(items)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CANONICAL BUSINESS FACTS — single source of truth.
+# Every reply and AI prompt must agree with these values.
+# Change here; all downstream strings inherit the change.
+# ══════════════════════════════════════════════════════════════════════════════
+INST_NAME       = "The Oxford Computers"
+INST_LOCATION   = "Malayinkeezhu Junction, Thiruvananthapuram, Kerala"
+INST_PHONE      = "9447329972"
+INST_WEBSITE    = "theoxfordedu.com"
+
+# Recognition — use the short label in course cards; full label in intros/cert replies.
+RUTRONIX_LABEL  = "Kerala State Rutronix Approved"
+RUTRONIX_FULL   = "Kerala State Rutronix Authorised Training Centre"
+
+# Government / eligibility (always quote exactly — never invent eligibility).
+PSC_NOTE        = "Eligible 6-month & 12-month govt-approved courses are PSC eligible"
+NORKA_NOTE      = "NORKA Attestation available for eligible certificates"
+
+# Learning delivery
+LEARNING_MODES  = "Offline Classes | Online Live Classes | Fast Track available"
+
+# Technology
+AI_NOTE         = "All courses are AI-enabled — AI tools integrated throughout"
+# ══════════════════════════════════════════════════════════════════════════════
+
+
 # ── Phase 7F.2: Course name normalization ──────────────────────────────────
 #
 # Maps every known alias (lowercase key) to the canonical course name that
@@ -60,70 +86,70 @@ def normalize_course_name(raw: str) -> str:
 
 _PGDCA = (
     "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
-    "⏱ 12 Months | 🎓 Rutronix + State Approved\n"
+    f"⏱ 12 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋  C++/ Java, PYTHON, DBMS, Web Dev, Networks, Mobile App, Final Project\n"
     "💡 Best for graduates seeking an Govt+IT career\n"
     "💰 Fee: ₹15,999"
 )
 _AIDM = (
     "📚 *AIDM — AI-Driven Digital Marketing*\n"
-    "⏱ 6 Months | 🎓 Industry Recognised\n"
+    f"⏱ 6 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 SEO, Social Media, Google Ads, Meta Ads, ChatGPT/AI Tools, Live Campaigns\n"
     "💡 Best for marketers, entrepreneurs, beginners\n"
     "💰 Fee: ₹19,999"
 )
 _SAP = (
     "📚 *SAP Financial Accounting & Controlling*\n"
-    "⏱ 4-6 Months | 🎓 SAP Alliance Certificate\n"
+    f"⏱ 6 Months | 🎓 SAP Alliance + {RUTRONIX_LABEL}\n"
     "📋 GL Accounting, AP/AR, Asset Accounting, SAP CO, Real-Time Project\n"
     "💡 Best for commerce graduates & accounting professionals\n"
-    "💰 Fee: ₹15,999"
+    "💰 Fee: ₹15,000"
 )
 _PYTHON = (
     "📚 *Python — Beginner to Advanced*\n"
-    "⏱ 3 Months | 🎓 Rutronix Certified\n"
+    f"⏱ 3 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 OOP, File Handling, Flask Basics, Pandas, Web Scraping, Automation\n"
     "💡 Best for beginners and IT aspirants\n"
     "💰 Fee: ₹4,499"
 )
 _GST = (
     "📚 *Diploma in GST, Taxation & Payroll*\n"
-    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    f"⏱ 6 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 GST Concepts, Income Tax, Tally Prime, Payroll Processing, E-filing\n"
     "💡 Best for accounting professionals & commerce students\n"
-    "💰 Fee: ₹18999"
+    "💰 Fee: ₹18,999"
 )
 _DCA = (
     "📚 *DCA — Diploma in Computer Applications (Fast Track)*\n"
-    "⏱ 6 Months | 🎓 Rutronix + State Approved\n"
+    f"⏱ 6 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 Computer Fundamentals, MS Office, Programming Basics, Internet, Database, DTP\n"
     "💡 Best for students and office job seekers\n"
     "💰 Fee: ₹6,400"
 )
 _TEACHER = (
     "📚 *Computer Teacher Training Course*\n"
-    "⏱ 1 Year | 🎓 Rutronix Certified\n"
+    f"⏱ 12 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 Teaching Methodology, MS Office Pedagogy, Programming Basics, Practice Teaching\n"
     "💡 Best for aspiring computer teachers\n"
     "💰 Fee: ₹11,999"
 )
 _ACCOUNTING = (
     "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
-    "⏱ 1 Year | 🎓 Rutronix Certified\n"
+    f"⏱ 12 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 Corporate Accounting, GST, Income Tax Corporate, Financial Modelling, Case Studies\n"
     "💡 Best for advanced accounting and finance careers\n"
-    "💰 Fee: ₹40000"
+    "💰 Fee: ₹40,000"
 )
 _WORD = (
     "📚 *Certificate in Word Processing & Data Entry*\n"
-    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    f"⏱ 6 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 Touch Typing, MS Word, Data Entry Techniques, DTP Basics, Document Management\n"
     "💡 Best for data entry professionals and beginners\n"
     "💰 Fee: ₹4,800"
 )
 _WEB = (
     "📚 *Professional Diploma in Web Designing*\n"
-    "⏱ 6 Months | 🎓 Rutronix Certified\n"
+    f"⏱ 6 Months | 🎓 {RUTRONIX_LABEL}\n"
     "📋 HTML5, CSS3, JavaScript, jQuery, PHP & MySQL, WordPress, Portfolio Project\n"
     "💡 Best for aspiring web developers and designers\n"
     "💰 Fee: ₹8,800"
@@ -146,12 +172,12 @@ ALL_COURSES = {
 COURSE_FEES = {
     "PGDCA":                         ("₹15,999", "12 Months"),
     "AIDM Digital Marketing":        ("₹19,999", "6 Months"),
-    "SAP Financial Accounting":      ("₹15,999", "4-6 Months"),
+    "SAP Financial Accounting":      ("₹15,000", "6 Months"),
     "Python Programming":            ("₹4,499",  "3 Months"),
     "GST & Payroll":                 ("₹18,999",  "6 Months"),
     "DCA Fast Track":                ("₹6,400",  "6 Months"),
     "Computer Teacher Training":     ("₹11,999",  "1 Year"),
-    "Corporate Business Accounting": ("₹40000",  "1 Year"),
+    "Corporate Business Accounting": ("₹40,000", "1 Year"),
     "Word Processing & Data Entry":  ("₹4,800",  "6 Months"),
     "Professional Web Designing":    ("₹8,800",  "6 Months"),
 }
@@ -189,7 +215,7 @@ GOAL_COURSES = {
         ("7",  "Computer Teacher Training",        "1 Year",    "₹11,999"),
     ],
     "accounting": [
-        ("3",  "SAP Financial Accounting",         "4-6 Months","₹11,999"),
+        ("3",  "SAP Financial Accounting",         "6 Months",  "₹15,000"),
         ("5",  "GST & Payroll Diploma",            "6 Months",  "₹18,999"),
         ("8",  "Corporate Business Accounting",    "1 Year",    "₹40,000"),
     ],
@@ -217,16 +243,16 @@ FULL_FEE_TABLE = (
     "━━━━━━━━━━━━━━━━\n"
     "1️⃣  PGDCA                  ₹15,999  (12M)\n"
     "2️⃣  AIDM Digital Marketing ₹19,999  (6M)\n"
-    "3️⃣  SAP Accounting         ₹11,999  (4-6M)\n"
+    "3️⃣  SAP Accounting         ₹15,000  (6M)\n"
     "4️⃣  Python Programming     ₹4,499   (3M)\n"
     "5️⃣  GST & Payroll          ₹18,999  (6M)\n"
     "6️⃣  DCA Fast Track         ₹6,400   (6M)\n"
     "7️⃣  Computer Teaching      ₹11,999   (1Y)\n"
-    "8️⃣  Business Accounting    ₹40,000   (1Y)\n"
+    "8️⃣  Business Accounting    ₹40,000  (1Y)\n"
     "9️⃣  Word Processing        ₹4,800   (6M)\n"
     "🔟 Web Designing           ₹8,800   (6M)\n"
     "━━━━━━━━━━━━━━━━\n"
-    "🎓 Kerala State Rutronix Approved\n"
+    f"🎓 {RUTRONIX_FULL}\n"
     "📊 EMI / installment option available!\n\n"
     "Ithu one-time investment aanu — job kittiyal\n"
     "1-2 months-il fee recover cheyyam! 💪\n\n"
