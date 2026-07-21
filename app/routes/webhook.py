@@ -193,13 +193,19 @@ def receive_message():
 
         # ── Generate reply ──
         perf.mark("router_start")
-        reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id)
+        reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id, wa_message_id=wamid)
         send_reply(
         from_number,
         reply_text,
         preset,
         tenant_id=tenant_id
         )
+        # Phase 1.3A-2: Conversation Memory observe mode (metrics only).
+        # Gated by MEMORY_OBSERVE_MODE (default OFF). Runs AFTER the reply is
+        # sent, only for AI-eligible requests. Result is discarded — memory is
+        # NEVER injected into Gemini in this phase.
+        from app.memory.observer import observe_memory
+        observe_memory(tenant_id, from_number, exclude_message_id=wamid)
         # Emit a correlated [PERF] block only for Gemini-powered replies.
         perf.report(only_if_stage="gemini_start")
 

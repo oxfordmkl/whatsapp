@@ -35,7 +35,18 @@ _SEGMENT_LABELS = {
     ("gemini_start", "gemini_end"):       "Gemini Generation",
     ("gemini_end", "send_start"):         "Gemini -> Send dispatch",
     ("send_start", "meta_response"):      "Meta Send",
+    # Phase 1.3A-2: observe-mode memory fetch (runs after the reply is sent)
+    ("meta_response", "memory_fetch_start"):     "Send -> Memory fetch",
+    ("memory_fetch_start", "memory_fetch_end"):  "memory_fetch_ms",
 }
+
+
+def has_stage(stage: str) -> bool:
+    """Phase 1.3A-2 (additive): True if `stage` was marked in the active context."""
+    marks = getattr(_ctx, "marks", None)
+    if not marks:
+        return False
+    return any(s == stage for s, _ in marks)
 
 
 def start() -> str:

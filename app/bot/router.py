@@ -223,7 +223,7 @@ def msg_exit(name: str) -> tuple[str, str]:
     return text, None
 
 
-def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_id: str = None) -> tuple[str, str | None]:
+def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_id: str = None, wa_message_id: str = None) -> tuple[str, str | None]:
     raw = msg_text.strip()
     low = raw.lower()
 
@@ -476,7 +476,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
             # Bare keywords (e.g. "pgdca", "dca") keep the deterministic fast-path.
             if _is_question(low):
                 _, card = ALL_COURSES[idx]
-                ai = gemini_reply(raw, name, context=f"Course details:\n{card}")
+                from app.context.assembler import ContextAssembler
+                context = ContextAssembler.assemble(
+                    tenant_id=tenant_id,
+                    phone=phone,
+                    wa_message_id=wa_message_id,
+                    course_context=f"Course details:\n{card}",
+                )
+                ai = gemini_reply(raw, name, context=context)
                 if ai:
                     return ai, "COURSE"
             return msg_course_detail(idx)
@@ -496,7 +503,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         ).start()
         return msg_course_detail(low)
 
-    ai = gemini_reply(raw, name)
+    # Phase 1.3B: context assembly delegated to ContextAssembler.
+    from app.context.assembler import ContextAssembler
+    context = ContextAssembler.assemble(
+        tenant_id=tenant_id,
+        phone=phone,
+        wa_message_id=wa_message_id,
+    )
+    ai = gemini_reply(raw, name, context=context)
     if ai:
         return ai, "COURSE"
 

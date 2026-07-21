@@ -15,6 +15,14 @@ PRIMARY_TENANT_ID    = os.environ.get("PRIMARY_TENANT_ID", "")
 # (local dev, CI). Set the DSN in Railway service variables to activate.
 SENTRY_DSN           = os.environ.get("SENTRY_DSN", "")
 GEMINI_API_KEY       = os.environ.get("GEMINI_API_KEY", "")
+# Phase 1.3A-2: Conversation Memory observe mode. When true, MemoryProvider is
+# invoked on AI-eligible requests for metrics only — memory is NEVER injected
+# into Gemini. Default OFF = zero execution, zero overhead.
+MEMORY_OBSERVE_MODE  = os.environ.get("MEMORY_OBSERVE_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+# Phase 1.3A-3: Activate memory injection into Gemini context. Separate from
+# MEMORY_OBSERVE_MODE (metrics-only). When true, conversation history is prepended
+# to the Gemini prompt for AI-eligible turns. Default OFF.
+MEMORY_ACTIVATE      = os.environ.get("MEMORY_ACTIVATE", "false").strip().lower() in {"1", "true", "yes", "on"}
 GEMINI_MODEL         = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 BROADCAST_API_KEY    = os.environ.get("BROADCAST_API_KEY", "oxford_broadcast_2026")
 ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
