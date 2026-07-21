@@ -14,11 +14,15 @@ else:
     logger.warning("⚠️  GEMINI_API_KEY not set — AI replies disabled")
 
 # Phase 1.2A: persona moved from inlined `contents` to a stable
-# `system_instruction`, plus a conservative output cap. temperature / top_p /
-# top_k / thinking_config are intentionally left at model defaults (unchanged).
+# `system_instruction`, plus a conservative output cap.
+# Phase 1.2B: disable Gemini "thinking" (gemini-2.5-flash officially supports
+# thinking_budget=0). This frees the full max_output_tokens budget for the
+# visible reply — removing the internal reasoning latency and the 1.2A
+# truncation. temperature / top_p / top_k remain at model defaults (unchanged).
 _GENERATION_CONFIG = types.GenerateContentConfig(
     system_instruction=AALIZA_PROMPT,
     max_output_tokens=200,
+    thinking_config=types.ThinkingConfig(thinking_budget=0),
 )
 
 def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
