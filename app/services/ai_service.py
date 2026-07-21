@@ -23,10 +23,13 @@ def gemini_reply(user_msg: str, name: str, context: str = "") -> str | None:
             f"Student says: \"{user_msg}\"\n\n"
             f"Reply as Oxford Nova:"
         )
+        from app.perf import mark as _perf_mark
+        _perf_mark("gemini_start")
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
         )
+        _perf_mark("gemini_end")
         return response.text.strip()
     except Exception as e:
         err = str(e).lower()

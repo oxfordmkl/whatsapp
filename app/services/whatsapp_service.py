@@ -88,7 +88,10 @@ def send_interactive(to: str, body: str, preset: str, tenant_id: str = None) -> 
             "action": {"buttons": buttons},
         },
     }
+    from app.perf import mark as _perf_mark
+    _perf_mark("send_start")
     r = requests.post(url, headers=_wa_headers(token), json=payload)
+    _perf_mark("meta_response")
     logger.info(f"📤 interactive[{preset}] → {to}  HTTP {r.status_code}")
     if r.status_code != 200:
         logger.warning("⚠️  Interactive failed — falling back to plain text")

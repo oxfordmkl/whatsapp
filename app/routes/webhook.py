@@ -29,7 +29,9 @@ def verify_webhook():
 @webhook_bp.route("/webhook", methods=["POST"])
 def receive_message():
     data = request.get_json(silent=True) or {}
+    from app import perf
     try:
+        perf.start()
         entry   = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value   = changes.get("value", {})
@@ -190,6 +192,7 @@ def receive_message():
                 return jsonify({"status": "ok"}), 200
 
         # ── Generate reply ──
+        perf.mark("router_start")
         reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id)
         send_reply(
         from_number,
@@ -197,6 +200,8 @@ def receive_message():
         preset,
         tenant_id=tenant_id
         )
+        # Emit a correlated [PERF] block only for Gemini-powered replies.
+        perf.report(only_if_stage="gemini_start")
 
         # ── Log outbound AI reply (MessageLog daemon thread) ──
         threading.Thread(
