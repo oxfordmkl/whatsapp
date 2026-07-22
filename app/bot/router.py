@@ -359,7 +359,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         st["stage"] = "done"
         return msg_exit(name)
 
-    if low in MENU_WORDS or (low in GREETING_WORDS and stage in ("new", "done", "enrolled")):
+    if low in MENU_WORDS or low in GREETING_WORDS:
         st["stage"] = "goal_selection"
         _entry = _enter_main_menu(name, st, phone, tenant_id)
         if _entry is not None:
