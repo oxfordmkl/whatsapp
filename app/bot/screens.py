@@ -38,7 +38,7 @@ KIND_LIST = "list"
 KIND_BUTTONS = "buttons"
 
 # Text-command fallback used where the 3-button budget is exhausted.
-MENU_HINT = "🏠 Main menu venamenkil *MENU* type cheyyoo"
+MENU_HINT = "💬 Mukhya menu-yilekku mടങ്ങാൻ *MENU* type cheyyoo"
 
 # Meta caps a List row title at 24 characters. Several GOAL_COURSES display
 # labels are longer, so the builder fits them here (presentation is the
@@ -128,17 +128,17 @@ class Screen:
 
 # ── Category presentation (labels only; course data lives in constants) ──────
 _CATEGORY_ROWS = (
-    ("job",        "💼 Job / IT Career",     "PGDCA, Python, Web Designing"),
-    ("business",   "🚀 Business / Freelance", "Digital Marketing, Web Design"),
-    ("basic",      "🖥️ Basic Computer",      "DCA, Data Entry, Teaching"),
-    ("accounting", "📊 Accounting / Tax",     "SAP, GST, Corporate Accounting"),
-    ("unsure",     "🤔 Help Me Choose",       "Njan best course suggest cheyyam"),
+    ("job",        "💼 Job / IT Career",           "Software, IT, Government jobs"),
+    ("business",   "🚀 Business / Freelance",       "Digital Marketing, Web Design"),
+    ("basic",      "💻 Basic Computer",             "DCA, Data Entry, Office Skills"),
+    ("accounting", "📊 Accounting & Tax",           "SAP, GST, Corporate Accounting"),
+    ("unsure",     "🤔 Which Course is Best for Me?", "Personalised recommendation"),
 )
 
 
 def _category_section() -> Section:
     return Section(
-        title="Career Path",
+        title="📌 Choose Your Career Path",
         rows=tuple(
             Row(id=category_id(key), title=title, description=desc)
             for key, title, desc in _CATEGORY_ROWS
@@ -171,22 +171,24 @@ def legacy_main_menu_reply(name: str) -> tuple[str, str]:
 def main_menu(name: str = "") -> Screen:
     """Main Menu — a List Message, with the legacy menu as its fallback.
 
-    Combines the career categories with the high-intent quick actions so a
-    broadcast reply reaches Demo booking in as few taps as practical.
+    Phase 7.0A Refinement 1: Greeting shortened to 5-6 lines.
+    Career categories remain the primary section.
+    Architecture, IDs, routing and fallback are completely unchanged.
     """
-    greeting = f"👋 {name}, " if name else ""
+    hi = f" *{name}*" if name else ""
     body = (
-        f"🏠 *{greeting}Main Menu*\n\n"
-        f"*{INSTITUTE_NAME}* — {RUTRONIX_LABEL} 🎓\n"
-        "Ningalkku enthu venam? Select cheyyoo 👇"
+        f"👋 Hi{hi}!\n\n"
+        f"ഞാൻ Oxford Nova — *{INSTITUTE_NAME}*-ലെ AI Admission Counsellor 😊\n\n"
+        "നിങ്ങളുടെ career goal-നു best course കണ്ടെത്താൻ ഞാൻ സഹായിക്കാം.\n\n"
+        "👇 ആദ്യം ഒരു Career Path തിരഞ്ഞെടുക്കൂ."
     )
     legacy_body, legacy_preset = legacy_main_menu_reply(name)
     quick = Section(
-        title="Quick Actions",
+        title="⚡ Need Immediate Help?",
         rows=(
-            Row(id=cta_id("DEMO"),  title="🎓 Book Free Demo", description="Zero commitment"),
-            Row(id=cta_id("FEES"),  title="💰 Course Fees",    description="Full fee list + EMI option"),
-            Row(id=cta_id("VISIT"), title="🏢 Visit Institute", description="Address, directions & office hours"),
+            Row(id=cta_id("DEMO"),  title="🎓 Book Free Demo",   description="Zero commitment — attend & decide"),
+            Row(id=cta_id("FEES"),  title="💰 Course Fees",      description="Full fee list + EMI options"),
+            Row(id=cta_id("VISIT"), title="📍 Visit Institute",  description="Address, map & office hours"),
         ),
     )
     return Screen(
@@ -203,14 +205,16 @@ def category_menu() -> Screen:
     """Career Category menu — a List Message.
 
     Reached when the user goes back from a Course List.
+    Phase 7.0 UX Polish: copy updated only.
     """
     body = (
-        "📚 *Career Categories*\n\n"
-        "Ningalude goal ethaanu? Select cheyyoo 👇"
+        "🎯 *Career Categories*\n\n"
+        "Ningalude career goal ethaanu?\n"
+        "Athinanu best course recommend cheyyam 👇"
     )
     nav = Section(
         title="Navigation",
-        rows=(Row(id=menu_id(), title="🏠 Main Menu", description="Start from the beginning"),),
+        rows=(Row(id=menu_id(), title="🏠 Main Menu", description="Back to the beginning"),),
     )
     return Screen(
         kind=KIND_LIST,
@@ -226,35 +230,37 @@ def course_list(category: str) -> Screen | None:
     Returns None for a category with no course mapping (e.g. "unsure", which the
     router handles conversationally). Includes Back + Main Menu rows, so the
     destination travels with the button and needs no navigation stack.
+    Phase 7.0 UX Polish: copy updated only. IDs and routing unchanged.
     """
     recommendations = GOAL_COURSES.get(category)
     if not recommendations:
         return None
 
     body = (
-        "📚 *Recommended Courses*\n\n"
-        "Ningalude goal-ku best options ivayaanu.\n"
-        "Oru course select cheyyoo — full details tharam 👇"
+        "✨ *Recommended Courses*\n\n"
+        "Ningalude goal-ku best match aayi\n"
+        "ivayil ninnum select cheyyoo 👇\n"
+        "Full details + fee — oru tap mathram!"
     )
     course_rows = tuple(
         Row(
             id=course_id(index),
             title=_fit_title(display),
-            description=f"{duration} • {fee}",
+            description=f"⏱ {duration}  💰 {fee}",
         )
         for index, display, duration, fee in recommendations
     )
     nav = Section(
         title="Navigation",
         rows=(
-            Row(id=back_id("CATEGORY"), title="⬅ All Categories", description="Choose a different goal"),
-            Row(id=menu_id(),           title="🏠 Main Menu",      description="Start from the beginning"),
+            Row(id=back_id("CATEGORY"), title="⬅️ All Categories", description="Different career path choose cheyyam"),
+            Row(id=menu_id(),           title="🏠 Main Menu",      description="Back to the beginning"),
         ),
     )
     return Screen(
         kind=KIND_LIST,
         body=body,
-        sections=(Section(title="Courses", rows=course_rows), nav),
+        sections=(Section(title="📚 Courses for You", rows=course_rows), nav),
         list_button_label="📋 Select",
     )
 
@@ -283,14 +289,17 @@ def demo_slots_screen() -> Screen:
 
     The numbered lines are kept verbatim so legacy numeric replies ("1"/"2"/"3")
     remain a valid affordance alongside the buttons.
+    Phase 7.0 UX Polish: copy updated only. Slot IDs and buttons unchanged.
     """
     body = (
-        "🎓 *Free Demo Class Booking*\n\n"
-        "Preferred batch time ഏതാണ്?\n\n"
+        "🎓 *Free Demo Class — Seat Reserve Cheyyam!*\n\n"
+        "Demo completely FREE aanu 😊\n"
+        "Attend cheythathe decision edukkanda.\n\n"
+        "Eppo varanam? Ningalude convenient time select cheyyoo 👇\n\n"
         "1️⃣ Morning   — 9 AM to 11 AM\n"
         "2️⃣ Afternoon — 12 PM to 2 PM\n"
         "3️⃣ Evening   — 5 PM to 7 PM\n\n"
-        "Number reply cheyyoo! 📅"
+        "Button tap cheyyoo athava number reply cheyyoo! 📅"
     )
     return Screen(
         kind=KIND_BUTTONS,
@@ -306,19 +315,22 @@ def help_me_choose() -> Screen:
 
     The `unsure` category has no course mapping, so this screen asks the two
     qualifying questions instead of dead-ending, and still offers a way back.
+    Phase 7.0 UX Polish: copy updated only. IDs and routing unchanged.
     """
     body = (
-        "🤔 *Best course njan suggest cheyyam!*\n\n"
-        "Randu cheriya chodyam mathram:\n"
-        "1️⃣ Ningal +2 / Degree / Working aano?\n"
-        "2️⃣ Main goal — job, business, alle skill upgrade?\n\n"
-        "Reply cheyyoo — perfect course recommend cheyyam 🎓"
+        "🤔 *Ethu course best aayi suit aaakum?*\n\n"
+        "Paravayilla — njan personally help cheyyam! 😊\n\n"
+        "Randu chodyam mathram:\n"
+        "1️⃣ Ningal +2 / Degree / Working — ethu stage-ilaanu?\n"
+        "2️⃣ Main goal — IT job, business, government job, alle office skill?\n\n"
+        "Ivideyum reply cheyyoo —\n"
+        "ningalude situation-ku perfect course recommend cheyyam 🎓"
     )
     nav = Section(
         title="Navigation",
         rows=(
-            Row(id=back_id("CATEGORY"), title="⬅ All Categories", description="Browse by career goal"),
-            Row(id=menu_id(),           title="🏠 Main Menu",      description="Start from the beginning"),
+            Row(id=back_id("CATEGORY"), title="⬅️ All Categories", description="Career categories browse cheyyam"),
+            Row(id=menu_id(),           title="🏠 Main Menu",      description="Back to the beginning"),
         ),
     )
     return Screen(
@@ -337,6 +349,7 @@ def course_details(course_index: str) -> Screen | None:
     fallback for WhatsApp's reply-button limit.
 
     Returns None for an unknown course index.
+    Phase 7.0 UX Polish: copy updated only. Button IDs and routing unchanged.
     """
     entry = ALL_COURSES.get(course_index)
     if not entry:
@@ -346,8 +359,10 @@ def course_details(course_index: str) -> Screen | None:
     # Institute facts come from the Business Profile — never literals here.
     body = (
         f"{card}\n\n"
-        f"🏢 {INSTITUTE_NAME} · 📞 {PHONE}\n"
-        f"{MENU_HINT}"
+        "━━━━━━━━━━━━━━━━\n"
+        f"🏫 *{INSTITUTE_NAME}*\n"
+        f"📞 {PHONE} · 🌐 theoxfordedu.com\n"
+        f"\n{MENU_HINT}"
     )
     return Screen(
         kind=KIND_BUTTONS,
@@ -355,6 +370,6 @@ def course_details(course_index: str) -> Screen | None:
         buttons=(
             Button(id=cta_id("DEMO"),  title="🎓 Free Demo"),
             Button(id=cta_id("FEES"),  title="💰 Fee Details"),
-            Button(id=cta_id("VISIT"), title="🏢 Visit Institute"),
+            Button(id=cta_id("VISIT"), title="📍 Visit Institute"),
         ),
     )
