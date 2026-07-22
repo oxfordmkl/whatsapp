@@ -2,7 +2,7 @@ import logging
 import threading
 from flask import Blueprint, request, jsonify, current_app
 from app.config import VERIFY_TOKEN
-from app.state import phone_exists
+from app.state import phone_exists, resolve_is_new_lead
 from app.bot.router import smart_reply
 from app.services.whatsapp_service import send_reply
 from app.services.crm_service import save_lead_to_sheets
@@ -122,7 +122,10 @@ def receive_message():
                 logger.info(f"✅ Opt-in recovery triggered for {from_number}")
                 # Allow the message to continue processing so AI can reply or workflows can resume
 
-        is_new_lead = not phone_exists(from_number, tenant_id=tenant_id)
+        # Phase 1.5.5E: gated by STATE_MERGE_LOOKUP. Flag OFF → identical to
+        # `not phone_exists(...)`. Flag ON → derives is_new_lead from a single
+        # load-or-create that the later smart_reply() reuses (one fewer SELECT).
+        is_new_lead = resolve_is_new_lead(from_number, contact_name, tenant_id=tenant_id)
 
         # Capture app ref once in request context — safe to pass to daemon threads
         _app = current_app._get_current_object()
@@ -192,14 +195,24 @@ def receive_message():
                 return jsonify({"status": "ok"}), 200
 
         # ── Generate reply ──
+        # Phase 1.5.5D: gated by STATE_UOW_CONTEXT. Flag OFF → no-op scope,
+        # behavior identical to before. Flag ON → state writes made during
+        # smart_reply are deferred and committed once when the scope exits,
+        # which is AFTER send_reply — keeping the commit off the reply path.
+        # Business logic and routing are unchanged; only the transaction
+        # boundary moves.
+        from app.persistence.scope import state_unit_of_work, flush_state_writes
         perf.mark("router_start")
-        reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id, wa_message_id=wamid)
-        send_reply(
-        from_number,
-        reply_text,
-        preset,
-        tenant_id=tenant_id
-        )
+        with state_unit_of_work():
+            reply_text, preset = smart_reply(msg_text, contact_name, from_number, is_new_lead, tenant_id=tenant_id, wa_message_id=wamid)
+            send_reply(
+            from_number,
+            reply_text,
+            preset,
+            tenant_id=tenant_id
+            )
+            # Explicit flush after send_reply; the durable commit is the scope exit.
+            flush_state_writes()
         # Phase 1.3A-2: Conversation Memory observe mode (metrics only).
         # Gated by MEMORY_OBSERVE_MODE (default OFF). Runs AFTER the reply is
         # sent, only for AI-eligible requests. Result is discarded — memory is

@@ -170,6 +170,33 @@ def create_app():
     app.register_blueprint(tenant_bp)
     app.register_blueprint(billing_bp)
 
+    # ── Phase 1.5.5D: State Engine UnitOfWork teardown safety net ─────────
+    # Gated by STATE_UOW_CONTEXT (default OFF → no-op). The webhook's
+    # `with state_unit_of_work()` already commits/rolls back and resets its own
+    # token; this net only fires if a unit leaked past an abnormal exit, to
+    # avoid carrying an open unit into the next request on the same worker.
+    @app.teardown_request
+    def _state_uow_safety_net(exc):
+        from app.flags import state_uow_context_enabled
+        if not state_uow_context_enabled():
+            return
+        from app.persistence.unit_of_work import (
+            current_unit_of_work, reset_active_unit_of_work,
+        )
+        uow = current_unit_of_work()
+        if uow is None:
+            return
+        logging.getLogger(__name__).warning(
+            "[state-uow] leaked unit of work at teardown — cleaning up (exc=%s)", exc
+        )
+        try:
+            if exc is None:
+                uow.commit()
+            else:
+                uow.rollback()
+        finally:
+            reset_active_unit_of_work()
+
     # ── Start follow-up scheduler (needs app ref for DB context) ──────────
     from app.services.followup_service import init_followup_service
     init_followup_service(app)
