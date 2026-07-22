@@ -103,8 +103,19 @@ def _load(dotted, relpath):
     spec.loader.exec_module(mod)
     return mod
 
+# Phase 1.6.4: constants.py sources institute facts from the canonical Business
+# Profile, so that module must be registered before constants loads.
+_load("app.bot.business_profile", "app/bot/business_profile.py")
 _load("app.bot.constants", "app/bot/constants.py")
 _load("app.bot.objections", "app/bot/objections.py")
+# Phase 1.6.6: router imports the CTA handler layer.
+_load("app.bot.cta_handlers", "app/bot/cta_handlers.py")
+# Phase 1.6.7: router imports the booking handler layer.
+_load("app.bot.navigation", "app/bot/navigation.py")
+_load("app.bot.screens", "app/bot/screens.py")
+_load("app.bot.booking_handlers", "app/bot/booking_handlers.py")
+# Phase 1.6.8: router imports the offer handler layer.
+_load("app.bot.offer_handlers", "app/bot/offer_handlers.py")
 
 _state_mod = types.ModuleType("app.state")
 _state_mod.count_states = lambda: 0

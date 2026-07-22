@@ -9,6 +9,14 @@ from app.bot.constants import (
     RUTRONIX_FULL, PSC_NOTE, NORKA_NOTE, LEARNING_MODES,
 )
 from app.bot.objections import detect_objection, handle_objection
+from app.bot.cta_handlers import (
+    handle_cta, payment_link_reply,
+    CTA_DEMO, CTA_FEES, CTA_VISIT, CTA_CALL, CTA_ENROLL,
+)
+from app.bot.offer_handlers import (
+    offer_menu_reply, handle_offer_number, handle_payment, handle_pay_intent,
+)
+from app.bot.booking_handlers import handle_date, handle_slot_number
 from app.services.ai_service import gemini_reply, smart_fallback
 from app.services.crm_service import update_lead_status
 from app.services.log_service import log_lead_event_in_thread
@@ -47,6 +55,183 @@ def _is_question(low: str) -> bool:
 def _state(phone: str, name: str, tenant_id: str = None):
     """Load or create DB-backed state. Returns a StateProxy that auto-saves."""
     return get_or_create_state(phone, name, tenant_id=tenant_id)
+
+
+def _category_destination(screens, category: str, st):
+    """Phase 1.6.4 — resolve a chosen career category to its screen.
+
+    Sets the same canonical stage/goal the legacy numeric goal handler sets, so
+    analytics, pipeline and follow-up logic see an identical conversation shape.
+    """
+    if category == "unsure":
+        st["goal"] = ""
+        st["stage"] = "not_sure"
+        return screens.help_me_choose()
+
+    screen = screens.course_list(category)
+    if screen is None:                      # no mapping → nearest valid menu
+        st["stage"] = "goal_selection"
+        return screens.category_menu()
+
+    st["goal"] = category
+    st["stage"] = "course_recommendation"
+    return screen
+
+
+def _course_destination(screens, course_index: str, st, phone: str, tenant_id):
+    """Phase 1.6.5 — resolve a chosen course to its Course Details screen.
+
+    Reproduces the legacy course-selection side effects EXACTLY — course, stage,
+    the CRM "Viewed:" status update and the COURSE_VIEWED analytics event — so
+    CRM and analytics are identical whether the user tapped a course row or
+    replied with a legacy number.
+
+    Returns None for an unknown index so the caller falls through to legacy.
+    """
+    screen = screens.course_details(course_index)
+    if screen is None:
+        return None
+
+    c_name = ALL_COURSES[course_index][0]
+    st["course"] = c_name
+    st["stage"] = "course_viewed"
+    threading.Thread(
+        target=update_lead_status,
+        args=(phone, f"Viewed: {c_name}", "", tenant_id),
+    ).start()
+    _app = current_app._get_current_object()
+    threading.Thread(
+        target=log_lead_event_in_thread,
+        kwargs=dict(app=_app, phone=phone, event_type="COURSE_VIEWED",
+                    event_data=c_name, tenant_id=tenant_id),
+        daemon=True,
+    ).start()
+    return screen
+
+
+def _nearest_menu(screens, action, name: str, st):
+    """Phase 1.6.4 — resolve NAV:BACK to the NEAREST VALID menu.
+
+    Rather than always dropping to the Main Menu, walk one level up the
+    hierarchy (COURSE → LIST → CATEGORY → MENU) and return the first screen that
+    can actually be rendered. When the id carries no target, the current stage
+    tells us where the user is.
+    """
+    target = action.target_screen
+    goal = st.get("goal") or ""
+
+    if target == "MENU":
+        st["stage"] = "goal_selection"
+        return screens.main_menu(name)
+
+    if target == "CATEGORY":
+        st["stage"] = "goal_selection"
+        return screens.category_menu()
+
+    if target in ("LIST", "COURSE"):
+        # Prefer the category named in the id, else the one already chosen.
+        category = action.target_arg or goal
+        screen = screens.course_list(category) if category else None
+        if screen is not None:
+            st["goal"] = category
+            st["stage"] = "course_recommendation"
+            return screen
+        st["stage"] = "goal_selection"      # nearest valid level up
+        return screens.category_menu()
+
+    # No explicit target — infer the parent level from where the user is now.
+    stage = st.get("stage") or ""
+    if stage == "course_viewed":            # in course details → back to its list
+        screen = screens.course_list(goal) if goal else None
+        if screen is not None:
+            st["stage"] = "course_recommendation"
+            return screen
+        st["stage"] = "goal_selection"
+        return screens.category_menu()
+
+    if stage in ("course_recommendation", "not_sure"):  # in a list → categories
+        st["stage"] = "goal_selection"
+        return screens.category_menu()
+
+    st["stage"] = "goal_selection"
+    return screens.main_menu(name)
+
+
+def _try_navigation(raw: str, name: str, st,
+                    phone: str = "", tenant_id=None) -> tuple[str, str | None] | None:
+    """Phase 1.6.3 — resolve NAV:* navigation ids only.
+
+    Returns (text, preset) when the message is a wired navigation action, else
+    None — and None means the caller falls through to the existing legacy router
+    completely unchanged.
+
+    Scope for this phase: NAV:MENU and NAV:BACK only. CAT:/CRS:/ACT:/SLOT:/OFR:
+    deliberately fall through; they are wired in later phases.
+
+    Responsibilities kept strictly separate:
+      - navigation.parse_action() decides WHAT was asked
+      - screens.*                 builds the screen content
+      - whatsapp_service          renders it
+    This function contains no screen text, no payloads and no UI formatting.
+
+    Fail-open: any error returns None so legacy handling always runs. Legacy
+    numeric replies and existing interactive ids can never reach this branch,
+    because parse_action() only claims ids containing the "NS:VALUE" separator.
+    """
+    try:
+        from app.bot.navigation import (
+            parse_action, KIND_MENU, KIND_BACK, KIND_CATEGORY, KIND_COURSE,
+            KIND_CTA, KIND_SLOT, KIND_OFFER,
+        )
+
+        action = parse_action(raw)
+        if action is None or action.kind not in (
+            KIND_MENU, KIND_BACK, KIND_CATEGORY, KIND_COURSE, KIND_CTA,
+            KIND_SLOT, KIND_OFFER,
+        ):
+            return None
+
+        from app.bot import screens
+        from app.services.whatsapp_service import render_list_text
+
+        if action.kind == KIND_CTA:
+            # CTA business logic lives in the handler layer, never here.
+            from app.bot.cta_handlers import handle_cta
+            return handle_cta(action.value, name, st, phone, tenant_id)
+
+        if action.kind == KIND_SLOT:
+            # Booking logic lives in the booking handler layer, never here.
+            from app.bot.booking_handlers import handle_slot
+            return handle_slot(action.value, st)
+
+        if action.kind == KIND_OFFER:
+            # Offer logic lives in the offer handler layer, never here.
+            from app.bot.offer_handlers import handle_offer
+            return handle_offer(action.value, st)
+
+        if action.kind == KIND_COURSE:
+            screen = _course_destination(screens, action.value, st, phone, tenant_id)
+            if screen is None:
+                return None          # unknown course id → legacy handling
+        elif action.kind == KIND_CATEGORY:
+            screen = _category_destination(screens, action.value, st)
+        elif action.kind == KIND_BACK:
+            screen = _nearest_menu(screens, action, name, st)
+        else:  # KIND_MENU
+            screen = screens.main_menu(name)
+            st["stage"] = "goal_selection"
+
+        if screen.kind == screens.KIND_BUTTONS:
+            # Phase 1.6.6: the CTA definitions come from the builder, not the
+            # router — transport accepts the explicit button list.
+            return screen.body, screen.as_buttons()
+        return render_list_text(screen.body, screen.as_sections()), None
+    except Exception as exc:  # pragma: no cover - defensive
+        import logging
+        logging.getLogger(__name__).warning(
+            "navigation resolve failed — falling back to legacy router: %s", exc
+        )
+        return None
 
 
 def msg_welcome(name: str) -> tuple[str, str]:
@@ -100,118 +285,8 @@ def msg_course_detail(course_idx: str) -> tuple[str, str]:
     return text, "COURSE"
 
 
-def msg_demo_time_ask() -> tuple[str, str]:
-    text = (
-        "🎓 *Free Demo Class Booking*\n\n"
-        "Preferred batch time ഏതാണ്?\n\n"
-        "1️⃣ Morning   — 9 AM to 11 AM\n"
-        "2️⃣ Afternoon — 12 PM to 2 PM\n"
-        "3️⃣ Evening   — 5 PM to 7 PM\n\n"
-        "Number reply cheyyoo! 📅"
-    )
-    return text, None
 
 
-def msg_demo_date_ask(time_str: str) -> tuple[str, str]:
-    text = (
-        f"✅ *{time_str}* batch confirmed!\n\n"
-        "Preferred date ഏതാണ്?\n"
-        "(Example: Tomorrow, Monday, May 5)\n\n"
-        "Date reply cheyyoo! 📅"
-    )
-    return text, None
-
-
-def msg_demo_booked(course: str, batch_time: str, date: str) -> tuple[str, str]:
-    text = (
-        "🎉 *Demo Class Booked Successfully!*\n\n"
-        f"📚 Course: {course or 'Course of your choice'}\n"
-        f"⏰ Time: {batch_time}\n"
-        f"📅 Date: {date}\n"
-        "📍 The Oxford Computers, Malayinkeezhu\n\n"
-        "Naaḷe ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും! ✅\n"
-        "📞 9447329972 | 🌐 theoxfordedu.com"
-    )
-    return text, "AFTER_BOOKING"
-
-
-def msg_offer_menu() -> tuple[str, str]:
-    text = (
-        "🔥 *Special Offer — This Batch Only!*\n"
-        "━━━━━━━━━━━━━━━━\n"
-        "Kerala State Rutronix Approved courses.\n\n"
-        "1️⃣ CWPDE — Word Processing & Data Entry\n"
-        "   💰 ₹4,800 | ⏱ 6 Months\n\n"
-        "2️⃣ DCA — Computer Applications\n"
-        "   💰 ₹6,400 | ⏱ 6 Months\n\n"
-        "3️⃣ AIDM — AI Digital Marketing\n"
-        "   💰 ₹19,999 | ⏱ 6 Months\n\n"
-        "4️⃣ PGDCA — Post Graduate Diploma\n"
-        "   💰 ₹15,999 | ⏱ 12 Months\n"
-        "━━━━━━━━━━━━━━━━\n"
-        f"⚠️ {pick(URGENCY_LINES)}\n\n"
-        "Seat reserve cheyyan course number reply cheyyoo.\n"
-        "Unsure aanenkil *DEMO* reply cheyyoo 🎓"
-    )
-    return text, "OFFER"
-
-
-def msg_payment_link(code, full_name, price, dur, link) -> tuple[str, str]:
-    text = (
-        f"🎉 *{code} — Seat Reserve Cheyyam!*\n\n"
-        f"📚 {full_name}\n"
-        f"⏱ Duration: {dur}\n"
-        f"🎓 Kerala State Rutronix Approved\n"
-        f"💰 Fee: *{price}*\n\n"
-        "✅ Government certified receipt kittum\n"
-        "✅ Seat confirm aayi confirmation varum\n"
-        f"📍 Oxford Computers, Malayinkeezhu\n\n"
-        f"👇 *Secure Payment Link:*\n{link}\n\n"
-        "Payment kazhinju *Transaction ID* ivideyum reply cheyyuka 📩\n"
-        "(Example: T2504281234)\n\n"
-        "Any doubt undenkil call cheyyoo: 📞 9447329972"
-    )
-    return text, None
-
-
-def msg_payment_confirmed(txn: str, course: str, name: str) -> tuple[str, str]:
-    text = (
-        "🎉 *Payment Received — Seat Confirmed!*\n\n"
-        f"✅ Transaction ID: {txn}\n"
-        f"📚 Course: {course}\n"
-        f"👤 Name: {name}\n\n"
-        "Welcome to *The Oxford Computers*! 🎓\n\n"
-        "📞 9447329972 — batch details ariyaan\n"
-        "📍 Malayinkeezhu, Thiruvananthapuram\n\n"
-        "Kaanaan kaathirikkunnu! 😊"
-    )
-    return text, "AFTER_BOOKING"
-
-
-def msg_visit() -> tuple[str, str]:
-    text = (
-        "🏢 *Office Visit — Always Welcome!*\n\n"
-        "📍 *The Oxford Computers*\n"
-        "   Malayinkeezhu Junction\n"
-        "   Thiruvananthapuram, Kerala\n\n"
-        "⏰ Office Hours: 9 AM – 5 PM (Mon–Sat)\n"
-        "📞 9447329972\n\n"
-        "Eppol varananu convenient?\n"
-        "Morning / Afternoon / Evening? 😊"
-    )
-    return text, "COURSE"
-
-
-def msg_call_us(name: str) -> tuple[str, str]:
-    text = (
-        f"😊 Sure {name}!\n\n"
-        "Nigalkkayi Oru nalla counselorne connect cheyyam.\n"
-        "📞 *9447329972* — direct vilikkaamo!\n\n"
-        "⏰ Available: 9 AM – 7 PM (Mon–Sat)\n"
-        "📍 Oxford Computers, Malayinkeezhu\n\n"
-        "Ivideyum message cheyyoo — ready aanu! 🙌"
-    )
-    return text, None
 
 
 def msg_exit(name: str) -> tuple[str, str]:
@@ -237,6 +312,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     stage   = st["stage"]
     course  = st["course"]
 
+    # ── Phase 1.6.3: navigation resolver, BEFORE every legacy handler ────────
+    # Returns None for anything that is not a wired NAV:* action — including all
+    # legacy numeric replies and existing interactive ids — so the legacy router
+    # below runs completely unchanged.
+    _nav = _try_navigation(raw, name, st, phone, tenant_id)
+    if _nav is not None:
+        return _nav
+
     if "course details" in low or "want course details" in low:
         st["stage"] = "goal_selection"
         st["course"] = ""
@@ -258,74 +341,22 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     if objection:
         return handle_objection(objection, name, st)
 
+    # ── CTA keyword flows — logic lives in the CTA handler layer ────────────
     if low in {"demo", "free demo", "free class", "book demo"}:
-        st["stage"] = "demo_time_ask"
-        # ── Phase 6A: DEMO_REQUESTED event ──
-        _app = current_app._get_current_object()
-        threading.Thread(
-            target=log_lead_event_in_thread,
-            kwargs=dict(app=_app, phone=phone, event_type="DEMO_REQUESTED", tenant_id=tenant_id),
-            daemon=True,
-        ).start()
-        return msg_demo_time_ask()
+        return handle_cta(CTA_DEMO, name, st, phone, tenant_id)
 
     if low in {"enroll_now", "enrol_now", "pay_now"}:
-        if course and course in COURSE_PAYMENT_LINKS:
-            code, full_name, price, dur, link = COURSE_PAYMENT_LINKS[course]
-            st["stage"] = "payment_pending"
-            st["offer_course"] = code
-            return msg_payment_link(code, full_name, price, dur, link)
-        elif course:
-            text = (
-                f"😊 {name}, {course}-nte payment link prepare aavunnu.\n\n"
-                "Counselor directly help cheyyum:\n"
-                "📞 *9447329972* — ippol call cheyyoo\n\n"
-                "Athinu munpu oru free demo attend cheyyano? 🎓"
-            )
-            return text, "COURSE"
-        else:
-            return (
-                f"😊 {name}, enroll cheyyan ready aano — super! 🎉\n\n"
-                "Aadhyam oru course select cheyyoo:\n\n"
-                "1️⃣ PGDCA — ₹15,999 | 12 Months\n"
-                "2️⃣ DCA Fast Track — ₹6,400 | 6 Months\n\n"
-                "Full list kaanan: *COURSES* reply cheyyoo 📚"
-            ), "GOAL"
+        return handle_cta(CTA_ENROLL, name, st, phone, tenant_id)
 
     if low in {"offer", "today offer", "offer undo", "discount"} or ("offer" in low and "discount" in low):
         st["stage"] = "offer_menu"
-        return msg_offer_menu()
+        return offer_menu_reply()
 
     if low in {"pay", "payment", "enrol", "enroll", "seat", "fees pay", "reserve seat"}:
-        if course and course in COURSE_PAYMENT_LINKS:
-            code, full_name, price, dur, link = COURSE_PAYMENT_LINKS[course]
-            st["stage"] = "payment_pending"
-            st["offer_course"] = code
-            return msg_payment_link(code, full_name, price, dur, link)
-        st["stage"] = "offer_menu"
-        return msg_offer_menu()
+        return handle_pay_intent(st)
 
     if low in {"fees", "fee", "price", "cost", "ethra", "how much"}:
-        # ── Phase 6A: FEES_REQUESTED event ──
-        _app = current_app._get_current_object()
-        threading.Thread(
-            target=log_lead_event_in_thread,
-            kwargs=dict(app=_app, phone=phone, event_type="FEES_REQUESTED",
-                        event_data=course or None, tenant_id=tenant_id),
-            daemon=True,
-        ).start()
-        if course and course in COURSE_FEES:
-            f, d = COURSE_FEES[course]
-            text = (
-                f"💰 *{course} — Fee Details*\n\n"
-                f"Fee: {f} | Duration: {d}\n\n"
-                f"{pick(FEES_VALUE_LINES)}\n"
-                f"{pick(TRUST_LINES)}\n\n"
-                "Demo kaanumbo full clarity varum.\n"
-                "Book cheyyatte? 🎓"
-            )
-            return text, "FEES"
-        return (FULL_FEE_TABLE + "\n\nExact course select cheythal EMI/monthly idea paranjutharam."), "FEES"
+        return handle_cta(CTA_FEES, name, st, phone, tenant_id)
 
     if low in {"courses", "course", "list", "all courses", "padikkaan", "study"}:
         if stage == "goal_selection":
@@ -339,12 +370,10 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return msg_welcome(name)
 
     if any(w in low for w in VISIT_WORDS):
-        threading.Thread(target=update_lead_status, args=(phone, "Office Visit Interested", "", tenant_id)).start()
-        return msg_visit()
+        return handle_cta(CTA_VISIT, name, st, phone, tenant_id)
 
     if any(w in low for w in CALL_WORDS):
-        threading.Thread(target=update_lead_status, args=(phone, "Call Requested", "", tenant_id)).start()
-        return msg_call_us(name)
+        return handle_cta(CTA_CALL, name, st, phone, tenant_id)
 
     if "certificate" in low or "certific" in low:
         text = (
@@ -436,36 +465,23 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                 ).start()
                 return msg_course_detail(c_idx)
 
+    # ── Booking stages — logic lives in the booking handler layer ───────────
     if stage == "demo_time_ask":
-        times = {"1": "Morning (9–11 AM)", "2": "Afternoon (12–2 PM)", "3": "Evening (5–7 PM)"}
-        if low in times:
-            st["batch_time"] = times[low]
-            st["stage"] = "demo_date_ask"
-            return msg_demo_date_ask(times[low])
+        _slot = handle_slot_number(low, st)
+        if _slot is not None:
+            return _slot
 
     if stage == "demo_date_ask":
-        date_text = raw
-        st["stage"] = "demo_booked"
-        bt = st.get("batch_time", "")
-        status = f"Demo Booked: {course} | {bt} | {date_text}"
-        threading.Thread(target=update_lead_status, args=(phone, status, "", tenant_id)).start()
-        return msg_demo_booked(course, bt, date_text)
+        return handle_date(raw, st, phone, tenant_id)
 
+    # ── Offer stages — logic lives in the offer handler layer ──────────────
     if stage == "offer_menu":
-        if low in OFFER_MENU:
-            code, full_name, price, dur, link = OFFER_MENU[low]
-            st["offer_course"] = code
-            st["stage"] = "payment_pending"
-            return msg_payment_link(code, full_name, price, dur, link)
+        _offer = handle_offer_number(low, st)
+        if _offer is not None:
+            return _offer
 
     if stage == "payment_pending":
-        txn = raw
-        offer = st.get("offer_course", "Unknown")
-        st["stage"] = "enrolled"
-        ts = datetime.now().strftime("[%Y-%m-%d %H:%M]")
-        note = f"{ts} Payment: {txn} Course: {offer}"
-        threading.Thread(target=update_lead_status, args=(phone, f"Payment Received: {txn}", note, tenant_id)).start()
-        return msg_payment_confirmed(txn, offer, name)
+        return handle_payment(raw, name, st, phone, tenant_id)
 
     for kw, idx in KEYWORD_TO_COURSE.items():
         if kw in low:

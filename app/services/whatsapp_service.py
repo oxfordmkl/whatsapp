@@ -71,12 +71,28 @@ def send_text(to: str, text: str, tenant_id: str = None) -> requests.Response:
     logger.info(f"📤 text → {to}  HTTP {r.status_code}")
     return r
 
-def send_interactive(to: str, body: str, preset: str, tenant_id: str = None) -> requests.Response:
-    """Send message with up to 3 reply buttons from a named preset."""
+REPLY_BUTTON_TITLE_MAX = 20
+REPLY_BUTTON_MAX = 3
+
+
+def send_interactive(to: str, body: str, preset, tenant_id: str = None) -> requests.Response:
+    """Send message with up to 3 reply buttons.
+
+    `preset` is either a named BUTTON_PRESETS key (legacy, unchanged) or an
+    explicit list of {"id", "title"} dicts supplied by the screen builder
+    (Phase 1.6.6). Meta's 3-button / 20-char limits are enforced defensively.
+    """
     phone_id, token = _get_waba_credentials(tenant_id)
     url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
 
-    buttons_data = BUTTON_PRESETS.get(preset, BUTTON_PRESETS["COURSE"])
+    if isinstance(preset, (list, tuple)):
+        buttons_data = list(preset)
+    else:
+        buttons_data = BUTTON_PRESETS.get(preset, BUTTON_PRESETS["COURSE"])
+    buttons_data = [
+        {"id": str(b.get("id", "")), "title": (b.get("title") or "")[:REPLY_BUTTON_TITLE_MAX]}
+        for b in buttons_data[:REPLY_BUTTON_MAX]
+    ]
     buttons = [{"type": "reply", "reply": b} for b in buttons_data]
     payload = {
         "messaging_product": "whatsapp",
@@ -103,6 +119,139 @@ def send_reply(to: str, body: str, preset: str | None, tenant_id: str = None) ->
     if not preset:
         return send_text(to, body, tenant_id)
     return send_interactive(to, body, preset, tenant_id)
+
+
+# ── Phase 1.6.2: WhatsApp List Message transport ────────────────────────────
+# Transport concern only — this module builds and posts the payload. It never
+# decides WHICH screen to show; screen content comes from app/bot/screens.py.
+#
+# Meta platform limits (enforced defensively here, where the API contract lives).
+LIST_BUTTON_LABEL_MAX = 20
+LIST_SECTION_TITLE_MAX = 24
+LIST_ROW_TITLE_MAX = 24
+LIST_ROW_DESC_MAX = 72
+LIST_HEADER_MAX = 60
+LIST_FOOTER_MAX = 60
+LIST_BODY_MAX = 1024
+LIST_MAX_ROWS = 10          # total rows across ALL sections
+
+
+def _clip(text, limit: int) -> str:
+    return (text or "")[:limit]
+
+
+def build_list_payload(to: str, body: str, button_label: str, sections: list,
+                       header: str = "", footer: str = "") -> dict:
+    """Build a WhatsApp interactive list payload, enforcing Meta's limits.
+
+    `sections` is a list of {"title": str, "rows": [{"id","title","description"}]}.
+    Rows are capped at LIST_MAX_ROWS in total; empty sections are dropped.
+    Pure function — no I/O, no flag checks.
+    """
+    out_sections = []
+    remaining = LIST_MAX_ROWS
+
+    for section in sections or []:
+        if remaining <= 0:
+            break
+        rows = []
+        for row in (section.get("rows") or []):
+            if remaining <= 0:
+                break
+            entry = {
+                "id": str(row.get("id", "")),
+                "title": _clip(row.get("title"), LIST_ROW_TITLE_MAX),
+            }
+            description = _clip(row.get("description"), LIST_ROW_DESC_MAX)
+            if description:
+                entry["description"] = description
+            rows.append(entry)
+            remaining -= 1
+        if rows:
+            out_sections.append({
+                "title": _clip(section.get("title"), LIST_SECTION_TITLE_MAX),
+                "rows": rows,
+            })
+
+    interactive = {
+        "type": "list",
+        "body": {"text": _clip(body, LIST_BODY_MAX)},
+        "action": {
+            "button": _clip(button_label, LIST_BUTTON_LABEL_MAX),
+            "sections": out_sections,
+        },
+    }
+    if header:
+        interactive["header"] = {"type": "text", "text": _clip(header, LIST_HEADER_MAX)}
+    if footer:
+        interactive["footer"] = {"text": _clip(footer, LIST_FOOTER_MAX)}
+
+    return {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive,
+    }
+
+
+def _list_text_fallback(body: str, sections: list) -> str:
+    """Plain-text rendering used when List Messages are unavailable.
+
+    Row titles are listed without numeric prefixes on purpose: a numeric
+    affordance would invite replies that collide with the legacy positional
+    handlers.
+    """
+    lines = [body or ""]
+    for section in sections or []:
+        title = (section.get("title") or "").strip()
+        if title:
+            lines.append(f"\n*{title}*")
+        for row in (section.get("rows") or []):
+            row_title = (row.get("title") or "").strip()
+            if row_title:
+                lines.append(f"• {row_title}")
+    return "\n".join(lines).strip()
+
+
+def render_list_text(body: str, sections: list) -> str:
+    """Public text rendering of a list screen.
+
+    Phase 1.6.3: callers that must return a plain (text, preset) pair — e.g. the
+    router, whose reply is dispatched by the webhook — use this so that screen
+    formatting stays entirely in the transport/builder layers and never leaks
+    into routing code. Produces exactly what send_list() emits when
+    WA_LIST_MESSAGES is OFF.
+    """
+    return _list_text_fallback(body, sections)
+
+
+def send_list(to: str, body: str, button_label: str, sections: list,
+              header: str = "", footer: str = "",
+              tenant_id: str = None) -> requests.Response:
+    """Send an interactive List Message.
+
+    Gated by WA_LIST_MESSAGES (default OFF) → falls back to plain text, so a
+    caller can never break when the platform feature is disabled. On an API
+    error the same text fallback applies, mirroring send_interactive().
+    """
+    from app.flags import wa_list_messages_enabled
+
+    if not wa_list_messages_enabled():
+        return send_text(to, _list_text_fallback(body, sections), tenant_id)
+
+    phone_id, token = _get_waba_credentials(tenant_id)
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    payload = build_list_payload(to, body, button_label, sections, header, footer)
+
+    from app.perf import mark as _perf_mark
+    _perf_mark("send_start")
+    r = requests.post(url, headers=_wa_headers(token), json=payload)
+    _perf_mark("meta_response")
+    logger.info(f"📤 list → {to}  HTTP {r.status_code}")
+    if r.status_code != 200:
+        logger.warning("⚠️  List message failed — falling back to plain text")
+        return send_text(to, _list_text_fallback(body, sections), tenant_id)
+    return r
 
 def fetch_templates(tenant_id: str = None) -> list:
     """List approved WhatsApp message templates for the Broadcast Panel registry.

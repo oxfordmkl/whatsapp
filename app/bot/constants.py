@@ -10,10 +10,29 @@ def pick(items: list) -> str:
 # Every reply and AI prompt must agree with these values.
 # Change here; all downstream strings inherit the change.
 # ══════════════════════════════════════════════════════════════════════════════
-INST_NAME       = "The Oxford Computers"
-INST_LOCATION   = "Malayinkeezhu Junction, Thiruvananthapuram, Kerala"
-INST_PHONE      = "9447329972"
-INST_WEBSITE    = "theoxfordedu.com"
+# Phase 1.6.4: institute identity/contact facts now come from the canonical
+# Business Profile — this file must NOT restate them. The aliases below are kept
+# so every existing import site (router, prompts, replies) keeps working.
+from app.bot.business_profile import BUSINESS_PROFILE, MAPS_URL as _MAPS_URL
+
+INST_NAME       = BUSINESS_PROFILE["name"]
+INST_LOCATION   = BUSINESS_PROFILE["address"]
+INST_PHONE      = BUSINESS_PROFILE["phone"]
+INST_WEBSITE    = BUSINESS_PROFILE["website"]
+INST_MAPS_URL   = _MAPS_URL
+
+# Backward-compatible view; the Business Profile is the authority.
+INSTITUTE = BUSINESS_PROFILE
+
+# Natural-language triggers that a LATER phase will map to the location reply.
+# Declared here as configuration only — the router does NOT read this yet.
+# NOTE: router.VISIT_WORDS already routes some of these ("location", "address",
+# "map", "route") to msg_visit(); Phase 6.4+ reconciles the two so both consume
+# INSTITUTE instead of hardcoded text.
+LOCATION_KEYWORDS = (
+    "location", "map", "google map", "address", "route",
+    "evide", "institute evide", "location ayakku",
+)
 
 # Recognition — use the short label in course cards; full label in intros/cert replies.
 RUTRONIX_LABEL  = "Kerala State Rutronix Approved"

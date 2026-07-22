@@ -27,6 +27,10 @@ STATE_ENGINE_V2 = "STATE_ENGINE_V2"       # Phase 2 — managed-row StateProxy
 STATE_UOW_CONTEXT = "STATE_UOW_CONTEXT"   # Phase 3 — context-scoped deferred flush
 STATE_MERGE_LOOKUP = "STATE_MERGE_LOOKUP" # Phase 4 — merge phone_exists into load
 
+# Phase 1.6.2 — WhatsApp List Message transport. Narrowly scoped to the List
+# Message platform feature only; it is NOT a general conversation-UX switch.
+WA_LIST_MESSAGES = "WA_LIST_MESSAGES"
+
 
 def _enabled(name: str) -> bool:
     """Return True iff env var `name` is set to a truthy value (read live)."""
@@ -46,3 +50,12 @@ def state_uow_context_enabled() -> bool:
 def state_merge_lookup_enabled() -> bool:
     """Phase 4 gate — derive is_new_lead from the state load. Default OFF."""
     return _enabled(STATE_MERGE_LOOKUP)
+
+
+def wa_list_messages_enabled() -> bool:
+    """Phase 1.6.2 gate — send WhatsApp List Messages. Default OFF.
+
+    When OFF, send_list() degrades to a plain-text rendering so no caller can
+    break; it does not alter any other conversation behaviour.
+    """
+    return _enabled(WA_LIST_MESSAGES)
