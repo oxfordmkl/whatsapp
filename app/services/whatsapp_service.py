@@ -1,6 +1,7 @@
 import logging
 import requests
 import threading
+from dataclasses import dataclass
 from app.config import ACCESS_TOKEN, PHONE_NUMBER_ID, WHATSAPP_API_URL
 from app.bot.constants import BUTTON_PRESETS
 
@@ -114,8 +115,44 @@ def send_interactive(to: str, body: str, preset, tenant_id: str = None) -> reque
         return send_text(to, body, tenant_id)
     return r
 
-def send_reply(to: str, body: str, preset: str | None, tenant_id: str = None) -> requests.Response:
-    """Send text only or interactive depending on preset."""
+@dataclass(frozen=True)
+class ListMessage:
+    """A List Message plus its legacy rendering.
+
+    Phase 1.6.9: routing code returns this in the existing `preset` slot, so the
+    single send_reply() pipeline gains list support without any caller change
+    and without a second send path.
+
+    `fallback_body` / `fallback_preset` describe how this same screen was
+    rendered before List Messages existed. The transport uses them when
+    WA_LIST_MESSAGES is OFF — which is why business logic never inspects the flag.
+    """
+    button_label: str
+    sections: list
+    header: str = ""
+    footer: str = ""
+    fallback_body: str | None = None
+    fallback_preset: object = None
+
+
+def send_reply(to: str, body: str, preset=None, tenant_id: str = None) -> requests.Response:
+    """Single send pipeline. Dispatches on what `preset` is:
+
+        None                      → plain text
+        str                       → reply buttons from a named preset (legacy)
+        list/tuple of button dicts→ explicit reply buttons
+        ListMessage               → List Message (or its legacy fallback)
+
+    Caller behaviour is unchanged: the webhook still calls
+    send_reply(to, text, preset, tenant_id).
+    """
+    if isinstance(preset, ListMessage):
+        return send_list(
+            to, body, preset.button_label, preset.sections,
+            header=preset.header, footer=preset.footer, tenant_id=tenant_id,
+            fallback_body=preset.fallback_body,
+            fallback_preset=preset.fallback_preset,
+        )
     if not preset:
         return send_text(to, body, tenant_id)
     return send_interactive(to, body, preset, tenant_id)
@@ -213,31 +250,27 @@ def _list_text_fallback(body: str, sections: list) -> str:
     return "\n".join(lines).strip()
 
 
-def render_list_text(body: str, sections: list) -> str:
-    """Public text rendering of a list screen.
-
-    Phase 1.6.3: callers that must return a plain (text, preset) pair — e.g. the
-    router, whose reply is dispatched by the webhook — use this so that screen
-    formatting stays entirely in the transport/builder layers and never leaks
-    into routing code. Produces exactly what send_list() emits when
-    WA_LIST_MESSAGES is OFF.
-    """
-    return _list_text_fallback(body, sections)
-
-
 def send_list(to: str, body: str, button_label: str, sections: list,
-              header: str = "", footer: str = "",
-              tenant_id: str = None) -> requests.Response:
+              header: str = "", footer: str = "", tenant_id: str = None,
+              fallback_body: str | None = None,
+              fallback_preset=None) -> requests.Response:
     """Send an interactive List Message.
 
-    Gated by WA_LIST_MESSAGES (default OFF) → falls back to plain text, so a
-    caller can never break when the platform feature is disabled. On an API
-    error the same text fallback applies, mirroring send_interactive().
+    WA_LIST_MESSAGES is evaluated HERE and nowhere else — it is purely a
+    transport decision. When OFF (or on an API error) the screen degrades to its
+    legacy rendering: `fallback_body`/`fallback_preset` when the caller supplied
+    them, otherwise a plain-text listing of the rows.
     """
     from app.flags import wa_list_messages_enabled
 
+    def _degrade():
+        text = fallback_body if fallback_body is not None else _list_text_fallback(body, sections)
+        if fallback_preset:
+            return send_interactive(to, text, fallback_preset, tenant_id)
+        return send_text(to, text, tenant_id)
+
     if not wa_list_messages_enabled():
-        return send_text(to, _list_text_fallback(body, sections), tenant_id)
+        return _degrade()
 
     phone_id, token = _get_waba_credentials(tenant_id)
     url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
@@ -249,8 +282,8 @@ def send_list(to: str, body: str, button_label: str, sections: list,
     _perf_mark("meta_response")
     logger.info(f"📤 list → {to}  HTTP {r.status_code}")
     if r.status_code != 200:
-        logger.warning("⚠️  List message failed — falling back to plain text")
-        return send_text(to, _list_text_fallback(body, sections), tenant_id)
+        logger.warning("⚠️  List message failed — falling back to legacy rendering")
+        return _degrade()
     return r
 
 def fetch_templates(tenant_id: str = None) -> list:

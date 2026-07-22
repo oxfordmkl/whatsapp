@@ -27,6 +27,8 @@ CALL_WORDS    = {"call me", "call", "counselor", "talk to counselor",
                  "office number", "vilikku", "phone"}
 GREETING_WORDS = {"hi", "hello", "hai", "hii", "hey", "namaskaram",
                   "നമസ്കാരം", "hy", "helo", "helloo"}
+# Phase 1.6.9: explicit entry points into the navigation architecture.
+MENU_WORDS = {"menu", "main menu", "start", "home"}
 
 # Words that open a question (first token signals interrogative intent)
 _QUESTION_STARTERS = frozenset({
@@ -157,6 +159,32 @@ def _nearest_menu(screens, action, name: str, st):
     return screens.main_menu(name)
 
 
+def _enter_main_menu(name: str, st, phone: str = "", tenant_id=None):
+    """Phase 1.6.9 — the single entry point into the navigation architecture.
+
+    Used by the greeting / menu / courses flows in place of the old
+    msg_welcome(). It re-enters through the normal navigation resolver (rather
+    than calling the builder directly) so every screen goes through exactly one
+    path: parse_action → screens → transport.
+
+    Fail-safe: if navigation is unavailable for any reason, degrade to the
+    legacy welcome reply rather than letting a greeting fall through to the AI
+    fallback. Returns None only if even that is unreachable.
+    """
+    try:
+        from app.bot.navigation import menu_id
+        reply = _try_navigation(menu_id(), name, st, phone, tenant_id)
+        if reply is not None:
+            return reply
+    except Exception:  # pragma: no cover - defensive
+        pass
+    try:
+        from app.bot.screens import legacy_main_menu_reply
+        return legacy_main_menu_reply(name)
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
 def _try_navigation(raw: str, name: str, st,
                     phone: str = "", tenant_id=None) -> tuple[str, str | None] | None:
     """Phase 1.6.3 — resolve NAV:* navigation ids only.
@@ -192,7 +220,7 @@ def _try_navigation(raw: str, name: str, st,
             return None
 
         from app.bot import screens
-        from app.services.whatsapp_service import render_list_text
+        from app.services.whatsapp_service import ListMessage
 
         if action.kind == KIND_CTA:
             # CTA business logic lives in the handler layer, never here.
@@ -225,7 +253,18 @@ def _try_navigation(raw: str, name: str, st,
             # Phase 1.6.6: the CTA definitions come from the builder, not the
             # router — transport accepts the explicit button list.
             return screen.body, screen.as_buttons()
-        return render_list_text(screen.body, screen.as_sections()), None
+
+        # Phase 1.6.9: hand the list — and its legacy fallback — to the single
+        # transport pipeline. The router never decides how it is rendered, and
+        # never looks at WA_LIST_MESSAGES.
+        return screen.body, ListMessage(
+            button_label=screen.list_button_label,
+            sections=screen.as_sections(),
+            header=screen.header,
+            footer=screen.footer,
+            fallback_body=screen.fallback_body or None,
+            fallback_preset=screen.fallback_preset,
+        )
     except Exception as exc:  # pragma: no cover - defensive
         import logging
         logging.getLogger(__name__).warning(
@@ -233,21 +272,6 @@ def _try_navigation(raw: str, name: str, st,
         )
         return None
 
-
-def msg_welcome(name: str) -> tuple[str, str]:
-    text = (
-        f"👋 നമസ്കാരം *{name}*!\n\n"
-        "*The Oxford Computers*-ലേക്ക് സ്വാഗതം! 🎓\n"
-        f"{RUTRONIX_FULL} • AI-Enabled Courses\n\n"
-        "Ningalude lakshyam enthanu? 🤔\n\n"
-        "1️⃣ Job Oriented — IT / Software career\n"
-        "2️⃣ Business / Freelance\n"
-        "3️⃣ Basic Computer / Office Job\n"
-        "4️⃣ Accounting / Tax\n"
-        "5️⃣ Not sure — help me choose\n\n"
-        "Number reply cheyyoo! 📝"
-    )
-    return text, "GOAL"
 
 
 def msg_website_lead() -> tuple[str, str]:
@@ -327,15 +351,19 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     if is_new_lead:
         st["stage"] = "goal_selection"
-        return msg_welcome(name)
+        _entry = _enter_main_menu(name, st, phone, tenant_id)
+        if _entry is not None:
+            return _entry
 
     if low == "exit":
         st["stage"] = "done"
         return msg_exit(name)
 
-    if low in GREETING_WORDS and stage in ("new", "done", "enrolled"):
+    if low in MENU_WORDS or (low in GREETING_WORDS and stage in ("new", "done", "enrolled")):
         st["stage"] = "goal_selection"
-        return msg_welcome(name)
+        _entry = _enter_main_menu(name, st, phone, tenant_id)
+        if _entry is not None:
+            return _entry
 
     objection = detect_objection(low)
     if objection:
@@ -359,15 +387,10 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return handle_cta(CTA_FEES, name, st, phone, tenant_id)
 
     if low in {"courses", "course", "list", "all courses", "padikkaan", "study"}:
-        if stage == "goal_selection":
-            return (
-                f"😊 {name}, oru number reply cheyyoo!\n\n"
-                "1️⃣ Job | 2️⃣ Business | 3️⃣ Basic\n"
-                "4️⃣ Accounting | 5️⃣ Not sure\n\n"
-                "Ningalude goal-ku best course recommend cheyyam! 🎓"
-            ), "GOAL"
         st["stage"] = "goal_selection"
-        return msg_welcome(name)
+        _entry = _enter_main_menu(name, st, phone, tenant_id)
+        if _entry is not None:
+            return _entry
 
     if any(w in low for w in VISIT_WORDS):
         return handle_cta(CTA_VISIT, name, st, phone, tenant_id)

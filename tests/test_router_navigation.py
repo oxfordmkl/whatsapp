@@ -104,7 +104,21 @@ def env(monkeypatch):
                 lines.append(r["title"])
         return "\n".join(lines)
 
+    # Phase 1.6.9: the router now hands list screens to transport as a
+    # ListMessage instead of pre-flattening them to text.
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class ListMessage:
+        button_label: str
+        sections: list = field(default_factory=list)
+        header: str = ""
+        footer: str = ""
+        fallback_body: str | None = None
+        fallback_preset: object = None
+
     wa = types.ModuleType("app.services.whatsapp_service")
+    wa.ListMessage = ListMessage
     wa.render_list_text = render_list_text
     wa.send_list = MagicMock()
     monkeypatch.setitem(sys.modules, "app.services.whatsapp_service", wa)
@@ -166,41 +180,49 @@ def env(monkeypatch):
         profile=profile, rendered=rendered, reply=reply, make_state=make_state,
         state=lambda: state_holder["st"], gemini=gemini_reply,
         crm=crm.update_lead_status, events=log.log_lead_event_in_thread,
-        cta=cta, booking=booking, offers=offers,
+        cta=cta, booking=booking, offers=offers, ListMessage=ListMessage,
     )
+
+
+def _list_text(reply):
+    """Flatten a (body, ListMessage) reply the way transport does when lists are
+    unavailable — lets assertions written against the old text contract stand."""
+    body, preset = reply
+    rows = [r["title"] for s in getattr(preset, "sections", []) for r in s["rows"]]
+    return "\n".join([body] + rows)
 
 
 # ── NAV:MENU / NAV:BACK are wired ────────────────────────────────────────────
 class TestNavigationWired:
     def test_nav_menu_returns_main_menu(self, env):
-        text, preset = env.reply("NAV:MENU")
+        reply = env.reply("NAV:MENU")
+        text = _list_text(reply)
         assert "Main Menu" in text
         assert "💼 Job / IT Career" in text          # category rows present
         assert "🎓 Book Free Demo" in text           # quick actions present
-        assert preset is None
+        assert isinstance(reply[1], env.ListMessage)
 
     def test_nav_menu_uses_screens_builder_and_transport(self, env):
-        env.reply("NAV:MENU")
-        assert len(env.rendered["calls"]) == 1       # transport renderer used
-        assert env.rendered["calls"][0]["sections"]  # builder supplied sections
+        _text, preset = env.reply("NAV:MENU")
+        assert isinstance(preset, env.ListMessage)   # handed to transport
+        assert preset.sections                       # builder supplied sections
+        assert preset.button_label
 
     def test_nav_back_defaults_to_main_menu(self, env):
-        text, _ = env.reply("NAV:BACK")
-        assert "Main Menu" in text
+        assert "Main Menu" in _list_text(env.reply("NAV:BACK"))
 
     def test_nav_back_menu(self, env):
         text, _ = env.reply("NAV:BACK:MENU")
         assert "Main Menu" in text
 
     def test_nav_back_category_returns_category_menu(self, env):
-        text, _ = env.reply("NAV:BACK:CATEGORY")
+        text = _list_text(env.reply("NAV:BACK:CATEGORY"))
         assert "Career Categories" in text
         assert "📊 Accounting / Tax" in text
 
     def test_unsupported_back_target_degrades_to_main_menu(self, env):
-        """LIST/COURSE targets are later phases — must not break the flow."""
-        text, _ = env.reply("NAV:BACK:LIST:accounting")
-        assert "Main Menu" in text
+        """Unresolvable targets must not break the flow."""
+        assert "Recommended Courses" in _list_text(env.reply("NAV:BACK:LIST:accounting"))
 
     def test_navigation_sets_canonical_stage(self, env):
         env.reply("NAV:MENU", stage="course_viewed")
@@ -856,10 +878,10 @@ class TestCategoryRouting:
     @pytest.mark.parametrize("category", ["job", "business", "basic", "accounting"])
     def test_category_returns_course_list(self, env, category):
         env.make_state(stage="goal_selection")
-        text, preset = env.router.smart_reply(
+        reply = env.router.smart_reply(
             f"CAT:{category}", "Alice", "+911", False, tenant_id="t1")
-        assert "Recommended Courses" in text
-        assert preset is None
+        assert "Recommended Courses" in reply[0]
+        assert isinstance(reply[1], env.ListMessage)
 
     def test_category_sets_goal_and_canonical_stage(self, env):
         env.make_state(stage="goal_selection")
@@ -869,13 +891,13 @@ class TestCategoryRouting:
 
     def test_course_list_contains_that_categorys_courses(self, env):
         env.make_state(stage="goal_selection")
-        text, _ = env.router.smart_reply("CAT:accounting", "Alice", "+911", False, tenant_id="t1")
+        text = _list_text(env.router.smart_reply("CAT:accounting", "Alice", "+911", False, tenant_id="t1"))
         assert "SAP Financial Accounting" in text
         assert "GST & Payroll Diploma" in text
 
     def test_course_list_offers_back_and_menu(self, env):
         env.make_state(stage="goal_selection")
-        text, _ = env.router.smart_reply("CAT:job", "Alice", "+911", False, tenant_id="t1")
+        text = _list_text(env.router.smart_reply("CAT:job", "Alice", "+911", False, tenant_id="t1"))
         assert "⬅ All Categories" in text
         assert "🏠 Main Menu" in text
 
@@ -912,8 +934,8 @@ class TestNearestValidMenu:
 
     def test_back_to_list_uses_category_in_the_id(self, env):
         env.make_state(stage="course_viewed")
-        text, _ = env.router.smart_reply("NAV:BACK:LIST:accounting", "Alice", "+911",
-                                         False, tenant_id="t1")
+        text = _list_text(env.router.smart_reply("NAV:BACK:LIST:accounting", "Alice", "+911",
+                                                 False, tenant_id="t1"))
         assert "SAP Financial Accounting" in text
         assert env.state()["goal"] == "accounting"
 
@@ -943,17 +965,25 @@ class TestNearestValidMenu:
         assert text == "AI reply"
         assert env.gemini.called
 
-    def test_greeting_still_returns_welcome(self, env):
-        text, _ = env.reply("hi", stage="new")
-        assert "സ്വാഗതം" in text or "Main Menu" not in text
+    def test_greeting_enters_navigation_with_legacy_fallback(self, env):
+        """Phase 6.9: greeting now enters navigation; the legacy welcome is
+        preserved as the transport-level fallback."""
+        text, preset = env.reply("hi", stage="new")
+        assert "Main Menu" in text
+        assert isinstance(preset, env.ListMessage)
+        assert "സ്വാഗതം" in preset.fallback_body
+        assert preset.fallback_preset == "GOAL"
 
 
 class TestTransportUnchanged:
-    def test_navigation_returns_text_not_a_list_send(self, env):
-        """WA_LIST_MESSAGES stays OFF: the router returns (text, None) and the
-        webhook sends it exactly as it does today — no list transport call."""
+    def test_router_never_checks_the_flag(self, env):
+        """Phase 6.9: the router hands a ListMessage to the single transport
+        pipeline; WA_LIST_MESSAGES is decided inside send_list() only."""
         _text, preset = env.reply("NAV:MENU")
-        assert preset is None
+        assert isinstance(preset, env.ListMessage)
+        import inspect
+        src = inspect.getsource(env.router._try_navigation)
+        assert "wa_list_messages_enabled" not in src
         assert not env.router.__dict__.get("send_list")
 
     def test_router_contains_no_screen_text(self, env):

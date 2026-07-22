@@ -26,7 +26,9 @@ Phase 6.2 status: imported by nobody in production. Router behaviour unchanged.
 from dataclasses import dataclass, field
 
 from app.bot.business_profile import INSTITUTE_NAME, PHONE
-from app.bot.constants import ALL_COURSES, GOAL_COURSES, RUTRONIX_LABEL
+from app.bot.constants import (
+    ALL_COURSES, GOAL_COURSES, RUTRONIX_FULL, RUTRONIX_LABEL,
+)
 from app.bot.navigation import (
     back_id, category_id, course_id, cta_id, menu_id, slot_id,
 )
@@ -95,6 +97,12 @@ class Screen:
     list_button_label: str = ""
     header: str = ""
     footer: str = ""
+    # Phase 1.6.9 — legacy rendering of this same screen, used by the transport
+    # layer when List Messages are unavailable. Declaring both representations
+    # here is what lets WA_LIST_MESSAGES stay a pure transport decision: no
+    # business logic ever inspects the flag.
+    fallback_body: str = ""
+    fallback_preset: object = None
 
     def as_buttons(self) -> list:
         """Plain-dict view of reply buttons for the transport layer.
@@ -138,8 +146,30 @@ def _category_section() -> Section:
     )
 
 
+def legacy_main_menu_reply(name: str) -> tuple[str, str]:
+    """The pre-Phase-6 welcome menu, verbatim (migrated from router.msg_welcome).
+
+    This is the Main Menu's legacy representation: plain text plus the "GOAL"
+    reply-button preset. The transport layer renders it whenever List Messages
+    are unavailable, so behaviour with the flag OFF is byte-identical to before.
+    """
+    text = (
+        f"👋 നമസ്കാരം *{name}*!\n\n"
+        f"*{INSTITUTE_NAME}*-ലേക്ക് സ്വാഗതം! 🎓\n"
+        f"{RUTRONIX_FULL} • AI-Enabled Courses\n\n"
+        "Ningalude lakshyam enthanu? 🤔\n\n"
+        "1️⃣ Job Oriented — IT / Software career\n"
+        "2️⃣ Business / Freelance\n"
+        "3️⃣ Basic Computer / Office Job\n"
+        "4️⃣ Accounting / Tax\n"
+        "5️⃣ Not sure — help me choose\n\n"
+        "Number reply cheyyoo! 📝"
+    )
+    return text, "GOAL"
+
+
 def main_menu(name: str = "") -> Screen:
-    """Main Menu — a List Message.
+    """Main Menu — a List Message, with the legacy menu as its fallback.
 
     Combines the career categories with the high-intent quick actions so a
     broadcast reply reaches Demo booking in as few taps as practical.
@@ -150,6 +180,7 @@ def main_menu(name: str = "") -> Screen:
         f"*{INSTITUTE_NAME}* — {RUTRONIX_LABEL} 🎓\n"
         "Ningalkku enthu venam? Select cheyyoo 👇"
     )
+    legacy_body, legacy_preset = legacy_main_menu_reply(name)
     quick = Section(
         title="Quick Actions",
         rows=(
@@ -163,6 +194,8 @@ def main_menu(name: str = "") -> Screen:
         body=body,
         sections=(_category_section(), quick),
         list_button_label="📋 Select",
+        fallback_body=legacy_body,
+        fallback_preset=legacy_preset,
     )
 
 
