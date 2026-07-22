@@ -283,7 +283,9 @@ def msg_website_lead() -> tuple[str, str]:
         "2️⃣ Business / Freelance\n"
         "3️⃣ Basic computer / office job\n"
         "4️⃣ Accounting / GST\n"
-        "5️⃣ Not sure"
+        "5️⃣ Not sure\n\n"
+        "🏠 Eppozhum Main Menu-il thirichu pokan\n"
+        "MENU ennu type cheyyuka."
     )
     return text, "GOAL"
 
