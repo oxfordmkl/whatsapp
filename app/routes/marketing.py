@@ -368,6 +368,25 @@ def schedule_campaign(campaign_id):
         return _map_campaign_error(exc)
 
 
+@marketing_bp.route("/<int:campaign_id>/launch", methods=["POST"])
+@require_campaign_engine
+def launch_campaign(campaign_id):
+    """POST /crm/campaigns/v2/<id>/launch — validated/scheduled → running.
+
+    Arming the campaign worker: once this transition commits, the polling
+    worker will pick up queued recipients on its next cycle. The route does
+    NOT start a thread, call send_automation(), or touch recipient rows —
+    those are exclusively the worker's responsibility (Phase 8.2C).
+
+    Audit is owned by CampaignService._audit_status_changed() via
+    transition(). No duplicate audit logic here.
+    """
+    return _run_lifecycle(
+        campaign_id,
+        lambda svc, tid: svc.mark_running(tid, campaign_id),
+    )
+
+
 @marketing_bp.route("/<int:campaign_id>/cancel", methods=["POST"])
 @require_campaign_engine
 def cancel_campaign(campaign_id):
