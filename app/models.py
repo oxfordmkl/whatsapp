@@ -1310,3 +1310,234 @@ class AuditLog(db.Model):
     ip_address = db.Column(db.String(45), nullable=True)    # IPv4/IPv6
     created_at = db.Column(db.DateTime, default=datetime.utcnow,
                            nullable=False, index=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 8.1B — CAMPAIGN FOUNDATION
+#
+# Two additive tables only. No existing model, column, index or constraint is
+# touched by this phase.
+#
+# Design note (Phase 8.1A): CampaignRecipient is deliberately modelled on
+# FollowUpJob, the DB-backed job pattern already proven in production
+# (send_at / retry_count / last_attempt_at / failure_reason / terminal flag).
+# Reusing that shape is what lets a future worker close R2 (delivery tracking)
+# and R3 (synchronous sends) without inventing a new job engine.
+#
+# Tenant safety: tenant_id is NOT NULL on BOTH tables and is never defaulted or
+# inferred. CampaignRecipient carries its own tenant_id — denormalised from the
+# parent on purpose — so every recipient-level query can filter by tenant
+# without joining Campaign, and so a tenant filter can never be accidentally
+# omitted on the hot path.
+#
+# Scope: models + migration + read access only. No service, worker, route or UI
+# is introduced here.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Campaign lifecycle states (Phase 8.1A approved) ──────────────────────────
+CAMPAIGN_DRAFT     = "draft"
+CAMPAIGN_VALIDATED = "validated"
+CAMPAIGN_SCHEDULED = "scheduled"
+CAMPAIGN_RUNNING   = "running"
+CAMPAIGN_COMPLETED = "completed"
+CAMPAIGN_CANCELLED = "cancelled"
+CAMPAIGN_FAILED    = "failed"
+CAMPAIGN_ARCHIVED  = "archived"
+
+CAMPAIGN_STATUSES = (
+    CAMPAIGN_DRAFT, CAMPAIGN_VALIDATED, CAMPAIGN_SCHEDULED, CAMPAIGN_RUNNING,
+    CAMPAIGN_COMPLETED, CAMPAIGN_CANCELLED, CAMPAIGN_FAILED, CAMPAIGN_ARCHIVED,
+)
+
+# States from which no further transition occurs.
+CAMPAIGN_TERMINAL_STATUSES = (
+    CAMPAIGN_COMPLETED, CAMPAIGN_CANCELLED, CAMPAIGN_FAILED, CAMPAIGN_ARCHIVED,
+)
+
+# ── CampaignRecipient delivery states (Phase 8.1A approved) ──────────────────
+RECIPIENT_QUEUED    = "queued"
+RECIPIENT_SENDING   = "sending"
+RECIPIENT_SENT      = "sent"
+RECIPIENT_DELIVERED = "delivered"
+RECIPIENT_READ      = "read"
+RECIPIENT_FAILED    = "failed"
+RECIPIENT_CANCELLED = "cancelled"
+
+RECIPIENT_STATUSES = (
+    RECIPIENT_QUEUED, RECIPIENT_SENDING, RECIPIENT_SENT, RECIPIENT_DELIVERED,
+    RECIPIENT_READ, RECIPIENT_FAILED, RECIPIENT_CANCELLED,
+)
+
+# Delivery is finished — a worker must not pick these up again.
+RECIPIENT_TERMINAL_STATUSES = (
+    RECIPIENT_DELIVERED, RECIPIENT_READ, RECIPIENT_FAILED, RECIPIENT_CANCELLED,
+)
+
+
+class Campaign(db.Model):
+    """Phase 8.1B: a marketing campaign owned by exactly one tenant.
+
+    Identity and lifecycle only. This model does NOT send anything and holds no
+    audience logic — the audience is materialised into CampaignRecipient rows at
+    dispatch time by a later phase, so a launched campaign's recipient list is an
+    immutable snapshot.
+
+    Status flow (Phase 8.1A):
+        draft → validated → scheduled → running → completed
+        draft/validated/scheduled/running → cancelled
+        running → failed
+        any terminal → archived
+
+    Content is either a free-text body or an approved template reference.
+    Both columns are nullable because a draft may legitimately have neither yet;
+    enforcing "exactly one" is a service-layer concern (Phase 8.2), not a schema
+    constraint, so drafts remain saveable.
+
+    audience_rule_id / template_id are intentionally plain integers rather than
+    ForeignKeys: AudienceRule and MessageTemplate are currently unused schema
+    (Phase 8.0 finding), and adding FK constraints to them from a live table
+    would couple this phase to their activation. The relationship is established
+    when AudienceService / TemplateService are built (Phase 8.2).
+    """
+    __tablename__ = "campaigns"
+
+    id          = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant ownership — always explicit, never inferred ─────────────────
+    tenant_id   = db.Column(db.String(36), db.ForeignKey("tenants.id"),
+                            nullable=False, index=True)
+
+    # ── Identity ───────────────────────────────────────────────────────────
+    name        = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────
+    status      = db.Column(db.String(20), nullable=False,
+                            default=CAMPAIGN_DRAFT, index=True)
+
+    # ── Content (service layer enforces exactly-one; see docstring) ────────
+    message_body      = db.Column(db.Text, nullable=True)
+    template_id       = db.Column(db.Integer, nullable=True)   # → message_templates.id
+    audience_rule_id  = db.Column(db.Integer, nullable=True)   # → audience_rules.id
+
+    # ── Scheduling (populated when status = scheduled) ─────────────────────
+    scheduled_at = db.Column(db.DateTime, nullable=True, index=True)
+    started_at   = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    # ── Denormalised counters (maintained by the worker in a later phase) ──
+    # Cached so Campaign Center lists never aggregate CampaignRecipient per row.
+    total_recipients = db.Column(db.Integer, nullable=False, default=0)
+    sent_count       = db.Column(db.Integer, nullable=False, default=0)
+    failed_count     = db.Column(db.Integer, nullable=False, default=0)
+
+    # ── Provenance / audit ─────────────────────────────────────────────────
+    created_by  = db.Column(db.String(120), nullable=True)   # actor email / staff code
+    failure_reason = db.Column(db.Text, nullable=True)       # set when status = failed
+
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # One-to-many. No polymorphism, no inheritance (Phase 8.1A constraint).
+    recipients = db.relationship(
+        "CampaignRecipient",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        lazy="dynamic",          # campaigns may hold thousands of recipients
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        # Campaign Center: "this tenant's campaigns, newest first".
+        db.Index("ix_campaigns_tenant_created", "tenant_id", "created_at"),
+        # Worker/UI: "this tenant's campaigns in state X" (e.g. due scheduled).
+        db.Index("ix_campaigns_tenant_status", "tenant_id", "status"),
+    )
+
+    def __repr__(self):
+        return f"<Campaign {self.id} {self.name!r} {self.status}>"
+
+
+class CampaignRecipient(db.Model):
+    """Phase 8.1B: one row per recipient per campaign — the delivery ledger.
+
+    This is the record that closes R2 (no delivery tracking): every intended
+    send has a durable row carrying its own status, retry metadata and failure
+    reason, exactly as FollowUpJob does for follow-ups.
+
+    Status flow (Phase 8.1A):
+        queued → sending → sent → delivered → read
+        queued/sending → failed (retryable until a service-defined cap)
+        queued → cancelled (campaign cancelled before dispatch)
+
+    wa_message_id is stored so a future Meta status webhook can join inbound
+    delivered/read callbacks back to this row. Nothing consumes it in this
+    phase — it is reserved deliberately, not speculatively: without it the
+    webhook has no join key and the column could not be added later without
+    altering a populated table.
+
+    tenant_id is denormalised from the parent Campaign on purpose (see the
+    section header) — recipient-level queries must be tenant-filterable without
+    a join.
+    """
+    __tablename__ = "campaign_recipients"
+
+    id          = db.Column(db.Integer, primary_key=True)
+
+    # ── Ownership ──────────────────────────────────────────────────────────
+    campaign_id = db.Column(db.Integer,
+                            db.ForeignKey("campaigns.id", ondelete="CASCADE"),
+                            nullable=False, index=True)
+    # Explicit tenant on every row — never inferred from the parent at runtime.
+    tenant_id   = db.Column(db.String(36), db.ForeignKey("tenants.id"),
+                            nullable=False, index=True)
+
+    # ── Recipient ──────────────────────────────────────────────────────────
+    phone       = db.Column(db.String(20), nullable=False, index=True)
+    name        = db.Column(db.String(200), nullable=True)   # snapshot for {name} vars
+
+    # ── Delivery state ─────────────────────────────────────────────────────
+    status      = db.Column(db.String(20), nullable=False,
+                            default=RECIPIENT_QUEUED, index=True)
+
+    # When this recipient becomes eligible to send. Mirrors FollowUpJob.send_at;
+    # a retry pushes it forward (backoff) rather than blocking the worker.
+    send_at     = db.Column(db.DateTime, nullable=True, index=True)
+
+    # ── Retry metadata (FollowUpJob-compatible semantics) ──────────────────
+    retry_count     = db.Column(db.Integer, nullable=False, default=0)
+    last_attempt_at = db.Column(db.DateTime, nullable=True)
+    failure_reason  = db.Column(db.Text, nullable=True)
+
+    # ── Provider correlation ───────────────────────────────────────────────
+    # Meta message id; join key for future delivered/read status webhooks.
+    wa_message_id = db.Column(db.String(100), nullable=True, index=True)
+
+    # ── Delivery timestamps ────────────────────────────────────────────────
+    sent_at      = db.Column(db.DateTime, nullable=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    read_at      = db.Column(db.DateTime, nullable=True)
+
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    campaign = db.relationship("Campaign", back_populates="recipients")
+
+    __table_args__ = (
+        # A phone may appear at most once per campaign — the schema-level guard
+        # against double-sending, complementing any service-level idempotency.
+        db.UniqueConstraint("campaign_id", "phone",
+                            name="uq_campaign_recipient_campaign_phone"),
+        # Progress/status roll-up for one campaign.
+        db.Index("ix_campaign_recipients_campaign_status", "campaign_id", "status"),
+        # Future worker claim query: due work for a tenant, by state and time.
+        db.Index("ix_campaign_recipients_tenant_status_send_at",
+                 "tenant_id", "status", "send_at"),
+    )
+
+    def __repr__(self):
+        return f"<CampaignRecipient {self.id} c={self.campaign_id} {self.phone} {self.status}>"

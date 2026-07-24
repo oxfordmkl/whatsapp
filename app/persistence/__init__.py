@@ -19,6 +19,9 @@ from app.persistence.scope import (
     state_unit_of_work,
     flush_state_writes,
 )
+# Phase 8.2A — Campaign Foundation persistence. Exported so a future
+# CampaignService can consume it; nothing imports it in production yet.
+from app.persistence.campaign_repository import CampaignRepository
 
 __all__ = [
     "UnitOfWork",
@@ -29,4 +32,5 @@ __all__ = [
     "SQLAlchemyConversationStateRepository",
     "state_unit_of_work",
     "flush_state_writes",
+    "CampaignRepository",
 ]

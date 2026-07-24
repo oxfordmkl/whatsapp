@@ -39,6 +39,24 @@ _MKT_PATH = os.path.join(_ROOT, "app", "routes", "marketing.py")
 _MKT_SRC  = open(_MKT_PATH, encoding="utf-8").read()
 
 
+def _strip_comments(src: str) -> str:
+    """Remove docstrings and # comments — leaves only executable code."""
+    import tokenize, io
+    result = []
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(src).readline))
+    except tokenize.TokenError:
+        return src
+    for tok_type, tok_str, _, _, _ in tokens:
+        if tok_type in (tokenize.COMMENT, tokenize.STRING):
+            continue
+        result.append(tok_str)
+    return " ".join(result)
+
+
+_MKT_CODE = _strip_comments(_MKT_SRC)
+
+
 # ── Stub infrastructure ───────────────────────────────────────────────────────
 
 class _FakeBlueprint:
@@ -524,13 +542,13 @@ class TestTenantIsolation:
 
 class TestNoWorkerInteraction:
     def test_worker_not_imported(self):
-        assert "campaign_worker" not in _MKT_SRC
+        assert "campaign_worker" not in _MKT_CODE
 
     def test_init_campaign_worker_not_referenced(self):
-        assert "init_campaign_worker" not in _MKT_SRC
+        assert "init_campaign_worker" not in _MKT_CODE
 
     def test_send_automation_not_referenced(self):
-        assert "send_automation" not in _MKT_SRC
+        assert "send_automation" not in _MKT_CODE
 
 
 # ── Legacy protection ─────────────────────────────────────────────────────────
