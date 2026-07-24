@@ -235,6 +235,56 @@ def get_campaign(campaign_id):
     return jsonify(_campaign_detail(campaign))
 
 
+@marketing_bp.route("", methods=["POST"])
+@require_campaign_engine
+def create_campaign():
+    """POST /crm/campaigns/v2 — create a campaign draft.
+
+    Accepts JSON:
+        name            (required)
+        description     (optional)
+        message_body    (optional, mutually exclusive with template_id)
+        template_id     (optional, mutually exclusive with message_body)
+        audience_rule_id (optional)
+
+    Validation is entirely owned by CampaignService.create_campaign() — the
+    route does not duplicate any rules. On success returns 201 with the full
+    campaign detail. On CampaignValidationError returns 400 with structured
+    field errors.
+    """
+    from flask import request as req
+
+    if not _check_auth():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    tenant_id, err = _require_tenant()
+    if err:
+        return err
+
+    body = req.get_json(silent=True) or {}
+
+    # Resolve the acting user for the created_by audit field. Lazy import to
+    # avoid pulling admin.py at module load time.
+    from app.routes.admin import get_current_actor
+    actor = get_current_actor()
+    created_by = actor.get("username") if actor.get("authenticated") else None
+
+    try:
+        svc = _make_service()
+        campaign = svc.create_campaign(
+            tenant_id,
+            name=body.get("name"),
+            description=body.get("description"),
+            message_body=body.get("message_body"),
+            template_id=body.get("template_id"),
+            audience_rule_id=body.get("audience_rule_id"),
+            created_by=created_by,
+        )
+        return jsonify(_campaign_detail(campaign)), 201
+    except Exception as exc:
+        return _map_campaign_error(exc)
+
+
 @marketing_bp.route("/<int:campaign_id>/progress", methods=["GET"])
 @require_campaign_engine
 def campaign_progress(campaign_id):
