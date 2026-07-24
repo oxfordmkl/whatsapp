@@ -161,6 +161,7 @@ def create_app():
     from app.routes.public import public_bp
     from app.routes.tenant import tenant_bp
     from app.routes.billing import billing_bp
+    from app.routes.marketing import marketing_bp
 
     app.register_blueprint(public_bp)
     app.register_blueprint(webhook_bp)
@@ -169,6 +170,7 @@ def create_app():
     app.register_blueprint(health_bp)
     app.register_blueprint(tenant_bp)
     app.register_blueprint(billing_bp)
+    app.register_blueprint(marketing_bp)
 
     # ── Phase 1.5.5D: State Engine UnitOfWork teardown safety net ─────────
     # Gated by STATE_UOW_CONTEXT (default OFF → no-op). The webhook's
@@ -200,5 +202,14 @@ def create_app():
     # ── Start follow-up scheduler (needs app ref for DB context) ──────────
     from app.services.followup_service import init_followup_service
     init_followup_service(app)
+
+    # ── Phase 8.2C.3: Campaign worker (CAMPAIGN_ENGINE_V2 gated, default OFF) ─
+    # Mirrors the FollowUpJob startup pattern exactly. The worker thread is a
+    # daemon and will not prevent process exit. With the flag OFF (production
+    # today) this block is never entered and the worker is never started.
+    from app.flags import campaign_engine_v2_enabled
+    if campaign_engine_v2_enabled():
+        from app.marketing.campaign_worker import init_campaign_worker
+        init_campaign_worker(app)
 
     return app
