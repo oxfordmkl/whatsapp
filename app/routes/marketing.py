@@ -285,6 +285,109 @@ def create_campaign():
         return _map_campaign_error(exc)
 
 
+# ── Lifecycle routes (Phase 8.2D.4) ──────────────────────────────────────────
+
+def _run_lifecycle(campaign_id, action_fn):
+    """Common guard sequence for lifecycle mutation routes.
+
+    Checks auth, tenant, and existence before calling action_fn.
+    Returns 404 when the campaign is not found for the current tenant —
+    the service raises CampaignValidationError for not-found, but the correct
+    HTTP semantic is 404, not 400. A pre-check here makes the distinction
+    explicit without inspecting the error message.
+
+    action_fn signature: (svc, tenant_id) -> Campaign
+    """
+    if not _check_auth():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    tenant_id, err = _require_tenant()
+    if err:
+        return err
+
+    svc = _make_service()
+    if svc.get_campaign(tenant_id, campaign_id) is None:
+        return jsonify({"error": "Campaign not found"}), 404
+
+    try:
+        campaign = action_fn(svc, tenant_id)
+        return jsonify(_campaign_detail(campaign))
+    except Exception as exc:
+        return _map_campaign_error(exc)
+
+
+@marketing_bp.route("/<int:campaign_id>/validate", methods=["POST"])
+@require_campaign_engine
+def validate_campaign(campaign_id):
+    """POST /crm/campaigns/v2/<id>/validate — draft → validated."""
+    return _run_lifecycle(
+        campaign_id,
+        lambda svc, tid: svc.mark_validated(tid, campaign_id),
+    )
+
+
+@marketing_bp.route("/<int:campaign_id>/schedule", methods=["POST"])
+@require_campaign_engine
+def schedule_campaign(campaign_id):
+    """POST /crm/campaigns/v2/<id>/schedule — validated → scheduled.
+
+    Expects JSON body: {"scheduled_at": "<ISO 8601 datetime string>"}
+
+    Datetime parsing happens in the route so the service receives a proper
+    datetime object. A missing or unparseable value returns 400 before the
+    service is called — no ambiguity about whether the error came from the
+    scheduler or the parser.
+    """
+    from flask import request as req
+    from datetime import datetime as _dt
+
+    if not _check_auth():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    tenant_id, err = _require_tenant()
+    if err:
+        return err
+
+    body   = req.get_json(silent=True) or {}
+    raw_dt = body.get("scheduled_at")
+    if not raw_dt:
+        return jsonify({"error": "scheduled_at is required"}), 400
+    try:
+        scheduled_at = _dt.fromisoformat(str(raw_dt))
+    except (ValueError, TypeError):
+        return jsonify({"error": "scheduled_at must be a valid ISO 8601 datetime"}), 400
+
+    svc = _make_service()
+    if svc.get_campaign(tenant_id, campaign_id) is None:
+        return jsonify({"error": "Campaign not found"}), 404
+
+    try:
+        campaign = svc.schedule(tenant_id, campaign_id, scheduled_at)
+        return jsonify(_campaign_detail(campaign))
+    except Exception as exc:
+        return _map_campaign_error(exc)
+
+
+@marketing_bp.route("/<int:campaign_id>/cancel", methods=["POST"])
+@require_campaign_engine
+def cancel_campaign(campaign_id):
+    """POST /crm/campaigns/v2/<id>/cancel — running/validated/scheduled → cancelled."""
+    return _run_lifecycle(
+        campaign_id,
+        lambda svc, tid: svc.cancel(tid, campaign_id),
+    )
+
+
+@marketing_bp.route("/<int:campaign_id>/archive", methods=["POST"])
+@require_campaign_engine
+def archive_campaign(campaign_id):
+    """POST /crm/campaigns/v2/<id>/archive — terminal → archived."""
+    return _run_lifecycle(
+        campaign_id,
+        lambda svc, tid: svc.archive(tid, campaign_id),
+    )
+
+
 @marketing_bp.route("/<int:campaign_id>/progress", methods=["GET"])
 @require_campaign_engine
 def campaign_progress(campaign_id):

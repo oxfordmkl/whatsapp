@@ -436,9 +436,17 @@ class TestServiceCallContract:
 # ── Error mapping ─────────────────────────────────────────────────────────────
 
 class TestErrorMapping:
+    # Always pull exception classes from the live sys.modules entry so the
+    # isinstance checks inside _map_campaign_error match, regardless of which
+    # _load() instance another test file has installed last.
+    @staticmethod
+    def _live_svc():
+        return sys.modules["app.marketing.campaign_service"]
+
     def _make_validation_error(self, *msgs):
-        result = ValidationResult(errors=tuple(msgs))
-        return CampaignValidationError(result)
+        svc = self._live_svc()
+        result = svc.ValidationResult(errors=tuple(msgs))
+        return svc.CampaignValidationError(result)
 
     def test_validation_error_returns_400(self):
         exc = self._make_validation_error("name is required")
@@ -459,7 +467,7 @@ class TestErrorMapping:
         assert "detail" in body
 
     def test_engine_disabled_returns_404(self):
-        exc = CampaignEngineDisabled("off")
+        exc = self._live_svc().CampaignEngineDisabled("off")
         svc = _make_svc_stub(raise_exc=exc)
         _, status = _run(svc)
         assert status == 404
