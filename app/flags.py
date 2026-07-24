@@ -31,6 +31,12 @@ STATE_MERGE_LOOKUP = "STATE_MERGE_LOOKUP" # Phase 4 — merge phone_exists into 
 # Message platform feature only; it is NOT a general conversation-UX switch.
 WA_LIST_MESSAGES = "WA_LIST_MESSAGES"
 
+# Phase 8.2A — DB-backed Campaign engine (Campaign + CampaignRecipient +
+# CampaignService + campaign worker). Narrowly scoped to the campaign send
+# path; it does NOT gate the legacy /broadcast endpoints or campaign_service.py,
+# which continue to serve production untouched while this is OFF.
+CAMPAIGN_ENGINE_V2 = "CAMPAIGN_ENGINE_V2"
+
 
 def _enabled(name: str) -> bool:
     """Return True iff env var `name` is set to a truthy value (read live)."""
@@ -59,3 +65,13 @@ def wa_list_messages_enabled() -> bool:
     break; it does not alter any other conversation behaviour.
     """
     return _enabled(WA_LIST_MESSAGES)
+
+
+def campaign_engine_v2_enabled() -> bool:
+    """Phase 8.2A gate — DB-backed Campaign engine. Default OFF.
+
+    When OFF (always, today) the legacy campaign_service.start_campaign() and
+    the /broadcast endpoints remain the only send paths, byte-for-byte
+    unchanged. No production code reads this flag yet.
+    """
+    return _enabled(CAMPAIGN_ENGINE_V2)
