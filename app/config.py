@@ -50,7 +50,14 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Phase 10: Authentication
-AUTH_MODE = os.environ.get('AUTH_MODE', 'ADMIN_KEY_ONLY')
+# ADR-023 D5: default flipped to SESSION_ONLY so that a missing variable fails safe.
+_VALID_AUTH_MODES = ("SESSION_ONLY", "DUAL", "ADMIN_KEY_ONLY")
+AUTH_MODE = os.environ.get('AUTH_MODE', 'SESSION_ONLY')
+if AUTH_MODE not in _VALID_AUTH_MODES:
+    raise RuntimeError(
+        f"AUTH_MODE '{AUTH_MODE}' is not recognised. "
+        f"Must be one of: {', '.join(_VALID_AUTH_MODES)}"
+    )
 
 DEBUG = os.environ.get("FLASK_ENV") == "development" or os.environ.get("DEBUG") == "1"
 if not DEBUG:
@@ -60,3 +67,9 @@ if not DEBUG:
         raise RuntimeError("Production secrets missing: ADMIN_KEY is using insecure default.")
     if BROADCAST_API_KEY == "oxford_broadcast_2026":
         raise RuntimeError("Production secrets missing: BROADCAST_API_KEY is using insecure default.")
+    # ADR-023 D5: refuse production startup under any mode that bypasses session auth.
+    if AUTH_MODE in ("ADMIN_KEY_ONLY", "DUAL"):
+        raise RuntimeError(
+            f"AUTH_MODE='{AUTH_MODE}' is not permitted in production. "
+            "Set AUTH_MODE=SESSION_ONLY."
+        )

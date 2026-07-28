@@ -5343,6 +5343,19 @@ def crm_super_impersonate(tenant_id):
     tenant = Tenant.query.get_or_404(tenant_id)
     session['impersonate_tenant_id'] = tenant.id
     session['impersonate_tenant_name'] = tenant.name
+
+    # Phase 8.2E.6A (ADR-023 D3): a platform operator entering a customer
+    # tenant must never be indistinguishable from that tenant's own staff.
+    # tenant_id is the IMPERSONATED tenant so the entry is discoverable from
+    # the tenant's own audit view, not only the platform's.
+    from app.services.audit_service import log_audit, request_ip
+    log_audit("IMPERSONATION_START",
+              actor=getattr(current_user, "email", None) or getattr(current_user, "username", None),
+              tenant_id=tenant.id,
+              target=f"/crm/super/impersonate/{tenant.id}",
+              detail={"tenant_name": tenant.name, "actor_role": "SUPER_ADMIN"},
+              ip=request_ip())
+
     flash(f"Now impersonating tenant: {tenant.name}", "success")
     return redirect(url_for("admin.crm_home"))
 
@@ -5350,8 +5363,25 @@ def crm_super_impersonate(tenant_id):
 @login_required
 @super_admin_required
 def crm_super_impersonate_exit():
+    # Capture the impersonated tenant BEFORE clearing the session — popping
+    # first would leave the audit entry with no subject.
+    _prev_tenant_id   = session.get('impersonate_tenant_id')
+    _prev_tenant_name = session.get('impersonate_tenant_name')
+
     session.pop('impersonate_tenant_id', None)
     session.pop('impersonate_tenant_name', None)
+
+    # Only record a real transition. Hitting exit while not impersonating is
+    # a no-op, not a security event, and must not write a subject-less row.
+    if _prev_tenant_id:
+        from app.services.audit_service import log_audit, request_ip
+        log_audit("IMPERSONATION_END",
+                  actor=getattr(current_user, "email", None) or getattr(current_user, "username", None),
+                  tenant_id=_prev_tenant_id,
+                  target="/crm/super/impersonate/exit",
+                  detail={"tenant_name": _prev_tenant_name, "actor_role": "SUPER_ADMIN"},
+                  ip=request_ip())
+
     flash("Exited impersonation mode.", "info")
     return redirect(url_for("admin.crm_super_dashboard"))
 

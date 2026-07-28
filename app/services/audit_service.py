@@ -12,6 +12,11 @@ Contract:
 
 Actions (Sprint 3): LOGIN_SUCCESS, LOGIN_FAILURE, ROLE_CHANGE,
 BROADCAST_SEND, DATA_EXPORT (reserved — no export routes exist yet).
+
+Actions (Phase 8.2E.6A): IMPERSONATION_START, IMPERSONATION_END — a
+SUPER_ADMIN entering or leaving a tenant context. Recorded so that a platform
+operator acting inside a customer tenant is never indistinguishable from that
+tenant's own staff (ADR-023 D3).
 """
 import json
 import logging
@@ -21,6 +26,8 @@ logger = logging.getLogger(__name__)
 VALID_ACTIONS = {
     "LOGIN_SUCCESS", "LOGIN_FAILURE", "ROLE_CHANGE",
     "BROADCAST_SEND", "DATA_EXPORT",
+    # Phase 8.2E.6A (ADR-023 D3): platform-operator impersonation boundaries.
+    "IMPERSONATION_START", "IMPERSONATION_END",
 }
 
 

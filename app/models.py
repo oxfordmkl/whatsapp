@@ -1419,21 +1419,30 @@ class Campaign(db.Model):
     message_body      = db.Column(db.Text, nullable=True)
     template_id       = db.Column(db.Integer, nullable=True)   # → message_templates.id
     audience_rule_id  = db.Column(db.Integer, nullable=True)   # → audience_rules.id
+    # Phase 8.2E.9-C (ADR-025 D8): the named segment mark_running() resolves
+    # at launch. Persisted (not a launch-request param) so a future scheduled
+    # launch has something to read the audience decision from, and so the
+    # choice has the same provenance as every other campaign field.
+    audience_segment  = db.Column(db.String(100), nullable=True)
 
     # ── Scheduling (populated when status = scheduled) ─────────────────────
     scheduled_at = db.Column(db.DateTime, nullable=True, index=True)
     started_at   = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
 
-    # ── Denormalised counters (maintained by the worker in a later phase) ──
+    # ── Denormalised counters (maintained by the worker — Phase 8.2E.9-C) ──
     # Cached so Campaign Center lists never aggregate CampaignRecipient per row.
     total_recipients = db.Column(db.Integer, nullable=False, default=0)
     sent_count       = db.Column(db.Integer, nullable=False, default=0)
     failed_count     = db.Column(db.Integer, nullable=False, default=0)
 
     # ── Provenance / audit ─────────────────────────────────────────────────
-    created_by  = db.Column(db.String(120), nullable=True)   # actor email / staff code
-    failure_reason = db.Column(db.Text, nullable=True)       # set when status = failed
+    created_by      = db.Column(db.String(120), nullable=True)   # actor email / staff code
+    # Phase 8.2E.6B (ADR-023 D3): set when create_campaign was called while a
+    # SUPER_ADMIN was impersonating this tenant. NULL = no impersonation at
+    # create-time. Per-transition attribution is tracked in audit_log only.
+    impersonated_by = db.Column(db.String(120), nullable=True)
+    failure_reason  = db.Column(db.Text, nullable=True)          # set when status = failed
 
     created_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             nullable=False, index=True)

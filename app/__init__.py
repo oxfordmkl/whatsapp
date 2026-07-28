@@ -40,6 +40,17 @@ def create_app():
     # ── Session / flash support ──────────────────────────────────────────
     app.config["SECRET_KEY"] = SECRET_KEY
     app.config["AUTH_MODE"] = AUTH_MODE
+    logging.getLogger(__name__).info("AUTH_MODE resolved: %s", AUTH_MODE)
+
+    # ── Phase 8.2E.5: Cookie security hardening (ADR-023 D2 minimum bar) ──
+    # HTTPONLY prevents JS from reading the session cookie.
+    # SAMESITE=Lax blocks cross-site POST forgery for the common case and is
+    # now asserted explicitly rather than relying on the browser default.
+    # SECURE is True only outside DEBUG so local HTTP dev sessions still work.
+    from app.config import DEBUG as _DEBUG
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"]   = not _DEBUG
     app.config["EMAIL_PROVIDER"] = EMAIL_PROVIDER
     app.config["BREVO_API_KEY"] = BREVO_API_KEY
     app.config["BREVO_SENDER_EMAIL"] = BREVO_SENDER_EMAIL

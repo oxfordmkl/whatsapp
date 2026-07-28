@@ -48,6 +48,7 @@ RECIPIENT_QUEUED = "queued"
 RECIPIENT_SENDING = "sending"
 RECIPIENT_SENT = "sent"
 RECIPIENT_FAILED = "failed"
+RECIPIENT_CANCELLED = "cancelled"
 
 
 class CampaignRepository:
@@ -174,8 +175,9 @@ class CampaignRepository:
 
     def create_campaign(self, tenant_id, name, description=None,
                         message_body=None, template_id=None,
-                        audience_rule_id=None, scheduled_at=None,
-                        status=None, created_by=None):
+                        audience_rule_id=None, audience_segment=None,
+                        scheduled_at=None,
+                        status=None, created_by=None, impersonated_by=None):
         """Insert a campaign row and return it (flushed, so `id` is populated).
 
         `status` defaults to the model default (draft) when not supplied. The
@@ -190,8 +192,10 @@ class CampaignRepository:
             message_body=message_body,
             template_id=template_id,
             audience_rule_id=audience_rule_id,
+            audience_segment=audience_segment,
             scheduled_at=scheduled_at,
             created_by=created_by,
+            impersonated_by=impersonated_by,
         )
         if status is not None:
             campaign.status = status
@@ -357,6 +361,34 @@ class CampaignRepository:
         if rows:
             self._s.flush()
         return rows
+
+    def cancel_queued_recipients(self, tenant_id, campaign_id):
+        """ADR-025 D9: stop further claiming for a cancelled campaign.
+
+        Transitions this campaign's still-`queued` recipients to `cancelled`
+        so claim_next_batch() no longer sees them. A `sending` recipient at
+        the moment of cancellation is left untouched (R7) — that row
+        represents a dispatched call whose outcome is unknown, which the
+        reclaim policy already treats as recovery rather than failure; the
+        same judgment applies here rather than reinterpreting it as cancelled.
+
+        Returns the count transitioned.
+        """
+        r = self._r
+        rows = (
+            self._s.query(r)
+            .filter(
+                r.tenant_id == tenant_id,
+                r.campaign_id == campaign_id,
+                r.status == RECIPIENT_QUEUED,
+            )
+            .all()
+        )
+        for row in rows:
+            row.status = RECIPIENT_CANCELLED
+        if rows:
+            self._s.flush()
+        return len(rows)
 
     def mark_recipient_sent(self, tenant_id, recipient_id, wa_message_id=None,
                             sent_at=None):

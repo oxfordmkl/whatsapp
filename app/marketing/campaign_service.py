@@ -154,21 +154,128 @@ def _err(*errors) -> ValidationResult:
     return ValidationResult(errors=tuple(errors))
 
 
+# ── Template resolution (ADR-024 D3) ──────────────────────────────────────────
+
+def resolve_campaign_template(tenant_id, template_id, session=None, model=None):
+    """ADR-024 D3: resolve a campaign's WhatsApp template, or None if unusable.
+
+    A template is usable only when it belongs to this tenant, is approved,
+    carries a provider template id (submitted and cleared by Meta), and
+    targets the whatsapp channel. Any other state — wrong tenant, draft,
+    approval_pending, rejected, archived, or a missing provider id — resolves
+    to None so the caller refuses rather than risking a mis-attributed or
+    provider-rejected send.
+
+    `session` and `model` are injectable for testing, matching
+    CampaignRepository's model-injection convention; in production they
+    resolve lazily to db.session and app.models.MessageTemplate.
+    """
+    if not tenant_id or not template_id:
+        return None
+    if session is None:
+        from app.extensions import db
+        session = db.session
+    if model is None:
+        from app.models import MessageTemplate as model
+
+    return (
+        session.query(model)
+        .filter(
+            model.id == template_id,
+            model.tenant_id == tenant_id,
+            model.status == "approved",
+            model.provider_template_id.isnot(None),
+            model.channel == "whatsapp",
+        )
+        .first()
+    )
+
+
+def describe_campaign_template(tenant_id, template_id, session=None, model=None) -> dict:
+    """ADR-025 D7: per-condition template readiness for the audience preview.
+
+    resolve_campaign_template() collapses every failure mode — wrong tenant,
+    draft, rejected, missing provider id — to a single None, which is correct
+    for a launch-time gate (D3: refuse or don't) but wrong for a preview,
+    where an operator needs to know WHICH condition failed: "not submitted
+    yet" and "rejected" have different remedies. This performs the same
+    unfiltered-by-status lookup and reports each D3 condition separately.
+
+    Returns::
+
+        {
+          "configured": bool,        # campaign has a template_id at all
+          "found": bool,             # a row exists for that id
+          "tenant_match": bool|None, # None when not found
+          "status": str|None,
+          "provider_template_id_present": bool|None,
+          "channel": str|None,
+          "ready": bool,             # exactly resolve_campaign_template()'s
+                                      # condition set — kept in lock-step by
+                                      # test_readiness_matches_d3_resolution
+        }
+    """
+    if not template_id:
+        return {
+            "configured": False, "found": False, "tenant_match": None,
+            "status": None, "provider_template_id_present": None,
+            "channel": None, "ready": False,
+        }
+
+    if session is None:
+        from app.extensions import db
+        session = db.session
+    if model is None:
+        from app.models import MessageTemplate as model
+
+    row = session.query(model).filter(model.id == template_id).first()
+    if row is None:
+        return {
+            "configured": True, "found": False, "tenant_match": None,
+            "status": None, "provider_template_id_present": None,
+            "channel": None, "ready": False,
+        }
+
+    tenant_match = row.tenant_id == tenant_id
+    provider_present = bool(row.provider_template_id)
+    ready = (
+        tenant_match
+        and row.status == "approved"
+        and provider_present
+        and row.channel == "whatsapp"
+    )
+    return {
+        "configured": True, "found": True, "tenant_match": tenant_match,
+        "status": row.status, "provider_template_id_present": provider_present,
+        "channel": row.channel, "ready": ready,
+    }
+
+
 # ── Service ──────────────────────────────────────────────────────────────────
 class CampaignService:
     """Campaign lifecycle, validation and transaction ownership.
 
     `repository`, `session` and `clock` are injectable for testing; in
     production they resolve lazily to CampaignRepository, db.session and
-    datetime.utcnow.
+    datetime.utcnow. `template_model` is injectable for the same reason as
+    CampaignRepository's model injection (ADR-024 D3 launch-time gate).
     """
 
-    __slots__ = ("_repo", "_session", "_clock")
+    __slots__ = ("_repo", "_session", "_clock", "_template_model",
+                "_audience_resolve_fn", "_audience_preview_fn")
 
-    def __init__(self, repository=None, session=None, clock=None):
+    def __init__(self, repository=None, session=None, clock=None, template_model=None,
+                audience_resolve_fn=None, audience_preview_fn=None):
         self._repo = repository
         self._session = session
         self._clock = clock
+        self._template_model = template_model
+        # ADR-025 D1/D3: injectable for testing, matching template_model's
+        # convention; in production resolve to app.marketing.audience_resolver
+        # bound to this service's session. Both are normalised to a plain
+        # (tenant_id, segment) call signature regardless of injection.
+        self._audience_resolve_fn = audience_resolve_fn
+        self._audience_preview_fn = audience_preview_fn
 
     # ── lazy collaborators ────────────────────────────────────────────────
     @property
@@ -187,6 +294,41 @@ class CampaignService:
 
     def _now(self):
         return self._clock() if self._clock else datetime.utcnow()
+
+    @property
+    def _resolve_audience(self):
+        """Callable (tenant_id, segment) -> [{"phone","name"}, ...]. ADR-025 D3."""
+        if self._audience_resolve_fn is not None:
+            return self._audience_resolve_fn
+        from app.marketing.audience_resolver import resolve as _resolve
+        return lambda tenant_id, segment: _resolve(tenant_id, segment, session=self.session)
+
+    @property
+    def _preview_audience(self):
+        """Callable (tenant_id, segment) -> D6.1 breakdown dict."""
+        if self._audience_preview_fn is not None:
+            return self._audience_preview_fn
+        from app.marketing.audience_resolver import preview as _preview
+        return lambda tenant_id, segment: _preview(tenant_id, segment, session=self.session)
+
+    def _sync_counters(self, tenant_id, campaign_id):
+        """ADR-025 D10: recompute sent/failed from the recipient rows.
+
+        The CampaignRecipient status breakdown is the single source of truth
+        (the same one progress() reports from); the campaign columns are a
+        denormalisation kept in step with it, never an independent tally.
+        Groupings mirror _evaluate_outcome()'s exactly — reusing the R_*
+        constants rather than restating literals, so a status rename cannot
+        make reconciliation and counters disagree.
+
+        Does NOT commit — the caller owns the transaction boundary.
+        """
+        breakdown = self.repository.status_breakdown(tenant_id, campaign_id)
+        sent = sum(breakdown.get(s, 0) for s in (R_SENT, R_DELIVERED, R_READ))
+        failed = sum(breakdown.get(s, 0) for s in (R_FAILED, R_CANCELLED))
+        self.repository.update_counters(
+            tenant_id, campaign_id, sent_count=sent, failed_count=failed
+        )
 
     # ── Guards ────────────────────────────────────────────────────────────
     @staticmethod
@@ -310,8 +452,9 @@ class CampaignService:
     # ── Commands (own the transaction) ────────────────────────────────────
     def create_campaign(self, tenant_id, name, recipients=None,
                         message_body=None, template_id=None,
-                        audience_rule_id=None, description=None,
-                        created_by=None):
+                        audience_rule_id=None, audience_segment=None,
+                        description=None,
+                        created_by=None, impersonated_by=None):
         """Create a campaign in `draft`, optionally with its recipients.
 
         Validates first, then persists via the repository, then COMMITS. Any
@@ -341,7 +484,9 @@ class CampaignService:
                 message_body=message_body,
                 template_id=template_id,
                 audience_rule_id=audience_rule_id,
+                audience_segment=audience_segment,
                 created_by=created_by,
+                impersonated_by=impersonated_by,
             )
             if recipients:
                 added = self.repository.add_recipients(
@@ -378,6 +523,21 @@ class CampaignService:
         if not self.can_transition(from_status, to_status):
             raise CampaignTransitionError(from_status, to_status)
 
+        # ADR-024 D3: a template-backed campaign must resolve to an approved,
+        # tenant-owned WhatsApp template before it may run. Checked here —
+        # before any repository mutation — so an unusable template fails the
+        # launch cleanly rather than surfacing per-recipient inside the worker.
+        if to_status == RUNNING and campaign.template_id:
+            template = resolve_campaign_template(
+                tenant_id, campaign.template_id,
+                session=self.session, model=self._template_model,
+            )
+            if template is None:
+                raise CampaignValidationError(_err(
+                    f"template {campaign.template_id} is not an approved "
+                    "WhatsApp template for this tenant (ADR-024 D3)"
+                ))
+
         now = self._now()
         started_at = now if to_status == RUNNING else None
         completed_at = now if to_status in (COMPLETED, CANCELLED, FAILED) else None
@@ -391,6 +551,24 @@ class CampaignService:
                 )
             elif to_status == ARCHIVED:
                 self.repository.archive_campaign(tenant_id, campaign_id)
+            elif to_status == CANCELLED:
+                self.repository.update_status(
+                    tenant_id, campaign_id, to_status,
+                    started_at=started_at, completed_at=completed_at,
+                )
+                # ADR-025 D9: stop further claiming — without this, a
+                # cancelled campaign's still-queued recipients keep being
+                # claimed and sent by the next worker cycle regardless of the
+                # campaign's own status (P7).
+                self.repository.cancel_queued_recipients(tenant_id, campaign_id)
+                # Phase 8.2E.9-E B2: D9 moves recipients to `cancelled`, which
+                # is a terminal state the D10 counters must reflect. The worker
+                # normally maintains them, but it will never process this
+                # campaign again (no queued rows -> excluded from
+                # pending_tenant_ids), so without this the counters would stay
+                # stale forever — reintroducing the exact list/detail-vs-
+                # progress contradiction (P8) that D10 exists to remove.
+                self._sync_counters(tenant_id, campaign_id)
             else:
                 self.repository.update_status(
                     tenant_id, campaign_id, to_status,
@@ -438,8 +616,136 @@ class CampaignService:
             self.session.rollback()
             raise
 
-    def mark_running(self, tenant_id, campaign_id):
-        return self.transition(tenant_id, campaign_id, RUNNING)
+    def mark_running(self, tenant_id, campaign_id, audience_segment=None,
+                     acknowledged=False):
+        """validated/scheduled -> running: resolve, validate and materialise
+        the audience, then launch. ADR-025 D1/D2/D5/D6.2; ADR-024 D3.
+
+        Self-contained rather than routed through transition() (schedule()
+        is the established precedent) — launch needs steps no other
+        transition needs: the template gate, audience resolution, the D2
+        zero-recipient refusal, the D6.2 acknowledgement check, MAX_RECIPIENTS
+        enforcement, the recipient snapshot write and the counter update, all
+        inside one transaction so a crash mid-launch never leaves a campaign
+        `running` with a partial or absent audience.
+
+        `audience_segment`, if given, is persisted onto the campaign before
+        resolving (ADR-025 D8: "written once at create time, or before
+        launch") — it does not just steer this one call. Omit it to launch
+        using whatever segment was already set.
+
+        `acknowledged` satisfies D6.2: required whenever any resolved
+        recipient needs an approved template to be reached (independent of
+        whether that template is actually ready) — call .../preview first to
+        learn the count, then pass acknowledged=True.
+
+        Ordering matches Phase 8.2E.9-D: the transition-legality and D2
+        zero-recipient checks both raise before D6.2 is even evaluated — an
+        impossible launch is refused outright, never offered for
+        acknowledgement.
+        """
+        self._require_engine()
+        self._require_tenant(tenant_id)
+
+        campaign = self.repository.get(tenant_id, campaign_id)
+        if campaign is None:
+            raise CampaignValidationError(
+                _err(f"campaign {campaign_id} not found for this tenant")
+            )
+
+        from_status = campaign.status
+        if not self.can_transition(from_status, RUNNING):
+            raise CampaignTransitionError(from_status, RUNNING)
+
+        # ADR-024 D3 — same gate as transition()'s RUNNING branch; duplicated
+        # here because mark_running no longer routes through transition().
+        if campaign.template_id:
+            template = resolve_campaign_template(
+                tenant_id, campaign.template_id,
+                session=self.session, model=self._template_model,
+            )
+            if template is None:
+                raise CampaignValidationError(_err(
+                    f"template {campaign.template_id} is not an approved "
+                    "WhatsApp template for this tenant (ADR-024 D3)"
+                ))
+
+        # Phase 8.2E.9-E B1: resolve the EFFECTIVE segment into a local rather
+        # than assigning it to the campaign here. Every refusal below raises
+        # outside the transaction, and a persistent-object mutation made
+        # before them survives in the session's identity map — a later commit
+        # anywhere on the same session would then persist an audience_segment
+        # for a launch that was refused. ADR-025 D2 promises the campaign is
+        # left "unchanged", so nothing may be written to it until the
+        # transactional block is actually entered.
+        effective_segment = (
+            audience_segment if audience_segment is not None
+            else campaign.audience_segment
+        )
+        if not effective_segment:
+            raise CampaignValidationError(_err(
+                "campaign has no audience_segment set — choose a segment "
+                "before launch (ADR-025 D8)"
+            ))
+
+        # AudienceResolutionError is a ValueError subclass (audience_resolver
+        # is never imported at module scope here — see resolve_campaign_template
+        # for the same import-avoidance rationale, and note that an injected
+        # audience_resolve_fn must never require importing the real module).
+        try:
+            recipients = self._resolve_audience(tenant_id, effective_segment)
+        except ValueError as exc:
+            raise CampaignValidationError(_err(str(exc)))
+
+        # ADR-025 D2 — evaluated before D6.2 (Phase 8.2E.9-D ordering): an
+        # impossible launch is refused outright, never offered for
+        # acknowledgement.
+        if not recipients:
+            raise CampaignValidationError(_err(
+                f"audience segment {effective_segment!r} resolved to "
+                "zero recipients — cannot launch (ADR-025 D2)"
+            ))
+
+        # ADR-025 D5 — enforced here, not only in create_campaign(); the
+        # materialisation path bypasses validate_recipients() entirely.
+        if len(recipients) > MAX_RECIPIENTS:
+            raise CampaignValidationError(_err(
+                f"audience of {len(recipients)} exceeds the maximum of "
+                f"{MAX_RECIPIENTS}"
+            ))
+
+        # ADR-025 D6.2 — required whenever ANY recipient needs a template,
+        # independent of whether that template is ready (D6.2's literal
+        # wording: "recipients require an approved marketing template", not
+        # "and it isn't approved").
+        breakdown = self._preview_audience(tenant_id, effective_segment)
+        if breakdown["template_required"] > 0 and not acknowledged:
+            raise CampaignValidationError(_err(
+                f"{breakdown['template_required']} recipient(s) require an "
+                "approved WhatsApp template and were not acknowledged "
+                "(ADR-025 D6.2) — call .../preview, then relaunch with "
+                "acknowledged=True"
+            ))
+
+        now = self._now()
+        try:
+            # First write of the whole method (B1) — every refusal above has
+            # already returned, so reaching this line means the launch is
+            # committing or rolling back as a unit.
+            campaign.audience_segment = effective_segment
+            self.repository.add_recipients(tenant_id, campaign_id, recipients)
+            self.repository.update_counters(
+                tenant_id, campaign_id, total_recipients=len(recipients)
+            )
+            self.repository.update_status(
+                tenant_id, campaign_id, RUNNING, started_at=now
+            )
+            self._audit_status_changed(tenant_id, campaign, from_status, RUNNING)
+            self.session.commit()
+            return campaign
+        except Exception:
+            self.session.rollback()
+            raise
 
     def mark_completed(self, tenant_id, campaign_id):
         return self.transition(tenant_id, campaign_id, COMPLETED)
