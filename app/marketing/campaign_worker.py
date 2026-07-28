@@ -58,6 +58,48 @@ MAX_RETRIES = 3
 # without a schema or API change.
 CAMPAIGN_SEND_DELAY_SECONDS = 1.5
 
+# ── Failure classification (Phase 9.1G, ADR-024 R4) ──────────────────────────
+#
+# A dispatch failure is retryable only if a later attempt could plausibly
+# succeed without anything else changing. R4 rejected retrying the
+# window-closed case precisely because backoff cannot influence it: the
+# 24-hour window reopens only when the contact sends an inbound message.
+#
+# TRANSIENT — provider-side and time-limited; a later attempt may succeed:
+#   HTTP 5xx (Meta outage/instability), 408 timeout, 429 rate limited,
+#   and any transport-level exception (connection reset, DNS, TLS).
+# PERMANENT — deterministic given the current campaign/contact state; the
+#   identical attempt would fail identically:
+#   window closed with no approved template, and 4xx client errors
+#   (malformed number, rejected/unknown template, auth failure).
+FAILURE_TRANSIENT = "transient"
+FAILURE_PERMANENT = "permanent"
+
+# 4xx codes that are nonetheless worth retrying — they describe the *moment*,
+# not the request. Everything else in 4xx indicates the request itself is
+# wrong and will stay wrong.
+_RETRYABLE_CLIENT_CODES = frozenset({408, 429})
+
+
+def _classify_provider_failure(status_code) -> str:
+    """Map a provider HTTP status to TRANSIENT or PERMANENT.
+
+    Unknown/None status (e.g. a mocked or malformed response) is treated as
+    TRANSIENT: retrying costs a few attempts, whereas wrongly marking a
+    recoverable failure permanent silently drops a message the operator
+    believes was attempted. The safer default is the one that preserves the
+    chance of delivery.
+    """
+    try:
+        code = int(status_code)
+    except (TypeError, ValueError):
+        return FAILURE_TRANSIENT
+    if code in _RETRYABLE_CLIENT_CODES:
+        return FAILURE_TRANSIENT
+    if 400 <= code < 500:
+        return FAILURE_PERMANENT
+    return FAILURE_TRANSIENT
+
 # Set by init_campaign_worker(). Not called from anywhere until Phase 8.2C.3.
 _app = None
 
@@ -289,8 +331,22 @@ def _send_one(repo, session, tenant_id, row, message_body, template, now):
     name = row.name or "Student"
     try:
         result = send_campaign_message(row.phone, name, tenant_id, message_body, template)
+
         if result["outcome"] != "sent":
-            raise Exception(result.get("reason") or "send failed")
+            # Phase 9.1G: handle the refusal inline rather than raising. The
+            # previous `raise Exception(reason)` flattened the structured
+            # outcome into a bare string, discarding failure_kind before
+            # _handle_failure() could act on it — which is how permanent
+            # failures ended up in the retry queue against ADR-024 R4.
+            reason = result.get("reason") or "send failed"
+            kind = result.get("failure_kind", FAILURE_TRANSIENT)
+            logger.warning(
+                "⚠️  Campaign send failed (%s) — phone=%s campaign=%s: %s",
+                kind, row.phone, row.campaign_id, reason,
+            )
+            _handle_failure(repo, session, tenant_id, row, reason, now,
+                            failure_kind=kind)
+            return
 
         repo.mark_recipient_sent(
             tenant_id, row.id,
@@ -309,11 +365,15 @@ def _send_one(repo, session, tenant_id, row, message_body, template, now):
         )
 
     except Exception as e:
+        # An unexpected exception (transport error, provider client raising,
+        # a bug) carries no classification — treat as TRANSIENT so a genuine
+        # blip still gets its retries.
         logger.warning(
-            "⚠️  Campaign send failed — phone=%s campaign=%s: %s",
+            "⚠️  Campaign send raised — phone=%s campaign=%s: %s",
             row.phone, row.campaign_id, e,
         )
-        _handle_failure(repo, session, tenant_id, row, str(e), now)
+        _handle_failure(repo, session, tenant_id, row, str(e), now,
+                        failure_kind=FAILURE_TRANSIENT)
     finally:
         # ADR-024 D6 — only reached on an actual dispatch attempt, never on
         # the opt-out early return above.
@@ -401,13 +461,19 @@ def send_campaign_message(phone, name, tenant_id, message_body, template):
     status code:
 
         {"outcome": "sent",   "wa_message_id": ..., "send_type": "text"|"template"}
-        {"outcome": "failed", "reason": ...}
+        {"outcome": "failed", "reason": ..., "failure_kind": FAILURE_PERMANENT
+                                                          |  FAILURE_TRANSIENT}
 
     Window open  → plain text carrying the campaign's own message_body.
     Window closed + resolved template → the campaign's approved WhatsApp
       template (ADR-024 D3 resolution happens once per campaign, by the
       caller — `template` here is already resolved or None).
     Window closed + no template → failed, explicitly. No substitution.
+
+    Phase 9.1G (ADR-024 R4): every failure now carries `failure_kind`, so the
+    caller can distinguish a condition a retry might clear from one it cannot.
+    This function is the only place with enough context to classify — by the
+    time _handle_failure() sees a bare reason string, the distinction is gone.
     """
     from app.services.whatsapp_service import send_text, send_template
 
@@ -422,12 +488,18 @@ def send_campaign_message(phone, name, tenant_id, message_body, template):
         return {
             "outcome": "failed",
             "reason": f"API error {response.status_code}: {response.text[:200]}",
+            "failure_kind": _classify_provider_failure(response.status_code),
         }
 
     if template is None:
+        # ADR-024 R4: the 24-hour window does not reopen on a timer — it
+        # reopens only when the contact sends an inbound message. No amount of
+        # backoff influences this, and no provider call was even made, so
+        # retrying would burn the budget to reach a conclusion already known.
         return {
             "outcome": "failed",
             "reason": "24-hour window closed and no approved WhatsApp template configured",
+            "failure_kind": FAILURE_PERMANENT,
         }
 
     components = _template_components(template, name)
@@ -446,14 +518,38 @@ def send_campaign_message(phone, name, tenant_id, message_body, template):
     return {
         "outcome": "failed",
         "reason": f"API error {response.status_code}: {response.text[:200]}",
+        "failure_kind": _classify_provider_failure(response.status_code),
     }
 
 
-def _handle_failure(repo, session, tenant_id, row, reason, now):
-    """Apply retry or terminal failure based on how many attempts have been made."""
+def _handle_failure(repo, session, tenant_id, row, reason, now,
+                    failure_kind=FAILURE_TRANSIENT):
+    """Apply retry or terminal failure.
+
+    Phase 9.1G (ADR-024 R4): a PERMANENT failure becomes terminal on the first
+    attempt, without consuming the retry budget. Only TRANSIENT failures fall
+    through to the attempt-count policy below.
+
+    `failure_kind` defaults to TRANSIENT so any caller that omits it keeps the
+    pre-9.1G behaviour — the retry budget is the safe default, since wrongly
+    retrying costs a delay while wrongly terminating drops a deliverable
+    message.
+    """
     # attempt is 1-indexed: attempt=1 means this is the first failure.
     # FollowUpJob equivalent: retry_count >= 3 → done.
     attempt = (row.retry_count or 0) + 1
+
+    if failure_kind == FAILURE_PERMANENT:
+        repo.mark_recipient_failed(
+            tenant_id, row.id, failure_reason=reason, attempted_at=now
+        )
+        session.commit()
+        logger.warning(
+            "🛑 Campaign recipient %s permanently failed on attempt %d — not "
+            "retryable, no backoff can change this (campaign=%s): %s",
+            row.phone, attempt, row.campaign_id, reason,
+        )
+        return
 
     if attempt >= MAX_RETRIES:
         repo.mark_recipient_failed(
