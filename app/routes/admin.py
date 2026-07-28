@@ -1513,6 +1513,24 @@ def campaigns_center():
     return render_template("campaigns_center.html")
 
 
+@admin_bp.route("/crm/campaigns/history", methods=["GET"])
+def campaigns_history():
+    """Phase 9.2: Campaign History (V2) — past campaigns for this tenant.
+
+    Shell only, exactly like campaigns_center: the browser reads everything
+    from the existing /crm/campaigns/v2 API, so this view issues no campaign
+    queries and introduces no new backend contract. Read-only apart from the
+    archive action, which reuses the existing lifecycle endpoint.
+
+    Route naming: /crm/campaigns/history cannot collide with the marketing
+    blueprint, which is mounted at the /crm/campaigns/v2 prefix.
+    """
+    if not check_auth():
+        return _deny()
+
+    return render_template("campaigns_history.html")
+
+
 @admin_bp.route("/crm/campaigns/preview", methods=["POST"])
 @admin_required
 def campaign_preview():

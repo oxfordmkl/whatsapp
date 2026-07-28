@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign History — Oxford Computers</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* Tokens copied verbatim from campaigns_center.html / campaigns.html. */
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+    }
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+    .crm-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    .crm-card-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .crm-card-header i { margin-right: 0.5rem; color: var(--text-muted); }
+    .crm-card-body { padding: 0; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 8px;
+      font-weight: 500;
+      padding: 0.4rem 0.85rem;
+      font-size: 0.78rem;
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text-main); border-color: var(--text-muted); }
+    .btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Status badges (identical to Campaign Center) ─────────────────── */
+    .badge-status {
+      padding: 0.2rem 0.6rem; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; white-space: nowrap;
+    }
+    .st-draft     { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-validated { background: rgba(88,166,255,0.12);  color: var(--blue); }
+    .st-scheduled { background: rgba(188,140,255,0.12); color: var(--purple); }
+    .st-running   { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .st-completed { background: rgba(37,211,102,0.12);  color: var(--green); }
+    .st-failed    { background: rgba(248,81,73,0.12);   color: var(--red); }
+    .st-cancelled { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-archived  { background: rgba(139,148,158,0.10); color: var(--text-muted); }
+
+    /* ── Filter pills ─────────────────────────────────────────────────── */
+    .pill-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .pill {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      color: var(--text-muted); border-radius: 999px;
+      padding: 0.3rem 0.8rem; font-size: 0.75rem; font-weight: 500;
+      cursor: pointer; user-select: none;
+    }
+    .pill:hover { color: var(--text-main); }
+    .pill.active {
+      background: rgba(37,211,102,0.12);
+      border-color: var(--green-dim);
+      color: var(--green);
+    }
+
+    /* ── Table ────────────────────────────────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; }
+    table.hist { width: 100%; border-collapse: collapse; }
+    table.hist th {
+      color: var(--text-muted); font-weight: 500; font-size: 0.68rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      padding: 0.7rem 0.85rem; text-align: left; white-space: nowrap;
+    }
+    table.hist td {
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid rgba(48,54,61,0.6);
+      vertical-align: middle;
+    }
+    table.hist tbody tr.row-main { cursor: pointer; }
+    table.hist tbody tr.row-main:hover { background: var(--bg-card2); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .muted { color: var(--text-muted); }
+    .nowrap { white-space: nowrap; }
+    .camp-name { font-weight: 600; }
+    .camp-id { font-size: 0.7rem; color: var(--text-muted); }
+    .imp-flag {
+      font-size: 0.62rem; color: var(--purple);
+      background: rgba(188,140,255,0.10);
+      border-radius: 4px; padding: 0.05rem 0.35rem; margin-left: 0.4rem;
+      white-space: nowrap;
+    }
+
+    /* ── Expanded detail ──────────────────────────────────────────────── */
+    tr.row-detail > td {
+      background: #010409; padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 0.75rem; }
+    .kv .k {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); margin-bottom: 0.2rem;
+    }
+    .kv .v { font-size: 0.82rem; word-break: break-word; }
+    .bd-table { width: auto; margin-top: 0.85rem; font-size: 0.78rem; }
+    .bd-table td { padding: 0.25rem 1.25rem 0.25rem 0; border: none; }
+    .msg-body {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.6rem 0.75rem; margin-top: 0.85rem;
+      font-size: 0.8rem; white-space: pre-wrap; max-height: 140px; overflow-y: auto;
+    }
+
+    .empty { text-align: center; padding: 3rem 1.5rem; color: var(--text-muted); }
+    .empty i { font-size: 2rem; opacity: 0.4; display: block; margin-bottom: 0.75rem; }
+
+    .pager {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.85rem 1.25rem; border-top: 1px solid var(--border);
+      flex-wrap: wrap; gap: 0.75rem;
+    }
+    .note {
+      font-size: 0.72rem; color: var(--text-muted);
+      border-left: 2px solid var(--border); padding-left: 0.6rem;
+    }
+  </style>
+</head>
+<body>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1200px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <div>
+        <h1 style="font-size:1.25rem;font-weight:700;margin:0;">
+          <i class="bi bi-clock-history me-2" style="color:var(--blue);"></i>Campaign History
+        </h1>
+        <div class="note mt-2">
+          Past and current campaigns for this tenant, newest first.
+          Counters are refreshed by the worker each cycle, so a running
+          campaign may lag by up to one poll interval.
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn-ghost text-decoration-none" href="/crm/campaigns/center">
+          <i class="bi bi-rocket-fill me-1"></i>Campaign Center
+        </a>
+        <button class="btn-ghost" id="btnReload"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+      </div>
+    </div>
+
+    <div class="crm-card">
+      <div class="crm-card-header">
+        <div class="pill-row" id="filterRow">
+          <span class="pill active" data-status="">All</span>
+          <span class="pill" data-status="draft">Draft</span>
+          <span class="pill" data-status="validated">Validated</span>
+          <span class="pill" data-status="scheduled">Scheduled</span>
+          <span class="pill" data-status="running">Running</span>
+          <span class="pill" data-status="completed">Completed</span>
+          <span class="pill" data-status="failed">Failed</span>
+          <span class="pill" data-status="cancelled">Cancelled</span>
+          <span class="pill" data-status="archived">Archived</span>
+        </div>
+        <span class="muted" id="totalLabel" style="font-size:0.75rem;font-weight:400;"></span>
+      </div>
+
+      <div class="crm-card-body">
+        <div class="tbl-wrap">
+          <table class="hist">
+            <thead>
+              <tr>
+                <th style="width:26px;"></th>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Segment</th>
+                <th class="num">Recipients</th>
+                <th class="num">Sent</th>
+                <th class="num">Failed</th>
+                <th>Created</th>
+                <th>Created By</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <tr><td colspan="9" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" id="pager" style="display:none;">
+          <span class="muted" id="pageLabel" style="font-size:0.75rem;"></span>
+          <div class="d-flex gap-2">
+            <button class="btn-ghost" id="btnPrev"><i class="bi bi-chevron-left"></i> Prev</button>
+            <button class="btn-ghost" id="btnNext">Next <i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </div><!-- /crm-main -->
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   Campaign History — reads ONLY the existing /crm/campaigns/v2 API.
+   No new endpoint, no contract change. Every rule stays server-side; this
+   page renders what the API reports and never recomputes it.
+   ════════════════════════════════════════════════════════════════════ */
+const API = '/crm/campaigns/v2';
+
+const state = { status: '', page: 1, pages: 1, total: 0, expanded: null };
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({
+    headers: {'Content-Type': 'application/json'},
+  }, opts || {}));
+  let body = null;
+  try { body = await res.json(); } catch (_) {}
+  if (!res.ok) {
+    const d = body && (body.detail || body.error);
+    const msg = typeof d === 'object'
+      ? (d.errors || []).join('; ') || JSON.stringify(d)
+      : (d || `HTTP ${res.status}`);
+    const err = new Error(msg); err.status = res.status; throw err;
+  }
+  return body;
+}
+
+/* Dates arrive as ISO strings or null. Render compactly, never invent a
+   value — a missing timestamp means the campaign never reached that stage. */
+function fmt(iso) {
+  if (!iso) return '<span class="muted">—</span>';
+  const d = new Date(iso);
+  if (isNaN(d)) return '<span class="muted">—</span>';
+  return esc(d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  }));
+}
+
+const badge = (s) => `<span class="badge-status st-${esc(s)}">${esc(s)}</span>`;
+
+/* Archive is legal only from a terminal, non-archived state — mirrors
+   ALLOWED_TRANSITIONS server-side. Showing the button when the server would
+   refuse produces a confusing 409, so the row hides it instead. The server
+   remains the authority; this only decides what to offer. */
+const ARCHIVABLE = new Set(['completed', 'failed', 'cancelled']);
+
+async function load() {
+  const tb = $('tbody');
+  tb.innerHTML = `<tr><td colspan="9" class="empty">Loading…</td></tr>`;
+  try {
+    const qs = new URLSearchParams({ page: state.page, limit: 25 });
+    if (state.status) qs.set('status', state.status);
+    const d = await api(`?${qs.toString()}`);
+
+    state.pages = d.pages || 1;
+    state.total = d.total || 0;
+    state.page  = d.page  || 1;
+    render(d.campaigns || []);
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="9" class="empty" style="color:var(--red);">
+      ${esc(e.message)}${e.status === 404
+        ? '<br><span class="muted">CAMPAIGN_ENGINE_V2 appears to be OFF for this deployment.</span>'
+        : ''}</td></tr>`;
+    $('pager').style.display = 'none';
+    $('totalLabel').textContent = '';
+  }
+}
+
+function render(rows) {
+  const tb = $('tbody');
+  $('totalLabel').textContent = state.total
+    ? `${state.total} campaign${state.total === 1 ? '' : 's'}`
+    : '';
+
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="9" class="empty">
+      <i class="bi bi-inbox"></i>
+      ${state.status
+        ? `No campaigns with status <strong>${esc(state.status)}</strong>.`
+        : 'No campaigns yet.'}
+      <div style="margin-top:0.75rem;">
+        <a class="btn-ghost text-decoration-none" href="/crm/campaigns/center">
+          <i class="bi bi-rocket-fill me-1"></i>Create your first campaign
+        </a>
+      </div></td></tr>`;
+    $('pager').style.display = 'none';
+    return;
+  }
+
+  tb.innerHTML = rows.map(c => {
+    const imp = c.impersonated_by
+      ? `<span class="imp-flag" title="Created while impersonating this tenant">via ${esc(c.impersonated_by)}</span>`
+      : '';
+    return `
+      <tr class="row-main" data-id="${c.id}">
+        <td class="muted"><i class="bi bi-chevron-right" data-chev="${c.id}"></i></td>
+        <td>
+          <div class="camp-name">${esc(c.name)}${imp}</div>
+          <div class="camp-id">#${c.id}</div>
+        </td>
+        <td>${badge(c.status)}</td>
+        <td>${c.audience_segment ? esc(c.audience_segment) : '<span class="muted">—</span>'}</td>
+        <td class="num">${c.total_recipients ?? 0}</td>
+        <td class="num" style="color:${c.sent_count ? 'var(--green)' : 'var(--text-muted)'};">${c.sent_count ?? 0}</td>
+        <td class="num" style="color:${c.failed_count ? 'var(--red)' : 'var(--text-muted)'};">${c.failed_count ?? 0}</td>
+        <td class="nowrap muted">${fmt(c.created_at)}</td>
+        <td class="muted">${c.created_by ? esc(c.created_by) : '—'}</td>
+      </tr>
+      <tr class="row-detail" data-detail="${c.id}" style="display:none;">
+        <td colspan="9"><div data-body="${c.id}" class="muted">Loading details…</div></td>
+      </tr>`;
+  }).join('');
+
+  tb.querySelectorAll('tr.row-main').forEach(tr => {
+    tr.addEventListener('click', () => toggle(Number(tr.dataset.id)));
+  });
+
+  $('pager').style.display = state.pages > 1 ? 'flex' : 'none';
+  $('pageLabel').textContent = `Page ${state.page} of ${state.pages}`;
+  $('btnPrev').disabled = state.page <= 1;
+  $('btnNext').disabled = state.page >= state.pages;
+}
+
+/* Detail + progress are fetched lazily on expand — never prefetched for the
+   whole page, which would be 2N requests for data most rows never show. */
+async function toggle(id) {
+  const row = document.querySelector(`tr[data-detail="${id}"]`);
+  const chev = document.querySelector(`i[data-chev="${id}"]`);
+  if (!row) return;
+
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    chev.className = 'bi bi-chevron-right';
+    state.expanded = null;
+    return;
+  }
+  if (state.expanded && state.expanded !== id) toggle(state.expanded);
+
+  row.style.display = '';
+  chev.className = 'bi bi-chevron-down';
+  state.expanded = id;
+
+  const box = document.querySelector(`div[data-body="${id}"]`);
+  box.innerHTML = 'Loading details…';
+  try {
+    const [d, p] = await Promise.all([api(`/${id}`), api(`/${id}/progress`)]);
+    box.innerHTML = renderDetail(d, p);
+    const btn = box.querySelector('[data-archive]');
+    if (btn) btn.addEventListener('click', (ev) => { ev.stopPropagation(); archive(id); });
+  } catch (e) {
+    box.innerHTML = `<span style="color:var(--red);">${esc(e.message)}</span>`;
+  }
+}
+
+function renderDetail(d, p) {
+  const bd = Object.entries(p.breakdown || {});
+  const rows = bd.length
+    ? bd.map(([k, v]) => `<tr><td>${badge(k)}</td><td class="num">${v}</td></tr>`).join('')
+    : `<tr><td colspan="2" class="muted">No recipients materialised.</td></tr>`;
+
+  const kv = [
+    ['Status', badge(d.status)],
+    ['Segment', d.audience_segment ? esc(d.audience_segment) : '<span class="muted">—</span>'],
+    ['Created', fmt(d.created_at)],
+    ['Started', fmt(d.started_at)],
+    ['Completed', fmt(d.completed_at)],
+    ['Scheduled', fmt(d.scheduled_at)],
+    ['Created By', d.created_by ? esc(d.created_by) : '<span class="muted">—</span>'],
+    ['Template ID', d.template_id != null ? esc(d.template_id) : '<span class="muted">none</span>'],
+  ];
+  if (d.impersonated_by) kv.push(['Impersonated By', esc(d.impersonated_by)]);
+
+  let html = `<div class="kv">` +
+    kv.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') +
+    `</div>`;
+
+  if (d.failure_reason) {
+    html += `<div class="msg-body" style="border-color:rgba(248,81,73,0.35);color:var(--red);">
+      <strong>Failure reason:</strong> ${esc(d.failure_reason)}</div>`;
+  }
+  if (d.message_body) {
+    html += `<div class="msg-body">${esc(d.message_body)}</div>`;
+  }
+
+  html += `<table class="bd-table"><thead><tr>
+      <th style="border:none;padding-right:1.25rem;">Recipient Status</th>
+      <th style="border:none;" class="num">Count</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+
+  html += `<div style="margin-top:0.9rem;display:flex;gap:0.5rem;align-items:center;">`;
+  if (ARCHIVABLE.has(d.status)) {
+    html += `<button class="btn-ghost" data-archive="${d.id}">
+      <i class="bi bi-archive me-1"></i>Archive</button>`;
+  } else if (d.status === 'archived') {
+    html += `<span class="muted" style="font-size:0.75rem;">Archived — no further actions.</span>`;
+  } else {
+    html += `<span class="muted" style="font-size:0.75rem;">
+      Archive available once the campaign reaches a terminal state
+      (completed, failed or cancelled).</span>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function archive(id) {
+  if (!confirm(`Archive campaign #${id}?`)) return;
+  try {
+    await api(`/${id}/archive`, { method: 'POST' });
+    state.expanded = null;
+    await load();
+  } catch (e) {
+    alert(`Archive failed: ${e.message}`);
+  }
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+$('filterRow').addEventListener('click', (ev) => {
+  const pill = ev.target.closest('.pill');
+  if (!pill) return;
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  state.status = pill.dataset.status || '';
+  state.page = 1;
+  state.expanded = null;
+  load();
+});
+$('btnPrev').addEventListener('click', () => {
+  if (state.page > 1) { state.page--; state.expanded = null; load(); }
+});
+$('btnNext').addEventListener('click', () => {
+  if (state.page < state.pages) { state.page++; state.expanded = null; load(); }
+});
+$('btnReload').addEventListener('click', () => { state.expanded = null; load(); });
+
+load();
+</script>
+</body>
+</html>
