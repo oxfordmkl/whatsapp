@@ -394,6 +394,31 @@ class TestServiceCallContract:
         _, kwargs = svc.create_campaign.call_args
         assert kwargs.get("audience_rule_id") == 3
 
+    def test_audience_segment_forwarded(self):
+        """Phase 9.1F regression (ADR-025 D8).
+
+        The route previously accepted audience_segment from the client and
+        dropped it — CampaignService has taken the kwarg since 8.2E.9-C, but
+        nothing passed it, so drafts persisted with a NULL segment and it was
+        only ever written later by mark_running(). Confirmed in production:
+        campaign #1 from the operator smoke test has audience_segment=None
+        despite the UI sending one.
+        """
+        svc = _make_svc_stub()
+        _run(svc, json_body={"name": "X", "message_body": "Y",
+                             "audience_segment": "HOT Leads"})
+        _, kwargs = svc.create_campaign.call_args
+        assert kwargs.get("audience_segment") == "HOT Leads"
+
+    def test_audience_segment_absent_is_none(self):
+        """Omitting it must pass None, not raise or send a sentinel — a
+        message_body-only draft with no segment yet is legitimate (D8 allows
+        the segment to be set at create OR before launch)."""
+        svc = _make_svc_stub()
+        _run(svc, json_body={"name": "X", "message_body": "Y"})
+        _, kwargs = svc.create_campaign.call_args
+        assert kwargs.get("audience_segment") is None
+
     def test_created_by_set_from_actor_username(self):
         svc = _make_svc_stub()
         actor = {"authenticated": True, "username": "alice", "role": "ADMIN", "source": "SESSION"}

@@ -321,11 +321,13 @@ def create_campaign():
     """POST /crm/campaigns/v2 — create a campaign draft.
 
     Accepts JSON:
-        name            (required)
-        description     (optional)
-        message_body    (optional, mutually exclusive with template_id)
-        template_id     (optional, mutually exclusive with message_body)
+        name             (required)
+        description      (optional)
+        message_body     (optional, mutually exclusive with template_id)
+        template_id      (optional, mutually exclusive with message_body)
         audience_rule_id (optional)
+        audience_segment (optional) — the named segment this campaign will
+                         resolve at launch (ADR-025 D8)
 
     Validation is entirely owned by CampaignService.create_campaign() — the
     route does not duplicate any rules. On success returns 201 with the full
@@ -360,6 +362,14 @@ def create_campaign():
             message_body=body.get("message_body"),
             template_id=body.get("template_id"),
             audience_rule_id=body.get("audience_rule_id"),
+            # Phase 9.1F (ADR-025 D8): the segment is "written once at create
+            # time, or before launch". CampaignService and the repository have
+            # accepted this since 8.2E.9-C, but the route never forwarded it,
+            # so a segment supplied at create was silently discarded and only
+            # ever persisted later by mark_running(). That left drafts with a
+            # NULL segment and defeated D8's stated purpose — giving a future
+            # scheduled launch something to read without a live request.
+            audience_segment=body.get("audience_segment"),
             created_by=created_by,
             impersonated_by=impersonated_by,
         )
