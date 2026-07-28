@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign Center — Oxford Computers</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* Tokens copied verbatim from campaigns.html — do not diverge. */
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+    }
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+    .crm-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    .crm-card-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .crm-card-header i { margin-right: 0.5rem; color: var(--text-muted); }
+    .crm-card-body { padding: 1.25rem; }
+
+    .form-control, .form-select {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+    }
+    .form-control:focus, .form-select:focus {
+      background: var(--bg-card2);
+      border-color: var(--green-dim);
+      color: var(--text-main);
+      box-shadow: 0 0 0 3px rgba(37,211,102,0.08);
+    }
+    .form-control:disabled, .form-select:disabled { opacity: 0.55; }
+
+    .btn-save {
+      background: var(--green);
+      color: #000;
+      border: none;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 0.6rem 1.2rem;
+    }
+    .btn-save:hover:not(:disabled) { background: var(--green-dim); color: #fff; }
+    .btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 8px;
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text-main); border-color: var(--text-muted); }
+    .btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Step rail ───────────────────────────────────────────────────── */
+    .step-rail { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .step {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 0.9rem;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 999px; font-size: 0.78rem; color: var(--text-muted);
+    }
+    .step .dot {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--bg-card2); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem; font-weight: 700;
+    }
+    .step.active { border-color: var(--green-dim); color: var(--text-main); }
+    .step.active .dot { background: var(--green); color: #000; border-color: var(--green); }
+    .step.done { color: var(--text-main); }
+    .step.done .dot { background: rgba(37,211,102,0.15); color: var(--green); border-color: var(--green-dim); }
+
+    /* ── Status badges ───────────────────────────────────────────────── */
+    .badge-status {
+      padding: 0.2rem 0.6rem; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .st-draft     { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-validated { background: rgba(88,166,255,0.12);  color: var(--blue); }
+    .st-scheduled { background: rgba(188,140,255,0.12); color: var(--purple); }
+    .st-running   { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .st-completed { background: rgba(37,211,102,0.12);  color: var(--green); }
+    .st-failed    { background: rgba(248,81,73,0.12);   color: var(--red); }
+    .st-cancelled { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-archived  { background: rgba(139,148,158,0.10); color: var(--text-muted); }
+
+    /* ── Reachability stat tiles ─────────────────────────────────────── */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; }
+    .stat {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.8rem 0.9rem;
+    }
+    .stat .k {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); margin-bottom: 0.3rem;
+    }
+    .stat .v { font-size: 1.4rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat.warn { border-color: rgba(210,153,34,0.4); }
+    .stat.bad  { border-color: rgba(248,81,73,0.4); }
+
+    .ack-box {
+      background: rgba(210,153,34,0.07);
+      border: 1px solid rgba(210,153,34,0.35);
+      border-radius: 10px; padding: 1rem; margin-top: 1rem;
+    }
+    .tpl-row { display: flex; justify-content: space-between; padding: 0.3rem 0; font-size: 0.78rem; }
+    .tpl-row .ok  { color: var(--green); }
+    .tpl-row .no  { color: var(--red); }
+    .tpl-row .na  { color: var(--text-muted); }
+
+    .log {
+      background: #010409; border: 1px solid var(--border); border-radius: 8px;
+      padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem; color: var(--text-muted);
+      max-height: 190px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .log .ok  { color: var(--green); }
+    .log .err { color: var(--red); }
+    .log .inf { color: var(--blue); }
+
+    .progress-track {
+      height: 8px; background: var(--bg-card2);
+      border-radius: 999px; overflow: hidden; display: flex;
+    }
+    .progress-track .seg-sent   { background: var(--green); }
+    .progress-track .seg-failed { background: var(--red); }
+
+    .v1-note {
+      font-size: 0.72rem; color: var(--text-muted);
+      border-left: 2px solid var(--border); padding-left: 0.6rem;
+    }
+    table.rcpt { width: 100%; font-size: 0.78rem; }
+    table.rcpt th {
+      color: var(--text-muted); font-weight: 500; font-size: 0.68rem;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--border); padding: 0.4rem 0.5rem;
+    }
+    table.rcpt td { padding: 0.45rem 0.5rem; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  </style>
+</head>
+<body>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1200px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <div>
+        <h1 style="font-size:1.25rem;font-weight:700;margin:0;">
+          <i class="bi bi-rocket-fill me-2" style="color:var(--green);"></i>Campaign Center
+        </h1>
+        <div class="v1-note mt-2">
+          Campaign Engine V2 — messages are dispatched by the background worker.
+          The legacy builder remains at <a href="/crm/campaigns" style="color:var(--text-muted);">/crm/campaigns</a>.
+        </div>
+      </div>
+      <button class="btn-ghost" id="btnReset"><i class="bi bi-arrow-counterclockwise me-1"></i>New Campaign</button>
+    </div>
+
+    <!-- Step rail -->
+    <div class="step-rail" id="stepRail">
+      <div class="step active" data-step="create"><span class="dot">1</span>Create</div>
+      <div class="step" data-step="preview"><span class="dot">2</span>Preview</div>
+      <div class="step" data-step="validate"><span class="dot">3</span>Validate</div>
+      <div class="step" data-step="ack"><span class="dot">4</span>Acknowledge</div>
+      <div class="step" data-step="launch"><span class="dot">5</span>Launch</div>
+    </div>
+
+    <div class="row g-4">
+      <!-- ── LEFT: builder ─────────────────────────────────────────── -->
+      <div class="col-12 col-lg-7">
+        <div class="crm-card">
+          <div class="crm-card-header">
+            <span><i class="bi bi-pencil-square"></i>Campaign Builder</span>
+            <span id="campaignBadge"></span>
+          </div>
+          <div class="crm-card-body">
+            <div class="mb-3">
+              <label class="form-label text-muted fw-semibold" style="font-size:0.8rem;">Campaign Name</label>
+              <input type="text" class="form-control" id="fName" placeholder="e.g. Diwali Admission Drive">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label text-muted fw-semibold" style="font-size:0.8rem;">Target Audience</label>
+              <select class="form-select" id="fSegment">
+                <option value="" disabled selected>Loading segments…</option>
+              </select>
+              <div class="form-text" style="color:var(--text-muted);font-size:0.7rem;">
+                The audience is resolved and frozen at launch, not now.
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label text-muted fw-semibold d-flex justify-content-between" style="font-size:0.8rem;">
+                Message Body
+                <span id="charCount" style="color:var(--text-muted);font-weight:normal;">0 / 4096</span>
+              </label>
+              <textarea class="form-control" id="fBody" rows="6" placeholder="Enter your WhatsApp message…"></textarea>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn-save flex-grow-1" id="btnCreate">
+                <i class="bi bi-plus-circle me-2"></i>Create Draft
+              </button>
+              <button class="btn-ghost" id="btnValidate" disabled>
+                <i class="bi bi-check2-circle me-1"></i>Validate
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress (post-launch) -->
+        <div class="crm-card d-none" id="progressCard">
+          <div class="crm-card-header">
+            <span><i class="bi bi-activity"></i>Delivery Progress</span>
+            <button class="btn-ghost" id="btnRefresh" style="padding:0.25rem 0.6rem;font-size:0.72rem;">
+              <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+          </div>
+          <div class="crm-card-body">
+            <div class="progress-track mb-3" id="progressTrack"></div>
+            <div class="stat-grid mb-3" id="progressStats"></div>
+            <table class="rcpt"><thead><tr>
+              <th>Status</th><th style="text-align:right;">Recipients</th>
+            </tr></thead><tbody id="breakdownBody"></tbody></table>
+            <div class="mt-3 d-flex gap-2">
+              <button class="btn-ghost" id="btnCancel"><i class="bi bi-x-octagon me-1"></i>Cancel Campaign</button>
+              <button class="btn-ghost" id="btnArchive"><i class="bi bi-archive me-1"></i>Archive</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── RIGHT: preview / ack / launch ─────────────────────────── -->
+      <div class="col-12 col-lg-5">
+        <div class="crm-card">
+          <div class="crm-card-header">
+            <span><i class="bi bi-eye"></i>Audience Preview</span>
+            <button class="btn-ghost" id="btnPreview" disabled style="padding:0.25rem 0.6rem;font-size:0.72rem;">
+              <i class="bi bi-arrow-repeat"></i> Refresh
+            </button>
+          </div>
+          <div class="crm-card-body" id="previewArea">
+            <div class="text-center" style="color:var(--text-muted);padding:2rem 0;">
+              Create a draft to preview its audience.
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-card">
+          <div class="crm-card-header"><span><i class="bi bi-terminal"></i>Activity</span></div>
+          <div class="crm-card-body"><div class="log" id="log">Ready.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div><!-- /crm-main -->
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   Campaign Center (V2) — talks ONLY to /crm/campaigns/v2.
+   No campaign logic lives here: every rule (validation, D2 zero-recipient
+   refusal, D6.2 acknowledgement, MAX_RECIPIENTS, the ADR-024 template gate)
+   is enforced server-side. This UI surfaces those decisions and never
+   duplicates them — a check implemented here as well as there would be a
+   second source of truth that could silently drift.
+   ════════════════════════════════════════════════════════════════════ */
+const API = '/crm/campaigns/v2';
+
+const state = {
+  campaign: null,     // last campaign detail payload
+  preview:  null,     // last preview payload
+  validated: false,
+  acknowledged: false,
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function log(msg, cls) {
+  const el = $('log');
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML += `\n<span class="${cls||''}">[${t}] ${esc(msg)}</span>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+/* Every response is funnelled through here so a server refusal is always
+   surfaced verbatim rather than being reinterpreted by the client. */
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({
+    headers: {'Content-Type': 'application/json'},
+  }, opts || {}));
+  let body = null;
+  try { body = await res.json(); } catch (_) { /* non-JSON (e.g. 404 page) */ }
+  if (!res.ok) {
+    const detail = body && (body.detail || body.error);
+    const msg = typeof detail === 'object'
+      ? (detail.errors || []).join('; ') || JSON.stringify(detail)
+      : (detail || `HTTP ${res.status}`);
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+function setStep(name) {
+  const order = ['create','preview','validate','ack','launch'];
+  const idx = order.indexOf(name);
+  document.querySelectorAll('.step').forEach(el => {
+    const i = order.indexOf(el.dataset.step);
+    el.classList.toggle('active', i === idx);
+    el.classList.toggle('done', i < idx);
+  });
+}
+
+function statusBadge(s) {
+  return `<span class="badge-status st-${esc(s)}">${esc(s)}</span>`;
+}
+
+function renderBadge() {
+  const c = state.campaign;
+  $('campaignBadge').innerHTML = c
+    ? `<span style="font-size:0.72rem;color:var(--text-muted);margin-right:0.5rem;">#${c.id}</span>${statusBadge(c.status)}`
+    : '';
+}
+
+/* ── Segments ─────────────────────────────────────────────────────── */
+async function loadSegments() {
+  try {
+    const d = await api('/segments');
+    const sel = $('fSegment');
+    sel.innerHTML = '<option value="" disabled selected>Select an audience…</option>';
+    d.segments.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s; o.textContent = s;
+      sel.appendChild(o);
+    });
+    log(`Loaded ${d.segments.length} audience segments.`, 'inf');
+  } catch (e) {
+    log(`Could not load segments: ${e.message}`, 'err');
+    if (e.status === 404) {
+      log('CAMPAIGN_ENGINE_V2 appears to be OFF for this deployment.', 'err');
+    }
+  }
+}
+
+/* ── Step 1: create draft ─────────────────────────────────────────── */
+$('btnCreate').addEventListener('click', async () => {
+  const name = $('fName').value.trim();
+  const body = $('fBody').value.trim();
+  const seg  = $('fSegment').value;
+  if (!name || !body || !seg) {
+    log('Name, audience and message are all required.', 'err');
+    return;
+  }
+  $('btnCreate').disabled = true;
+  try {
+    const c = await api('', {
+      method: 'POST',
+      body: JSON.stringify({ name, message_body: body, audience_segment: seg }),
+    });
+    state.campaign = c;
+    state.validated = false;
+    state.acknowledged = false;
+    renderBadge();
+    log(`Draft created — campaign #${c.id} (${c.status}).`, 'ok');
+    $('btnValidate').disabled = false;
+    $('btnPreview').disabled = false;
+    setStep('preview');
+    await doPreview();
+  } catch (e) {
+    log(`Create failed: ${e.message}`, 'err');
+    $('btnCreate').disabled = false;
+  }
+});
+
+/* ── Step 2: preview ──────────────────────────────────────────────── */
+async function doPreview() {
+  const c = state.campaign;
+  if (!c) return;
+  const seg = $('fSegment').value || c.audience_segment;
+  $('previewArea').innerHTML =
+    `<div class="text-center" style="color:var(--text-muted);padding:2rem 0;">Resolving audience…</div>`;
+  try {
+    const p = await api(`/${c.id}/preview?segment=${encodeURIComponent(seg)}`);
+    state.preview = p;
+    renderPreview(p);
+    log(`Preview: ${p.total_audience} in segment, ${p.reachable_now} reachable now, ` +
+        `${p.template_required} need a template, ${p.expected_failed} expected to fail.`, 'inf');
+  } catch (e) {
+    state.preview = null;
+    $('previewArea').innerHTML = `<div style="color:var(--red);">${esc(e.message)}</div>`;
+    log(`Preview failed: ${e.message}`, 'err');
+  }
+}
+$('btnPreview').addEventListener('click', doPreview);
+
+function renderPreview(p) {
+  const willSend = p.total_audience - p.opted_out_excluded;
+  const t = p.template || {};
+  const mark = (v) => v === true ? '<span class="ok">yes</span>'
+                    : v === false ? '<span class="no">no</span>'
+                    : '<span class="na">n/a</span>';
+
+  let html = `
+    <div class="stat-grid mb-3">
+      <div class="stat"><div class="k">In Segment</div><div class="v">${p.total_audience}</div></div>
+      <div class="stat"><div class="k">Opted Out</div><div class="v" style="color:var(--text-muted);">${p.opted_out_excluded}</div></div>
+      <div class="stat"><div class="k">Reachable Now</div><div class="v" style="color:var(--green);">${p.reachable_now}</div></div>
+      <div class="stat${p.template_required ? ' warn' : ''}"><div class="k">Needs Template</div>
+        <div class="v" style="color:${p.template_required ? 'var(--yellow)' : 'var(--text-muted)'};">${p.template_required}</div></div>
+      <div class="stat${p.expected_failed ? ' bad' : ''}"><div class="k">Expected To Fail</div>
+        <div class="v" style="color:${p.expected_failed ? 'var(--red)' : 'var(--text-muted)'};">${p.expected_failed}</div></div>
+      <div class="stat"><div class="k">Will Be Messaged</div><div class="v">${willSend}</div></div>
+    </div>`;
+
+  if (t.configured) {
+    html += `<div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;padding:0.75rem;margin-bottom:1rem;">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.5rem;">Template Readiness</div>
+      <div class="tpl-row"><span>Found</span>${mark(t.found)}</div>
+      <div class="tpl-row"><span>Belongs to tenant</span>${mark(t.tenant_match)}</div>
+      <div class="tpl-row"><span>Status</span><span class="${t.status === 'approved' ? 'ok' : 'no'}">${esc(t.status || '—')}</span></div>
+      <div class="tpl-row"><span>Provider ID present</span>${mark(t.provider_template_id_present)}</div>
+      <div class="tpl-row" style="border-top:1px solid var(--border);margin-top:0.3rem;padding-top:0.5rem;">
+        <span><strong>Ready</strong></span>${mark(t.ready)}</div>
+    </div>`;
+  }
+
+  if (p.expected_failed > 0) {
+    html += `<div class="ack-box" style="border-color:rgba(248,81,73,0.35);background:rgba(248,81,73,0.06);">
+      <div style="font-size:0.8rem;color:var(--text-main);">
+        <i class="bi bi-exclamation-triangle-fill me-1" style="color:var(--red);"></i>
+        <strong>${p.expected_failed} of ${willSend}</strong> recipients are outside the 24-hour
+        window with no approved template and will be recorded as <em>failed</em>.
+        They are still messaged-attempted, never silently dropped.
+      </div></div>`;
+  }
+
+  if (p.requires_acknowledgement) {
+    html += `<div class="ack-box">
+      <label style="display:flex;gap:0.6rem;align-items:flex-start;cursor:pointer;">
+        <input type="checkbox" id="ackBox" style="margin-top:0.2rem;">
+        <span style="font-size:0.8rem;">
+          I understand ${p.template_required} recipient(s) require an approved
+          WhatsApp template, and accept the delivery outcome shown above.
+        </span>
+      </label></div>`;
+  }
+
+  html += `<button class="btn-save w-100 mt-3" id="btnLaunch" disabled>
+             <i class="bi bi-rocket-takeoff me-2"></i>Launch Campaign</button>`;
+  $('previewArea').innerHTML = html;
+
+  const ack = $('ackBox');
+  if (ack) ack.addEventListener('change', () => {
+    state.acknowledged = ack.checked;
+    refreshLaunchButton();
+  });
+  refreshLaunchButton();
+  $('btnLaunch').addEventListener('click', doLaunch);
+}
+
+function refreshLaunchButton() {
+  const btn = $('btnLaunch');
+  if (!btn) return;
+  const p = state.preview;
+  const needAck = p && p.requires_acknowledgement;
+  btn.disabled = !(state.validated && (!needAck || state.acknowledged));
+  btn.title = !state.validated
+    ? 'Validate the campaign first'
+    : (needAck && !state.acknowledged ? 'Acknowledge the delivery impact first' : '');
+}
+
+/* ── Step 3: validate ─────────────────────────────────────────────── */
+$('btnValidate').addEventListener('click', async () => {
+  const c = state.campaign;
+  if (!c) return;
+  $('btnValidate').disabled = true;
+  try {
+    const updated = await api(`/${c.id}/validate`, { method: 'POST' });
+    state.campaign = updated;
+    state.validated = true;
+    renderBadge();
+    log(`Validated — status is now ${updated.status}.`, 'ok');
+    setStep(state.preview && state.preview.requires_acknowledgement ? 'ack' : 'launch');
+    refreshLaunchButton();
+  } catch (e) {
+    log(`Validate failed: ${e.message}`, 'err');
+    $('btnValidate').disabled = false;
+  }
+});
+
+/* ── Step 5: launch ───────────────────────────────────────────────── */
+async function doLaunch() {
+  const c = state.campaign;
+  const p = state.preview;
+  if (!c || !p) return;
+  const willSend = p.total_audience - p.opted_out_excluded;
+  if (!confirm(
+      `Launch "${c.name}"?\n\n` +
+      `${willSend} recipient(s) will be messaged.\n` +
+      `${p.reachable_now} reachable now, ${p.expected_failed} expected to fail.\n\n` +
+      `This dispatches real WhatsApp messages and cannot be undone.`)) return;
+
+  const btn = $('btnLaunch');
+  btn.disabled = true;
+  try {
+    const updated = await api(`/${c.id}/launch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        audience_segment: $('fSegment').value || c.audience_segment,
+        acknowledged: !!state.acknowledged,
+      }),
+    });
+    state.campaign = updated;
+    renderBadge();
+    setStep('launch');
+    log(`LAUNCHED — ${updated.total_recipients} recipient(s) materialised. ` +
+        `Worker dispatches on its next cycle.`, 'ok');
+    $('progressCard').classList.remove('d-none');
+    await refreshProgress();
+  } catch (e) {
+    log(`Launch refused: ${e.message}`, 'err');
+    btn.disabled = false;
+  }
+}
+
+/* ── Progress ─────────────────────────────────────────────────────── */
+async function refreshProgress() {
+  const c = state.campaign;
+  if (!c) return;
+  try {
+    const [detail, prog] = await Promise.all([
+      api(`/${c.id}`), api(`/${c.id}/progress`),
+    ]);
+    state.campaign = detail;
+    renderBadge();
+
+    const total = detail.total_recipients || 0;
+    const sent = detail.sent_count || 0;
+    const failed = detail.failed_count || 0;
+    const pct = (n) => total ? (n / total * 100) : 0;
+    $('progressTrack').innerHTML =
+      `<div class="seg-sent" style="width:${pct(sent)}%"></div>` +
+      `<div class="seg-failed" style="width:${pct(failed)}%"></div>`;
+
+    $('progressStats').innerHTML = `
+      <div class="stat"><div class="k">Total</div><div class="v">${total}</div></div>
+      <div class="stat"><div class="k">Sent</div><div class="v" style="color:var(--green);">${sent}</div></div>
+      <div class="stat"><div class="k">Failed</div><div class="v" style="color:${failed?'var(--red)':'var(--text-muted)'};">${failed}</div></div>
+      <div class="stat"><div class="k">Segment</div><div class="v" style="font-size:0.8rem;">${esc(detail.audience_segment || '—')}</div></div>`;
+
+    const rows = Object.entries(prog.breakdown || {});
+    $('breakdownBody').innerHTML = rows.length
+      ? rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${v}</td></tr>`).join('')
+      : `<tr><td colspan="2" style="color:var(--text-muted);">No recipients.</td></tr>`;
+
+    if (detail.impersonated_by) {
+      log(`Note: created under impersonation by ${detail.impersonated_by}.`, 'inf');
+    }
+    if (detail.failure_reason) log(`Failure reason: ${detail.failure_reason}`, 'err');
+  } catch (e) {
+    log(`Progress refresh failed: ${e.message}`, 'err');
+  }
+}
+$('btnRefresh').addEventListener('click', refreshProgress);
+
+$('btnCancel').addEventListener('click', async () => {
+  const c = state.campaign;
+  if (!c || !confirm('Cancel this campaign? Queued recipients will stop being sent.')) return;
+  try {
+    state.campaign = await api(`/${c.id}/cancel`, { method: 'POST' });
+    renderBadge(); log('Campaign cancelled.', 'ok'); await refreshProgress();
+  } catch (e) { log(`Cancel failed: ${e.message}`, 'err'); }
+});
+
+$('btnArchive').addEventListener('click', async () => {
+  const c = state.campaign;
+  if (!c || !confirm('Archive this campaign?')) return;
+  try {
+    state.campaign = await api(`/${c.id}/archive`, { method: 'POST' });
+    renderBadge(); log('Campaign archived.', 'ok');
+  } catch (e) { log(`Archive failed: ${e.message}`, 'err'); }
+});
+
+/* ── Reset ────────────────────────────────────────────────────────── */
+$('btnReset').addEventListener('click', () => {
+  state.campaign = null; state.preview = null;
+  state.validated = false; state.acknowledged = false;
+  $('fName').value = ''; $('fBody').value = '';
+  $('fSegment').selectedIndex = 0;
+  $('charCount').textContent = '0 / 4096';
+  $('btnCreate').disabled = false;
+  $('btnValidate').disabled = true;
+  $('btnPreview').disabled = true;
+  $('progressCard').classList.add('d-none');
+  $('previewArea').innerHTML =
+    `<div class="text-center" style="color:var(--text-muted);padding:2rem 0;">Create a draft to preview its audience.</div>`;
+  renderBadge(); setStep('create');
+  $('log').innerHTML = 'Ready.';
+});
+
+$('fBody').addEventListener('input', () => {
+  $('charCount').textContent = `${$('fBody').value.length} / 4096`;
+});
+
+loadSegments();
+</script>
+</body>
+</html>

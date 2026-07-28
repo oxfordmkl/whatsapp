@@ -1489,6 +1489,30 @@ def campaigns():
     
     return render_template("campaigns.html", dashboard=dashboard)
 
+
+@admin_bp.route("/crm/campaigns/center", methods=["GET"])
+def campaigns_center():
+    """Phase 9.1b: Campaign Center (V2) — the operator surface for Campaign
+    Engine V2.
+
+    Serves a shell only. Every campaign operation is performed by the browser
+    against the existing /crm/campaigns/v2 JSON API — this view issues no
+    campaign queries and holds no campaign logic, so the ADR-023/024/025
+    contracts stay enforced server-side exactly as tested. No V2 backend
+    behaviour is changed by this phase.
+
+    The legacy /crm/campaigns builder (V1) is deliberately left intact and
+    reachable; retiring it is a separate phase with its own approval.
+
+    Route naming: /crm/campaigns/center cannot collide with the marketing
+    blueprint, which is mounted at the /crm/campaigns/v2 prefix.
+    """
+    if not check_auth():
+        return _deny()
+
+    return render_template("campaigns_center.html")
+
+
 @admin_bp.route("/crm/campaigns/preview", methods=["POST"])
 @admin_required
 def campaign_preview():
