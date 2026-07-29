@@ -1027,12 +1027,21 @@ def crm_leads_export():
     Streamed with a generator rather than built in memory: an export is the one
     lead path with no LIMIT, so materialising it would scale with table size.
     yield_per keeps the DB cursor incremental too.
+
+    Phase 10.3B.1 — the generator MUST be wrapped in stream_with_context().
+    A generator handed to Response() is consumed lazily, after the view has
+    returned, at which point Flask has already torn down the request context.
+    The first DB access inside it then has no session to bind to and raises
+    "RuntimeError: Working outside of application context" — which is exactly
+    what production did: the DATA_EXPORT audit row was written (it runs before
+    the return, inside the context) while the download itself died mid-stream,
+    so an export appeared successful in the audit log and never reached anyone.
     """
     if not check_auth():
         return _deny()
 
     import csv, io
-    from flask import Response
+    from flask import Response, stream_with_context
 
     _tid = _actor_tenant_id()
     if not _tid:
@@ -1081,7 +1090,10 @@ def crm_leads_export():
                                   "admitted": request.args.get("admitted", "")}},
               ip=request_ip())
 
-    return Response(generate(), mimetype="text/csv",
+    # stream_with_context keeps the request context alive for the generator's
+    # lifetime, so q.yield_per() still has a live session. Streaming itself is
+    # unchanged — the generator is wrapped, never materialised.
+    return Response(stream_with_context(generate()), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
