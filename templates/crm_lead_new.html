@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Lead — Oxford Computers</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark:#0d1117; --bg-card:#161b22; --bg-card2:#1c2128; --border:#30363d;
+      --green:#25D366; --green-dim:#1a9b49; --text-main:#e6edf3; --text-muted:#8b949e;
+      --blue:#58a6ff; --yellow:#d29922; --red:#f85149;
+    }
+    body { background:var(--bg-dark); color:var(--text-main); font-family:'Inter',sans-serif;
+           font-size:0.875rem; min-height:100vh; }
+    .crm-card { background:var(--bg-card); border:1px solid var(--border);
+                border-radius:12px; margin-bottom:1.5rem; }
+    .crm-card-header { padding:1rem 1.25rem; border-bottom:1px solid var(--border);
+                       font-weight:600; font-size:0.95rem; }
+    .crm-card-body { padding:1.25rem; }
+    .form-label-crm { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em;
+                      color:var(--text-muted); margin-bottom:0.3rem; font-weight:500; }
+    .crm-input { background:var(--bg-card2); border:1px solid var(--border);
+                 color:var(--text-main); border-radius:8px; padding:0.5rem 0.75rem;
+                 font-size:0.85rem; width:100%; }
+    .crm-input:focus { outline:none; border-color:var(--green-dim);
+                       box-shadow:0 0 0 2px rgba(37,211,102,0.15); }
+    .btn-save { background:var(--green); border:none; color:#08240f; font-weight:600;
+                border-radius:8px; padding:0.5rem 1.1rem; font-size:0.85rem; }
+    .btn-save:hover { background:var(--green-dim); color:#fff; }
+    .btn-ghost { background:transparent; border:1px solid var(--border); color:var(--text-muted);
+                 border-radius:8px; font-weight:500; padding:0.45rem 0.9rem; font-size:0.8rem; }
+    .btn-ghost:hover { color:var(--text-main); border-color:var(--text-muted); }
+    .hint { font-size:0.72rem; color:var(--text-muted); margin-top:0.3rem; }
+    .err { background:rgba(248,81,73,0.12); border:1px solid rgba(248,81,73,0.35);
+           color:var(--red); border-radius:8px; padding:0.7rem 0.9rem; font-size:0.82rem; }
+  </style>
+</head>
+<body>
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width:760px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <div>
+        <a class="btn-ghost text-decoration-none mb-2 d-inline-block" href="/crm/leads">
+          <i class="bi bi-arrow-left me-1"></i>Back to Leads
+        </a>
+        <h1 style="font-size:1.25rem;font-weight:700;margin:0;">
+          <i class="bi bi-person-plus-fill me-2" style="color:var(--green);"></i>New Lead
+        </h1>
+        <div class="hint mt-2">
+          For walk-ins, phone enquiries and referrals — anyone who has not messaged on
+          WhatsApp yet. If this number already exists you will be taken to that record
+          instead of creating a duplicate.
+        </div>
+      </div>
+    </div>
+
+    {% if err %}<div class="err mb-3"><i class="bi bi-exclamation-triangle me-1"></i>{{ err }}</div>{% endif %}
+
+    <form method="POST" action="/crm/lead/new">
+      <div class="crm-card">
+        <div class="crm-card-header"><i class="bi bi-person me-2"></i>Contact</div>
+        <div class="crm-card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label-crm" for="phone">Phone <span style="color:var(--red);">*</span></label>
+              <input class="crm-input" id="phone" name="phone" required
+                     placeholder="9847312534 or 919847312534" autocomplete="off">
+              <div class="hint">
+                Normalised to the same format WhatsApp uses, so this lead merges with
+                their chat history if they message later.
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-crm" for="name">Name <span style="color:var(--red);">*</span></label>
+              <input class="crm-input" id="name" name="name" required autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="crm-card">
+        <div class="crm-card-header"><i class="bi bi-sliders me-2"></i>Details</div>
+        <div class="crm-card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label-crm" for="lead_status">Status</label>
+              <select class="crm-input" id="lead_status" name="lead_status">
+                {% for s in lead_status_options %}
+                <option value="{{ s }}" {% if s == 'Lead' %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-crm" for="assigned_staff">Assign To</label>
+              <select class="crm-input" id="assigned_staff" name="assigned_staff">
+                <option value="">— Unassigned —</option>
+                {% for s in active_staff %}
+                <option value="{{ s }}">{{ s }}</option>
+                {% endfor %}
+              </select>
+              <div class="hint">Assigning notifies that staff member.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label-crm" for="notes">Notes</label>
+              <textarea class="crm-input" id="notes" name="notes" rows="3"
+                        placeholder="How did they get in touch? What are they asking about?"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 justify-content-end">
+        <a class="btn-ghost text-decoration-none" href="/crm/leads">Cancel</a>
+        <button class="btn-save" type="submit"><i class="bi bi-check-lg me-1"></i>Create Lead</button>
+      </div>
+    </form>
+
+  </div>
+  </div><!-- /crm-main -->
+</body>
+</html>

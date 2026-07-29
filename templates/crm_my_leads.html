@@ -170,7 +170,12 @@
         </table>
       </div>
     </div>
-    
+
+    {# Phase 10.3: the staff filter must survive paging, so it rides in extra_qs. #}
+    {% set base_url = '/crm/my-leads' %}
+    {% set extra_qs = ('staff=' ~ staff_name | urlencode) if staff_name else '' %}
+    {% include '_pagination.html' %}
+
   </div>
   </div><!-- /crm-main -->
 </body>

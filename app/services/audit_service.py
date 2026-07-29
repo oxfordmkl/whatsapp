@@ -43,6 +43,9 @@ VALID_ACTIONS = {
     "LEAD_CREATE", "LEAD_UPDATE", "LEAD_ASSIGN",
     "LEAD_STATUS_CHANGE", "LEAD_SCORE_CHANGE",
     "LEAD_ADMISSION", "LEAD_MESSAGE_SENT",
+    # Phase 10.3: bulk CSV import. DATA_EXPORT (reserved since Sprint 3) is
+    # now actually used by the lead export route.
+    "LEAD_IMPORT",
 }
 
 

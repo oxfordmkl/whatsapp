@@ -95,8 +95,13 @@
           </tbody>
         </table>
       </div>
+
+      {# Phase 10.3: no filters on this view, so no extra query string. #}
+      {% set base_url = '/crm/leads/unassigned' %}
+      {% set extra_qs = '' %}
+      {% include '_pagination.html' %}
     </div>
-    
+
     <div class="col-md-3">
       <div class="crm-card">
         <h5 style="font-weight: 700; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">

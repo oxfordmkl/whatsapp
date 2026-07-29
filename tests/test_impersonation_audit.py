@@ -67,20 +67,21 @@ def test_preexisting_actions_preserved(action):
     assert action in _audit.VALID_ACTIONS
 
 
-def test_valid_actions_is_exactly_fourteen():
+def test_valid_actions_is_exactly_fifteen():
     """Guard against accidental additions slipping in unreviewed.
 
-    Was 7 through Phase 8.2E.6A. Phase 10.2A added the seven LEAD_* actions
-    (LEAD_CREATE, LEAD_UPDATE, LEAD_ASSIGN, LEAD_STATUS_CHANGE,
-    LEAD_SCORE_CHANGE, LEAD_ADMISSION, LEAD_MESSAGE_SENT) so that CRM record
-    mutations are auditable, which they previously were not.
+    7 through Phase 8.2E.6A. Phase 10.2A added the seven LEAD_* mutation
+    actions (LEAD_CREATE, LEAD_UPDATE, LEAD_ASSIGN, LEAD_STATUS_CHANGE,
+    LEAD_SCORE_CHANGE, LEAD_ADMISSION, LEAD_MESSAGE_SENT) so CRM record changes
+    became auditable. Phase 10.3 added LEAD_IMPORT for bulk CSV import, and put
+    the long-reserved DATA_EXPORT to use on the new lead export route.
 
     The count is intentionally asserted rather than derived: this guard exists
     so that widening the audit vocabulary is a deliberate, reviewed act. Update
     the number only alongside an approved phase that adds actions —
     test_preexisting_actions_preserved separately proves nothing was dropped.
     """
-    assert len(_audit.VALID_ACTIONS) == 14, sorted(_audit.VALID_ACTIONS)
+    assert len(_audit.VALID_ACTIONS) == 15, sorted(_audit.VALID_ACTIONS)
 
 
 # ── log_audit() write behaviour ──────────────────────────────────────────────

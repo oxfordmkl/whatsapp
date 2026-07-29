@@ -422,8 +422,8 @@
       {% endif %}
     </div>
 
-    <!-- ── Result count ────────────────────────────────────────── -->
-    <div class="d-flex align-items-center justify-content-between mb-2 px-1">
+    <!-- ── Result count + actions ──────────────────────────── -->
+    <div class="d-flex align-items-center justify-content-between mb-2 px-1 flex-wrap gap-2">
       <span class="result-count">
         {% if pagination.total == 0 %}
           No results found
@@ -434,6 +434,24 @@
           &nbsp;·&nbsp; page {{ pagination.page }} of {{ pagination.pages }}
         {% endif %}
       </span>
+      {# Phase 10.3. ADMIN/SUPER_ADMIN only, matching the routes' @admin_required:
+         showing a control that 403s on click is worse than not showing it.
+         Export carries the CURRENT filters so the file matches what is on screen. #}
+      {% set _actor = get_current_actor() %}
+      {% if _actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
+      <span class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-sm btn-outline-light text-decoration-none" href="/crm/lead/new">
+          <i class="bi bi-person-plus-fill me-1"></i>New Lead
+        </a>
+        <a class="btn btn-sm btn-outline-light text-decoration-none"
+           href="/crm/leads/export?search={{ search|urlencode }}&stage={{ stage_filter|urlencode }}&admitted={{ admitted_filter|urlencode }}">
+          <i class="bi bi-download me-1"></i>Export CSV
+        </a>
+        <a class="btn btn-sm btn-outline-light text-decoration-none" href="/crm/leads/import">
+          <i class="bi bi-upload me-1"></i>Import CSV
+        </a>
+      </span>
+      {% endif %}
     </div>
 
     <!-- ── Leads Table ─────────────────────────────────────────── -->

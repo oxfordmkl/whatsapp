@@ -688,6 +688,87 @@ def crm_marketing_start_job():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Phase 10.3: shared lead helpers ──────────────────────────────────────────
+
+def normalize_lead_phone(raw):
+    """Normalise a phone number to the storage form used by the WhatsApp path.
+
+    Mirrors the inline rule already applied in trigger_followup() and
+    broadcast.py ("91" + digits, leading zeros stripped) so a lead typed in by
+    hand collides with the SAME (phone, tenant_id) row that an inbound WhatsApp
+    message would create. Without this a walk-in entered as "09847312534" and
+    the same person messaging from "919847312534" become two leads.
+
+    Returns "" when nothing usable remains; callers must reject that.
+    """
+    digits = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if not digits:
+        return ""
+    digits = digits.lstrip("0")
+    if not digits:
+        return ""
+    if not digits.startswith("91"):
+        digits = "91" + digits
+    return digits
+
+
+def _build_leads_query(tenant_id, actor, search="", stage_filter="", admitted_filter=""):
+    """The canonical filtered lead query — shared by the list and the export.
+
+    Ordering is updated_at DESC, which the Phase 10.2A composite index
+    (tenant_id, updated_at) exists to serve.
+
+    The STAFF ownership restriction lives HERE rather than at the call site so
+    it cannot be forgotten by a future caller: any route reusing this helper
+    inherits both tenant scoping and the "STAFF sees only their own leads"
+    rule automatically.
+    """
+    from app.models import ConversationState
+    from sqlalchemy.sql import func
+
+    q = tenant_query(ConversationState, tenant_id)
+
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
+    if is_staff:
+        actor_username_normalized = (actor.get("username") or "").strip().lower()
+        q = q.filter(
+            func.lower(func.trim(ConversationState.assigned_staff)) == actor_username_normalized
+        )
+
+    if search:
+        q = q.filter(or_(
+            ConversationState.phone.ilike(f"%{search}%"),
+            ConversationState.name.ilike(f"%{search}%"),
+        ))
+    if stage_filter:
+        q = q.filter(ConversationState.stage == stage_filter)
+    if admitted_filter == "yes":
+        q = q.filter(ConversationState.is_admitted == True)   # noqa: E712
+    elif admitted_filter == "no":
+        q = q.filter(ConversationState.is_admitted != True)   # noqa: E712
+
+    return q.order_by(ConversationState.updated_at.desc())
+
+
+# Column order for CSV export/import. `phone` leads because it is the business
+# key; the remainder is ConversationState.to_dict() plus the timestamps that
+# to_dict() omits. Import accepts this same header, so an exported file can be
+# edited and re-imported without transformation.
+LEAD_CSV_FIELDS = [
+    "phone", "name", "lead_status", "assigned_staff", "lead_score",
+    "stage", "course", "goal", "batch_time", "offer_course",
+    "is_admitted", "notes", "created_at", "updated_at",
+]
+
+# Fields an import is permitted to write. Deliberately excludes stage, last_msg,
+# last_text and the timestamps: those are owned by the bot/state engine, and
+# letting a spreadsheet overwrite conversation state would corrupt the funnel.
+LEAD_IMPORT_WRITABLE = [
+    "name", "lead_status", "assigned_staff", "lead_score",
+    "course", "notes",
+]
+
+
 @admin_bp.route("/crm/leads", methods=["GET"])
 def crm_leads():
     if not check_auth():
@@ -705,35 +786,17 @@ def crm_leads():
     admitted_filter = request.args.get("admitted", "").strip()
     key             = request.args.get("key", "")
 
-    # \u2500\u2500 Build query safely \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    from sqlalchemy.sql import func
-    
+    # \u2500\u2500 Build query safely \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # Phase 10.3: the filter/scoping logic moved into _build_leads_query() so
+    # the CSV export applies exactly the same tenant scoping, STAFF ownership
+    # restriction and filters as the list. Duplicating it would let the two
+    # drift, and an export that is broader than the list an operator can see is
+    # a data-leak, not a cosmetic bug.
     actor = get_current_actor()
-    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
     _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
-    q = tenant_query(ConversationState, _tid)
-    
-    if is_staff:
-        actor_username_normalized = (actor.get("username") or "").strip().lower()
-        q = q.filter(
-            func.lower(func.trim(ConversationState.assigned_staff)) == actor_username_normalized
-        )
+    q = _build_leads_query(_tid, actor, search, stage_filter, admitted_filter)
+    is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
 
-    if search:
-        q = q.filter(
-        or_(
-            ConversationState.phone.ilike(f"%{search}%"),
-            ConversationState.name.ilike(f"%{search}%"),
-    )
-)
-    if stage_filter:
-        q = q.filter(ConversationState.stage == stage_filter)
-    if admitted_filter == "yes":
-        q = q.filter(ConversationState.is_admitted == True)  # noqa: E712
-    elif admitted_filter == "no":
-        q = q.filter(ConversationState.is_admitted != True)  # noqa: E712
-
-    q = q.order_by(ConversationState.updated_at.desc())
     pagination = q.paginate(page=page, per_page=PAGE_SIZE, error_out=False)
 
     # ── Dashboard metrics & Intelligence Cache (Phase 6C) ──────────────────
@@ -839,6 +902,339 @@ def crm_leads():
         key=key,
         page=page,
     )
+
+
+# ── Phase 10.3: Manual lead creation ─────────────────────────────────────────
+
+@admin_bp.route("/crm/lead/new", methods=["GET", "POST"])
+@admin_required
+def crm_lead_new():
+    """Create a lead by hand — walk-in, phone enquiry or referral.
+
+    Until this phase a lead could only exist if the person messaged the bot
+    first, so every offline enquiry was invisible to the CRM.
+
+    Duplicate protection reuses the existing (phone, tenant_id) unique
+    constraint rather than a pre-check: a SELECT-then-INSERT would still race.
+    We attempt the insert and treat IntegrityError as "already exists", then
+    redirect to the existing lead — the operator wanted to reach that person,
+    and landing on their record is the useful outcome, not an error page.
+
+    ADMIN/SUPER_ADMIN only (@admin_required): creation sets assignment, and the
+    existing STAFF rule is that a staff member may only act on leads already
+    assigned to them.
+    """
+    if not check_auth():
+        return _deny()
+
+    from app.models import ConversationState
+    from app.extensions import db
+
+    _tid = _actor_tenant_id()
+    registry = load_staff_registry()
+    active_staff = sorted(d["display_name"] for d in registry.values() if d.get("active"))
+
+    if request.method == "GET":
+        from app.models import LEAD_STATUSES
+        return render_template(
+            "crm_lead_new.html",
+            active_staff=active_staff,
+            lead_status_options=list(LEAD_STATUSES),
+            err=request.args.get("err", ""),
+        )
+
+    # ADR-021: refuse to write without a resolved tenant.
+    if not _tid:
+        return render_template("crm_lead_new.html", active_staff=active_staff,
+                               lead_status_options=[], err="Tenant context required."), 403
+
+    phone = normalize_lead_phone(request.form.get("phone", ""))
+    name  = (request.form.get("name", "") or "").strip()
+    if not phone:
+        return redirect(url_for("admin.crm_lead_new", err="A valid phone number is required."))
+    if not name:
+        return redirect(url_for("admin.crm_lead_new", err="Name is required."))
+
+    existing = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
+    if existing is not None:
+        return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                                msg="This+lead+already+exists+-+opened+the+existing+record."))
+
+    lead = ConversationState(
+        phone=phone,
+        name=name,
+        tenant_id=_tid,
+        stage="new",
+        course="", goal="", batch_time="", offer_course="",
+        last_msg="", last_text="",
+        lead_status=(request.form.get("lead_status", "") or "Lead").strip(),
+        assigned_staff=(request.form.get("assigned_staff", "") or "").strip() or None,
+        notes=(request.form.get("notes", "") or "").strip() or None,
+        lead_score=0,
+        is_admitted=False,
+    )
+    db.session.add(lead)
+    try:
+        db.session.commit()
+    except Exception:
+        # Unique (phone, tenant_id) violation — the row appeared between our
+        # check and this insert. Send the operator to the record they wanted.
+        db.session.rollback()
+        return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                                msg="This+lead+already+exists+-+opened+the+existing+record."))
+
+    # Post-commit only: log_audit() commits, so calling it earlier would flush
+    # a partial write (Phase 10.2A).
+    from app.services.audit_service import log_audit, request_ip
+    log_audit("LEAD_CREATE",
+              actor=getattr(current_user, "email", None) or _actor_name(),
+              tenant_id=_tid, target=f"lead:{phone}",
+              detail={"entry": "manual",
+                      "assigned_staff": lead.assigned_staff or ""},
+              ip=request_ip())
+
+    if lead.assigned_staff:
+        log_audit("LEAD_ASSIGN",
+                  actor=getattr(current_user, "email", None) or _actor_name(),
+                  tenant_id=_tid, target=f"lead:{phone}",
+                  detail={"from": "", "to": lead.assigned_staff}, ip=request_ip())
+        try:
+            from app.services import notification_service
+            from app.models import Notification as _Notif
+            notification_service.notify(
+                tenant_id=_tid, recipient=lead.assigned_staff,
+                notif_type=_Notif.TYPE_NEW_LEAD_ASSIGNED,
+                title=f"New lead assigned: {name}",
+                body=f"Added by {_actor_name()}", lead_phone=phone)
+        except Exception:
+            pass   # notification failure must not undo a created lead
+
+    return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                            msg="Lead+created+successfully."))
+
+
+# ── Phase 10.3: CSV export ───────────────────────────────────────────────────
+
+@admin_bp.route("/crm/leads/export", methods=["GET"])
+@admin_required
+def crm_leads_export():
+    """Stream the CURRENT filtered lead set as CSV.
+
+    Reuses _build_leads_query(), so the export is scoped identically to the
+    list the operator is looking at — same tenant, same STAFF ownership rule,
+    same search/stage/admitted filters carried through on the query string.
+
+    Streamed with a generator rather than built in memory: an export is the one
+    lead path with no LIMIT, so materialising it would scale with table size.
+    yield_per keeps the DB cursor incremental too.
+    """
+    if not check_auth():
+        return _deny()
+
+    import csv, io
+    from flask import Response
+
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return _deny()
+
+    actor = get_current_actor()
+    q = _build_leads_query(
+        _tid, actor,
+        request.args.get("search", "").strip(),
+        request.args.get("stage", "").strip(),
+        request.args.get("admitted", "").strip(),
+    )
+
+    def generate():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+
+        def flush():
+            data = buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+            return data
+
+        writer.writerow(LEAD_CSV_FIELDS)
+        yield flush()
+
+        for lead in q.yield_per(200):
+            d = lead.to_dict()          # reused, not reimplemented
+            d["phone"]      = lead.phone            # to_dict() omits the key
+            d["created_at"] = lead.created_at.isoformat() if lead.created_at else ""
+            d["updated_at"] = lead.updated_at.isoformat() if lead.updated_at else ""
+            writer.writerow(["" if d.get(f) is None else d.get(f) for f in LEAD_CSV_FIELDS])
+            yield flush()
+
+    from datetime import datetime as _dt
+    filename = f"leads-{_dt.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+
+    # DATA_EXPORT has been reserved in VALID_ACTIONS since Sprint 3 with no
+    # route to use it. Bulk PII leaving the system is exactly what it was for.
+    from app.services.audit_service import log_audit, request_ip
+    log_audit("DATA_EXPORT",
+              actor=getattr(current_user, "email", None) or _actor_name(),
+              tenant_id=_tid, target="leads.csv",
+              detail={"rows": q.count(),
+                      "filters": {"search": request.args.get("search", ""),
+                                  "stage": request.args.get("stage", ""),
+                                  "admitted": request.args.get("admitted", "")}},
+              ip=request_ip())
+
+    return Response(generate(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ── Phase 10.3: CSV import ───────────────────────────────────────────────────
+
+@admin_bp.route("/crm/leads/import", methods=["GET", "POST"])
+@admin_required
+def crm_leads_import():
+    """Idempotent CSV import — upsert on the existing (phone, tenant_id) key.
+
+    Idempotency comes from the unique constraint, not from bookkeeping: the
+    same file imported twice creates on the first run and updates on the
+    second, converging on the same state.
+
+    Only non-empty cells are applied. A blank cell means "no opinion", never
+    "clear this field" — otherwise a partially-filled spreadsheet would wipe
+    data the CRM already holds, which is unrecoverable.
+
+    Conversation-owned fields (stage, last_msg, last_text, timestamps) are not
+    importable: they belong to the bot/state engine and a spreadsheet must not
+    be able to rewrite where someone sits in the funnel.
+    """
+    if not check_auth():
+        return _deny()
+
+    if request.method == "GET":
+        return render_template("crm_lead_import.html",
+                               fields=LEAD_CSV_FIELDS,
+                               writable=LEAD_IMPORT_WRITABLE,
+                               summary=None, err=request.args.get("err", ""))
+
+    import csv, io
+    from app.models import ConversationState
+    from app.extensions import db
+
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return render_template("crm_lead_import.html", fields=LEAD_CSV_FIELDS,
+                               writable=LEAD_IMPORT_WRITABLE, summary=None,
+                               err="Tenant context required."), 403
+
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return render_template("crm_lead_import.html", fields=LEAD_CSV_FIELDS,
+                               writable=LEAD_IMPORT_WRITABLE, summary=None,
+                               err="Choose a CSV file to import.")
+
+    try:
+        raw = upload.read().decode("utf-8-sig")   # -sig strips the Excel BOM
+    except UnicodeDecodeError:
+        return render_template("crm_lead_import.html", fields=LEAD_CSV_FIELDS,
+                               writable=LEAD_IMPORT_WRITABLE, summary=None,
+                               err="File must be UTF-8 encoded CSV.")
+
+    reader = csv.DictReader(io.StringIO(raw))
+    if not reader.fieldnames or "phone" not in [f.strip().lower() for f in reader.fieldnames]:
+        return render_template("crm_lead_import.html", fields=LEAD_CSV_FIELDS,
+                               writable=LEAD_IMPORT_WRITABLE, summary=None,
+                               err="CSV must contain a 'phone' column.")
+
+    summary = {"total": 0, "created": 0, "updated": 0, "unchanged": 0,
+               "skipped": 0, "errors": [], "duplicates": []}
+    seen_in_file = set()
+    MAX_ROWS = 5000     # bounded so one upload cannot run unboundedly
+
+    for idx, row in enumerate(reader, start=2):     # row 1 is the header
+        if summary["total"] >= MAX_ROWS:
+            summary["errors"].append(f"Stopped at {MAX_ROWS} rows — split the file and re-import.")
+            break
+        summary["total"] += 1
+        clean = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items() if k}
+
+        phone = normalize_lead_phone(clean.get("phone", ""))
+        if not phone:
+            summary["skipped"] += 1
+            summary["errors"].append(f"Row {idx}: missing or invalid phone")
+            continue
+        if phone in seen_in_file:
+            # Duplicate WITHIN the file — reported, and the first row wins.
+            summary["duplicates"].append(f"Row {idx}: {phone} repeated in file")
+            summary["skipped"] += 1
+            continue
+        seen_in_file.add(phone)
+
+        score = None
+        if clean.get("lead_score"):
+            try:
+                score = max(0, min(100, int(float(clean["lead_score"]))))
+            except (TypeError, ValueError):
+                summary["errors"].append(f"Row {idx}: lead_score not a number — ignored")
+
+        try:
+            lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
+            created = lead is None
+            if created:
+                lead = ConversationState(
+                    phone=phone, name=clean.get("name") or "", tenant_id=_tid,
+                    stage="new", course="", goal="", batch_time="", offer_course="",
+                    last_msg="", last_text="", lead_score=0, is_admitted=False,
+                    lead_status="Lead",
+                )
+                db.session.add(lead)
+
+            changed = []
+            for field in LEAD_IMPORT_WRITABLE:
+                val = clean.get(field)
+                if not val:
+                    continue        # blank == "no opinion", never "clear it"
+                if field == "lead_score":
+                    if score is not None and lead.lead_score != score:
+                        lead.lead_score = score; changed.append(field)
+                    continue
+                if getattr(lead, field, None) != val:
+                    setattr(lead, field, val); changed.append(field)
+
+            db.session.commit()
+            if created:
+                summary["created"] += 1
+            elif changed:
+                summary["updated"] += 1
+            else:
+                summary["unchanged"] += 1       # re-import of an unchanged row
+
+            # Post-commit audit, per row, so an import is attributable.
+            from app.services.audit_service import log_audit, request_ip
+            if created:
+                log_audit("LEAD_CREATE",
+                          actor=getattr(current_user, "email", None) or _actor_name(),
+                          tenant_id=_tid, target=f"lead:{phone}",
+                          detail={"entry": "csv_import"},
+                          ip=request_ip())
+            elif changed:
+                # Field NAMES only — never the values, which are customer data.
+                log_audit("LEAD_UPDATE",
+                          actor=getattr(current_user, "email", None) or _actor_name(),
+                          tenant_id=_tid, target=f"lead:{phone}",
+                          detail={"entry": "csv_import", "fields": sorted(changed)},
+                          ip=request_ip())
+        except Exception as exc:
+            db.session.rollback()
+            summary["skipped"] += 1
+            summary["errors"].append(f"Row {idx}: {type(exc).__name__}")
+
+    from app.services.audit_service import log_audit, request_ip
+    log_audit("LEAD_IMPORT",
+              actor=getattr(current_user, "email", None) or _actor_name(),
+              tenant_id=_tid, target="leads.csv",
+              detail={k: summary[k] for k in ("total", "created", "updated",
+                                              "unchanged", "skipped")},
+              ip=request_ip())
+
+    return render_template("crm_lead_import.html", fields=LEAD_CSV_FIELDS,
+                           writable=LEAD_IMPORT_WRITABLE, summary=summary, err="")
 
 
 # ── Phase 6G: Audience Calculation Helper ──
@@ -3826,24 +4222,33 @@ def crm_unassigned_leads():
     from app.models import ConversationState
     from sqlalchemy import or_
     
+    # Phase 10.3: paginated with the same paginate()/PAGE_SIZE=25 pattern as
+    # /crm/leads. Previously loaded every unassigned lead unbounded. `total`
+    # now comes from pagination.total (a COUNT) rather than len() of a fully
+    # materialised list, so the count stays correct across pages.
+    PAGE_SIZE = 25
+    page = max(1, request.args.get("page", 1, type=int))
     _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
-    unassigned = tenant_query(ConversationState, _tid).filter(
+    pagination = tenant_query(ConversationState, _tid).filter(
         or_(ConversationState.assigned_staff.is_(None), ConversationState.assigned_staff == '')
-    ).order_by(ConversationState.lead_score.desc()).all()
-    
+    ).order_by(ConversationState.lead_score.desc()).paginate(
+        page=page, per_page=PAGE_SIZE, error_out=False)
+    unassigned = pagination.items
+
     recommendations = get_staff_recommendations(limit=5)
-    
+
     registry = load_staff_registry()
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()
-    
+
     return render_template(
         "crm_unassigned_leads.html",
         key=request.args.get("key", ""),
         leads=unassigned,
+        pagination=pagination,
         recommendations=recommendations,
         active_staff=active_staff,
-        total=len(unassigned)
+        total=pagination.total
     )
 
 @admin_bp.route("/crm/leads/unassigned/assign", methods=["POST"])
@@ -4813,14 +5218,23 @@ def crm_my_leads():
     
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     
+    # Phase 10.3: paginated using the same paginate()/PAGE_SIZE=25 pattern as
+    # /crm/leads. This route previously rendered every non-terminal lead for a
+    # staff member with no limit. `leads` stays the template's variable name so
+    # the existing table loop is untouched.
+    PAGE_SIZE = 25
+    page = max(1, request.args.get("page", 1, type=int))
+    pagination = None
     if staff_name:
         from sqlalchemy.sql import func
         staff_name_normalized = staff_name.strip().lower()
         _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
-        leads = tenant_query(ConversationState, _tid).filter(
+        pagination = tenant_query(ConversationState, _tid).filter(
             func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
             ConversationState.lead_status.notin_(tuple(LEAD_TERMINAL_STATUSES))
-        ).order_by(ConversationState.updated_at.desc()).all()
+        ).order_by(ConversationState.updated_at.desc()).paginate(
+            page=page, per_page=PAGE_SIZE, error_out=False)
+        leads = pagination.items
     else:
         leads = []
         
@@ -4829,6 +5243,7 @@ def crm_my_leads():
         key=request.args.get("key", ""),
         staff_name=staff_name,
         active_staff=active_staff,
+        pagination=pagination,
         leads=leads
     )
 
