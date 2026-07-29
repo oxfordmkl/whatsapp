@@ -112,6 +112,8 @@
     .muted { color: var(--text-muted); }
     .nowrap { white-space: nowrap; }
     .camp-name { font-weight: 600; }
+    .camp-link { color: var(--text-main); text-decoration: none; }
+    .camp-link:hover { color: var(--green); text-decoration: underline; }
     .camp-id { font-size: 0.7rem; color: var(--text-muted); }
     .imp-flag {
       font-size: 0.62rem; color: var(--purple);
@@ -235,6 +237,13 @@
    ════════════════════════════════════════════════════════════════════ */
 const API = '/crm/campaigns/v2';
 
+/* Phase 9.6A: archive is @campaign_admin_required server-side; a STAFF actor
+   receives 403. The server stays the authority — this only decides what to
+   offer, so STAFF sees a disabled control with a reason rather than a button
+   that fails after the click. */
+{% set _actor = get_current_actor() %}
+const IS_ADMIN = {{ 'true' if _actor.role in ['ADMIN', 'SUPER_ADMIN'] else 'false' }};
+
 const state = { status: '', page: 1, pages: 1, total: 0, expanded: null };
 
 const $ = (id) => document.getElementById(id);
@@ -328,7 +337,10 @@ function render(rows) {
       <tr class="row-main" data-id="${c.id}">
         <td class="muted"><i class="bi bi-chevron-right" data-chev="${c.id}"></i></td>
         <td>
-          <div class="camp-name">${esc(c.name)}${imp}</div>
+          <div class="camp-name">
+            <a class="camp-link" href="/crm/campaigns/details/${c.id}"
+               title="Open full campaign details">${esc(c.name)}</a>${imp}
+          </div>
           <div class="camp-id">#${c.id}</div>
         </td>
         <td>${badge(c.status)}</td>
@@ -345,7 +357,13 @@ function render(rows) {
   }).join('');
 
   tb.querySelectorAll('tr.row-main').forEach(tr => {
-    tr.addEventListener('click', () => toggle(Number(tr.dataset.id)));
+    tr.addEventListener('click', (ev) => {
+      // The campaign-name link navigates to full Details; the rest of the row
+      // toggles the inline summary. Without this guard a click on the link
+      // would also expand the row before navigating away.
+      if (ev.target.closest('a')) return;
+      toggle(Number(tr.dataset.id));
+    });
   });
 
   $('pager').style.display = state.pages > 1 ? 'flex' : 'none';
@@ -379,7 +397,7 @@ async function toggle(id) {
     const [d, p] = await Promise.all([api(`/${id}`), api(`/${id}/progress`)]);
     box.innerHTML = renderDetail(d, p);
     const btn = box.querySelector('[data-archive]');
-    if (btn) btn.addEventListener('click', (ev) => { ev.stopPropagation(); archive(id); });
+    if (btn && IS_ADMIN) btn.addEventListener('click', (ev) => { ev.stopPropagation(); archive(id); });
   } catch (e) {
     box.innerHTML = `<span style="color:var(--red);">${esc(e.message)}</span>`;
   }
@@ -421,8 +439,12 @@ function renderDetail(d, p) {
     </tr></thead><tbody>${rows}</tbody></table>`;
 
   html += `<div style="margin-top:0.9rem;display:flex;gap:0.5rem;align-items:center;">`;
+  // Phase 9.6A: full Campaign Details is the primary inspection surface
+  // (recipient inspector, live progress). This expand-row stays a summary.
+  html += `<a class="btn-ghost text-decoration-none" href="/crm/campaigns/details/${d.id}">
+    <i class="bi bi-box-arrow-up-right me-1"></i>View Full Details</a>`;
   if (ARCHIVABLE.has(d.status)) {
-    html += `<button class="btn-ghost" data-archive="${d.id}">
+    html += `<button class="btn-ghost" data-archive="${d.id}" ${IS_ADMIN ? '' : 'disabled title="Requires ADMIN or SUPER_ADMIN"'}>
       <i class="bi bi-archive me-1"></i>Archive</button>`;
   } else if (d.status === 'archived') {
     html += `<span class="muted" style="font-size:0.75rem;">Archived — no further actions.</span>`;

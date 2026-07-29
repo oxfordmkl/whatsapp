@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign Details — Oxford Computers</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* Tokens copied verbatim from campaigns_center.html / campaigns_history.html. */
+    :root {
+      --bg-dark:    #0d1117;
+      --bg-card:    #161b22;
+      --bg-card2:   #1c2128;
+      --border:     #30363d;
+      --green:      #25D366;
+      --green-dim:  #1a9b49;
+      --text-main:  #e6edf3;
+      --text-muted: #8b949e;
+      --blue:       #58a6ff;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --purple:     #bc8cff;
+    }
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      min-height: 100vh;
+    }
+    .crm-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    .crm-card-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .crm-card-header i { margin-right: 0.5rem; color: var(--text-muted); }
+    .crm-card-body { padding: 1.25rem; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 8px;
+      font-weight: 500;
+      padding: 0.4rem 0.85rem;
+      font-size: 0.78rem;
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text-main); border-color: var(--text-muted); }
+    .btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-ghost.danger:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+
+    /* ── Status badges (identical to Campaign Center / History) ───────── */
+    .badge-status {
+      padding: 0.2rem 0.6rem; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; white-space: nowrap;
+    }
+    .st-draft     { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-validated { background: rgba(88,166,255,0.12);  color: var(--blue); }
+    .st-scheduled { background: rgba(188,140,255,0.12); color: var(--purple); }
+    .st-running   { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .st-completed { background: rgba(37,211,102,0.12);  color: var(--green); }
+    .st-failed    { background: rgba(248,81,73,0.12);   color: var(--red); }
+    .st-cancelled { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-archived  { background: rgba(139,148,158,0.10); color: var(--text-muted); }
+    /* Recipient-only statuses (campaign statuses above cover sent/failed/cancelled) */
+    .st-queued    { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .st-sending   { background: rgba(210,153,34,0.15);  color: var(--yellow); }
+    .st-delivered { background: rgba(37,211,102,0.12);  color: var(--green); }
+    .st-read      { background: rgba(88,166,255,0.12);  color: var(--blue); }
+
+    /* ── Filter pills (identical to Campaign History) ─────────────────── */
+    .pill-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .pill {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      color: var(--text-muted); border-radius: 999px;
+      padding: 0.3rem 0.8rem; font-size: 0.75rem; font-weight: 500;
+      cursor: pointer; user-select: none;
+    }
+    .pill:hover { color: var(--text-main); }
+    .pill.active {
+      background: rgba(37,211,102,0.12);
+      border-color: var(--green-dim);
+      color: var(--green);
+    }
+
+    /* ── Recipient table ──────────────────────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; }
+    table.recip { width: 100%; border-collapse: collapse; }
+    table.recip th {
+      color: var(--text-muted); font-weight: 500; font-size: 0.68rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      padding: 0.6rem 0.75rem; text-align: left; white-space: nowrap;
+    }
+    table.recip td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid rgba(48,54,61,0.6);
+      vertical-align: middle;
+      font-size: 0.8rem;
+    }
+    .recip-name { font-weight: 500; }
+    .recip-phone { font-variant-numeric: tabular-nums; }
+    .fail-text {
+      color: var(--red); font-size: 0.75rem; max-width: 260px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .pager {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.85rem 0 0; flex-wrap: wrap; gap: 0.75rem;
+    }
+
+    .muted { color: var(--text-muted); }
+    .nowrap { white-space: nowrap; }
+    .imp-flag {
+      font-size: 0.62rem; color: var(--purple);
+      background: rgba(188,140,255,0.10);
+      border-radius: 4px; padding: 0.05rem 0.35rem; margin-left: 0.4rem;
+      white-space: nowrap;
+    }
+
+    /* ── Summary stat tiles ───────────────────────────────────────────── */
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
+      gap: 0.75rem;
+    }
+    .stat-tile {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.85rem 1rem;
+    }
+    .stat-tile .lbl {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); margin-bottom: 0.3rem;
+    }
+    .stat-tile .val {
+      font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Progress bar (segmented distribution) ─────────────────────────── */
+    .progress-track {
+      height: 8px; border-radius: 999px; background: var(--bg-card2);
+      overflow: hidden; display: flex;
+    }
+    .progress-track .seg-sent      { background: var(--green);  height: 100%; }
+    .progress-track .seg-sending   { background: var(--yellow); height: 100%; }
+    .progress-track .seg-retry     { background: var(--purple); height: 100%; }
+    .progress-track .seg-pending   { background: var(--border); height: 100%; }
+    .progress-track .seg-failed    { background: var(--red);    height: 100%; }
+    .progress-track .seg-cancelled { background: var(--text-muted); height: 100%; opacity: 0.5; }
+
+    .live-tag {
+      font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
+      color: var(--green); background: rgba(37,211,102,0.12);
+      border-radius: 4px; padding: 0.1rem 0.35rem; margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.6rem; }
+    .legend .item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--text-muted); }
+    .legend .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+    /* ── Recent activity ──────────────────────────────────────────────── */
+    .activity { list-style: none; margin: 0; padding: 0; }
+    .activity li {
+      display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(48,54,61,0.6); font-size: 0.8rem;
+    }
+    .activity li:last-child { border-bottom: none; }
+    .activity .act-time { color: var(--text-muted); font-size: 0.72rem; width: 90px; flex: none; }
+    .activity .act-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Key/value grid (identical pattern to History expand-row) ─────── */
+    .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 0.9rem; }
+    .kv .k {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); margin-bottom: 0.2rem;
+    }
+    .kv .v { font-size: 0.82rem; word-break: break-word; }
+
+    .msg-body {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.7rem 0.85rem;
+      font-size: 0.82rem; white-space: pre-wrap; max-height: 220px; overflow-y: auto;
+    }
+
+    .bd-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .bd-table th {
+      color: var(--text-muted); font-weight: 500; font-size: 0.68rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      padding: 0.55rem 0.85rem 0.55rem 0; text-align: left;
+    }
+    .bd-table td {
+      padding: 0.5rem 0.85rem 0.5rem 0;
+      border-bottom: 1px solid rgba(48,54,61,0.6);
+    }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .timeline { list-style: none; margin: 0; padding: 0; }
+    .timeline li {
+      display: flex; gap: 0.75rem; padding: 0.55rem 0;
+      border-bottom: 1px dashed rgba(48,54,61,0.6);
+    }
+    .timeline li:last-child { border-bottom: none; }
+    .timeline .tl-dot {
+      width: 8px; height: 8px; border-radius: 50%; margin-top: 0.35rem; flex: none;
+      background: var(--border);
+    }
+    .timeline li.done .tl-dot { background: var(--green); }
+    .timeline .tl-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+    .timeline .tl-time { font-size: 0.82rem; }
+
+    .empty { text-align: center; padding: 3rem 1.5rem; color: var(--text-muted); }
+    .empty i { font-size: 2rem; opacity: 0.4; display: block; margin-bottom: 0.75rem; }
+
+    .skel {
+      background: linear-gradient(90deg, var(--bg-card2) 25%, rgba(255,255,255,0.03) 50%, var(--bg-card2) 75%);
+      background-size: 200% 100%; animation: skel 1.3s ease-in-out infinite;
+      border-radius: 6px; height: 1rem;
+    }
+    @keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  </style>
+</head>
+<body>
+  {# Resolved once, at the top, so both the read-only banner below and the
+     IS_ADMIN constant in the script block can reference it. Jinja {% set %}
+     is positional — declaring this beside the script would leave the banner
+     referencing an undefined name. #}
+  {% set _actor = get_current_actor() %}
+  {% include 'crm_sidebar.html' %}
+  <div class="crm-main">
+  <div class="container-fluid px-3 px-md-4 py-4" style="max-width: 1100px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <div>
+        <a class="btn-ghost text-decoration-none mb-2 d-inline-block" href="/crm/campaigns/history">
+          <i class="bi bi-arrow-left me-1"></i>Back to History
+        </a>
+        <h1 style="font-size:1.25rem;font-weight:700;margin:0;" id="pageTitle">
+          <i class="bi bi-file-earmark-text me-2" style="color:var(--blue);"></i>Campaign Details
+        </h1>
+      </div>
+      <div class="d-flex flex-column align-items-end gap-1">
+        <div class="d-flex gap-2" id="actionRow"></div>
+        <span class="muted" id="sweepLabel" style="font-size:0.7rem;"></span>
+        <span class="muted" id="actionNote" style="font-size:0.7rem;max-width:420px;text-align:right;"></span>
+      </div>
+    </div>
+
+    {% if _actor.role not in ['ADMIN', 'SUPER_ADMIN'] %}
+    <div class="crm-card" style="border-color:rgba(210,153,34,0.35);">
+      <div class="crm-card-body" style="padding:0.75rem 1rem;font-size:0.8rem;">
+        <i class="bi bi-info-circle me-1" style="color:var(--yellow);"></i>
+        You have read-only access to campaigns. Cancel, archive and the recipient
+        list require ADMIN or SUPER_ADMIN.
+      </div>
+    </div>
+    {% endif %}
+
+    <div id="content">
+      <div class="crm-card"><div class="crm-card-body">
+        <div class="skel" style="width:40%;margin-bottom:0.75rem;"></div>
+        <div class="skel" style="width:70%;"></div>
+      </div></div>
+    </div>
+
+    <!-- Recipient Inspector: rendered once, independent of the Summary poll
+         above, so a filter/page selection is never reset by a running-campaign
+         auto-refresh. This card refreshes only via its own Refresh button. -->
+    <div class="crm-card">
+      <div class="crm-card-header">
+        <div class="pill-row" id="recipFilterRow">
+          <span class="pill active" data-status="">All</span>
+          <span class="pill" data-status="queued">Queued</span>
+          <span class="pill" data-status="sending">Sending</span>
+          <span class="pill" data-status="sent">Sent</span>
+          <span class="pill" data-status="delivered">Delivered</span>
+          <span class="pill" data-status="read">Read</span>
+          <span class="pill" data-status="failed">Failed</span>
+          <span class="pill" data-status="cancelled">Cancelled</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="muted" id="recipTotalLabel" style="font-size:0.75rem;"></span>
+          <button class="btn-ghost" id="btnRecipRefresh"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </div>
+      </div>
+      <div class="crm-card-body">
+        <div class="note mb-2" style="font-size:0.72rem;color:var(--text-muted);border-left:2px solid var(--border);padding-left:0.6rem;">
+          Delivered/Read timestamps require a Meta delivery-status webhook not yet implemented — those columns will
+          show "—" for every recipient until that phase lands. This does not indicate a delivery failure.
+        </div>
+        <div class="tbl-wrap">
+          <table class="recip">
+            <thead>
+              <tr>
+                <th>Name</th><th>Phone</th><th>Status</th>
+                <th class="num">Retries</th><th>Last Attempt</th><th>Sent At</th><th>Failure Reason</th>
+              </tr>
+            </thead>
+            <tbody id="recipTbody">
+              <tr><td colspan="7" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" id="recipPager" style="display:none;">
+          <span class="muted" id="recipPageLabel" style="font-size:0.75rem;"></span>
+          <div class="d-flex gap-2">
+            <button class="btn-ghost" id="recipBtnPrev"><i class="bi bi-chevron-left"></i> Prev</button>
+            <button class="btn-ghost" id="recipBtnNext">Next <i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </div><!-- /crm-main -->
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   Campaign Details — reads ONLY the existing /crm/campaigns/v2 API.
+   No new endpoint, no contract change. Identical data source to Campaign
+   History; this page gives that same data a dedicated, bookmarkable view
+   with room for the recipient table Phase 9.4 will add.
+   ════════════════════════════════════════════════════════════════════ */
+const API = '/crm/campaigns/v2';
+const CAMPAIGN_ID = {{ campaign_id }};
+
+/* Phase 9.6A: mutations (cancel/archive) and the Recipient Inspector are
+   @campaign_admin_required server-side; a STAFF actor receives 403. The
+   server remains the authority — this only decides what to OFFER, so a STAFF
+   user sees a disabled control with a reason instead of a button that fails
+   after they click it. (_actor is set at the top of <body>.) */
+const IS_ADMIN = {{ 'true' if _actor.role in ['ADMIN', 'SUPER_ADMIN'] else 'false' }};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({
+    headers: {'Content-Type': 'application/json'},
+  }, opts || {}));
+  let body = null;
+  try { body = await res.json(); } catch (_) {}
+  if (!res.ok) {
+    const d = body && (body.detail || body.error);
+    const msg = typeof d === 'object'
+      ? (d.errors || []).join('; ') || JSON.stringify(d)
+      : (d || `HTTP ${res.status}`);
+    const err = new Error(msg); err.status = res.status; throw err;
+  }
+  return body;
+}
+
+function fmt(iso) {
+  if (!iso) return '<span class="muted">—</span>';
+  const d = new Date(iso);
+  if (isNaN(d)) return '<span class="muted">—</span>';
+  return esc(d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  }));
+}
+
+const badge = (s) => `<span class="badge-status st-${esc(s)}">${esc(s)}</span>`;
+
+/* Both sets mirror ALLOWED_TRANSITIONS (app/marketing/campaign_service.py),
+   which is the authority. Offering an action the server will refuse produces
+   a confusing 409, so a status outside these sets shows an explanation
+   instead of a button.
+   Phase 9.6A: CANCELLABLE previously included 'scheduled', taken from an
+   incorrect route docstring. ALLOWED_TRANSITIONS permits CANCELLED only from
+   RUNNING — a scheduled campaign cannot be cancelled, and offering it 409'd. */
+const ARCHIVABLE = new Set(['completed', 'failed', 'cancelled']);
+const CANCELLABLE = new Set(['running']);
+
+// Worker sweeps every 300s (app/marketing/campaign_worker.py POLL_INTERVAL) —
+// dispatch is bursty, not continuous, so this page polls far less often than
+// data could theoretically change. 30s keeps the UI responsive without
+// hammering the same process that also runs the worker thread (Phase 9.5
+// discovery: gunicorn runs web + worker in one process, no separate dyno).
+const SUMMARY_POLL_MS = 30000;
+let pollTimer = null;
+
+// Populated by loadRecipientSplit(); null until the first successful fetch,
+// and reset to null on any failure (e.g. non-ADMIN viewer gets 403 from the
+// Recipient Inspector's RBAC gate) so render() falls back to the combined
+// Pending tile instead of showing stale numbers.
+let lastRetrySplit = null;
+let lastRecipients = null;
+
+async function loadRecipientSplit() {
+  // Skip the request entirely for a non-admin actor — it would 403 by design
+  // and the fallback rendering is identical, so there is no reason to make it.
+  if (!IS_ADMIN) { lastRetrySplit = null; lastRecipients = null; return; }
+  try {
+    // Recipient Inspector's own list already covers the whole campaign
+    // (MAX_RECIPIENTS = 100, one page) — this is a second call by design,
+    // independent of that card's filter/page state, so a filtered or paged
+    // view there never skews the Summary split.
+    const d = await api(`/${CAMPAIGN_ID}/recipients?limit=100`);
+    const rows = d.recipients || [];
+    lastRecipients = rows;
+    const queued = rows.filter(r => r.status === 'queued');
+    lastRetrySplit = {
+      retry:   queued.filter(r => (r.retry_count || 0) > 0).length,
+      pending: queued.filter(r => (r.retry_count || 0) === 0).length,
+    };
+  } catch (e) {
+    lastRetrySplit = null;
+    lastRecipients = null;
+  }
+}
+
+function updateSweepLabel() {
+  const el = $('sweepLabel');
+  if (!el) return;
+  if (sweepCountdown == null) { el.textContent = ''; return; }
+  const m = Math.floor(sweepCountdown / 60);
+  const s = sweepCountdown % 60;
+  el.textContent = `Next worker sweep in ~${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Purely informational — the worker's actual cycle boundary is not exposed
+// by any API (Phase 9.5 discovery recommended against a false-precision ETA),
+// so this counts down from the known POLL_INTERVAL and wraps, rather than
+// claiming to track the real sweep.
+let sweepCountdown = null;
+let sweepTimer = null;
+
+function startSweepCountdown() {
+  if (sweepTimer) return;
+  if (sweepCountdown == null) sweepCountdown = 300;
+  updateSweepLabel();
+  sweepTimer = setInterval(() => {
+    sweepCountdown = sweepCountdown > 0 ? sweepCountdown - 1 : 300;
+    updateSweepLabel();
+  }, 1000);
+}
+
+function stopSweepCountdown() {
+  clearInterval(sweepTimer);
+  sweepTimer = null;
+  sweepCountdown = null;
+  updateSweepLabel();
+}
+
+async function load() {
+  try {
+    const [d, p] = await Promise.all([
+      api(`/${CAMPAIGN_ID}`),
+      api(`/${CAMPAIGN_ID}/progress`),
+    ]);
+    await loadRecipientSplit();
+    render(d, p);
+    renderActions(d);
+
+    if (d.status === 'running') {
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(load, SUMMARY_POLL_MS);
+      startSweepCountdown();
+    } else {
+      clearTimeout(pollTimer);
+      stopSweepCountdown();
+    }
+  } catch (e) {
+    $('content').innerHTML = `<div class="crm-card"><div class="crm-card-body">
+      <div class="empty" style="color:var(--red);">
+        <i class="bi bi-exclamation-triangle"></i>
+        ${esc(e.message)}
+        ${e.status === 404
+          ? '<br><span class="muted">Campaign not found, or CAMPAIGN_ENGINE_V2 is OFF for this deployment.</span>'
+          : ''}
+      </div></div></div>`;
+    $('actionRow').innerHTML = '';
+  }
+}
+
+function render(d, p) {
+  const imp = d.impersonated_by
+    ? `<span class="imp-flag" title="Created while impersonating this tenant">via ${esc(d.impersonated_by)}</span>`
+    : '';
+  $('pageTitle').innerHTML =
+    `<i class="bi bi-file-earmark-text me-2" style="color:var(--blue);"></i>${esc(d.name)}
+     <span class="muted" style="font-size:0.75rem;font-weight:400;">#${d.id}</span>${imp}`;
+
+  // Every figure below is read from /progress (live — recomputed per request),
+  // never from the campaign's denormalised sent_count/failed_count columns,
+  // which the worker only rewrites at the end of each batch and can lag by a
+  // full 300s cycle.
+  //
+  // Phase 9.6A: this also corrects a double-count introduced in 9.5. The API's
+  // failed_count is NOT the `failed` bucket — _sync_counters() (ADR-025 D10)
+  // defines failed_count = failed + cancelled and sent_count = sent +
+  // delivered + read. Feeding failed_count into the "failed" segment while
+  // also drawing a separate "cancelled" segment counted cancelled twice and
+  // could overflow the bar past 100%.
+  const bkd = p.breakdown || {};
+  const total = Math.max(d.total_recipients || 0, p.total || 0);
+  const sent      = (bkd.sent || 0) + (bkd.delivered || 0) + (bkd.read || 0);
+  const failed    = bkd.failed || 0;
+  const cancelled = bkd.cancelled || 0;
+  const sending   = bkd.sending || 0;
+  const queuedTotal = bkd.queued || 0;
+  // "Awaiting retry" vs "never attempted" are both stored as status=queued
+  // (schedule_recipient_retry() does not change status) — indistinguishable
+  // from /progress alone. lastRetrySplit is populated by loadRecipientSplit()
+  // from the /recipients rows already fetched for the Recipient Inspector;
+  // when that fetch is unavailable (e.g. non-ADMIN viewer, 403) this falls
+  // back to one combined "Pending" tile rather than guessing a split.
+  const split = lastRetrySplit;
+  const pendingCount = split ? split.pending : queuedTotal;
+  const retryCount   = split ? split.retry   : 0;
+
+  const pct = (n) => total ? (n / total * 100) : 0;
+  const segSent      = pct(sent);
+  const segSending   = pct(sending);
+  const segRetry     = pct(retryCount);
+  const segPending   = pct(pendingCount);
+  const segFailed    = pct(failed);
+  const segCancelled = pct(cancelled);
+
+  const bd = Object.entries(p.breakdown || {});
+  const bdRows = bd.length
+    ? bd.map(([k, v]) => `<tr><td>${badge(k)}</td><td class="num">${v}</td></tr>`).join('')
+    : `<tr><td colspan="2" class="muted">No recipients materialised.</td></tr>`;
+
+  const timelineSteps = [
+    ['Created',   d.created_at],
+    ['Scheduled', d.scheduled_at],
+    ['Started',   d.started_at],
+    ['Completed', d.completed_at],
+  ];
+  const timelineHtml = timelineSteps.map(([label, iso]) => `
+    <li class="${iso ? 'done' : ''}">
+      <div class="tl-dot"></div>
+      <div>
+        <div class="tl-label">${label}</div>
+        <div class="tl-time">${fmt(iso)}</div>
+      </div>
+    </li>`).join('');
+
+  $('content').innerHTML = `
+    <div class="crm-card">
+      <div class="crm-card-header">
+        <span><i class="bi bi-speedometer2"></i>Summary
+          <span class="live-tag" title="Recomputed from recipient rows on every request — never cached">LIVE</span>
+        </span>
+        ${badge(d.status)}
+      </div>
+      <div class="crm-card-body">
+        <div class="stat-grid mb-3">
+          <div class="stat-tile"><div class="lbl">Total Recipients</div><div class="val">${total}</div></div>
+          <div class="stat-tile"><div class="lbl">Sent</div><div class="val" style="color:var(--green);">${sent}</div></div>
+          <div class="stat-tile"><div class="lbl">Failed</div><div class="val" style="color:${failed ? 'var(--red)' : 'var(--text-main)'};">${failed}</div></div>
+          <div class="stat-tile"><div class="lbl">Pending</div><div class="val">${pendingCount}</div></div>
+          <div class="stat-tile"><div class="lbl">Awaiting Retry</div><div class="val" style="color:${retryCount ? 'var(--purple)' : 'var(--text-main)'};">${split ? retryCount : '<span class="muted" style="font-size:0.9rem;">—</span>'}</div></div>
+          ${cancelled ? `<div class="stat-tile"><div class="lbl">Cancelled</div><div class="val muted">${cancelled}</div></div>` : ''}
+        </div>
+        <div class="progress-track" title="${sent} sent, ${failed} failed, ${cancelled} cancelled, ${retryCount} awaiting retry, ${pendingCount} pending of ${total}">
+          <div class="seg-sent" style="width:${segSent}%"></div>
+          <div class="seg-sending" style="width:${segSending}%"></div>
+          <div class="seg-retry" style="width:${segRetry}%"></div>
+          <div class="seg-pending" style="width:${segPending}%"></div>
+          <div class="seg-failed" style="width:${segFailed}%"></div>
+          <div class="seg-cancelled" style="width:${segCancelled}%"></div>
+        </div>
+        <div class="legend">
+          <span class="item"><span class="dot" style="background:var(--green);"></span>Sent</span>
+          <span class="item"><span class="dot" style="background:var(--yellow);"></span>Sending</span>
+          <span class="item"><span class="dot" style="background:var(--purple);"></span>Awaiting Retry</span>
+          <span class="item"><span class="dot" style="background:var(--border);"></span>Pending</span>
+          <span class="item"><span class="dot" style="background:var(--red);"></span>Failed</span>
+          <span class="item"><span class="dot" style="background:var(--text-muted);opacity:0.5;"></span>Cancelled</span>
+        </div>
+        ${!split ? `<div class="note mt-2" style="font-size:0.7rem;color:var(--text-muted);border-left:2px solid var(--border);padding-left:0.6rem;">
+          Pending/Retry split requires the Recipient Inspector data (ADMIN/SUPER_ADMIN) — showing combined Pending only.
+        </div>` : ''}
+      </div>
+    </div>
+
+    <div class="crm-card">
+      <div class="crm-card-header"><span><i class="bi bi-clock-history"></i>Timeline</span></div>
+      <div class="crm-card-body"><ul class="timeline">${timelineHtml}</ul></div>
+    </div>
+
+    <div class="crm-card">
+      <div class="crm-card-header"><span><i class="bi bi-sliders"></i>Configuration</span></div>
+      <div class="crm-card-body">
+        <div class="kv">
+          <div><div class="k">Audience Segment</div><div class="v">${d.audience_segment ? esc(d.audience_segment) : '<span class="muted">—</span>'}</div></div>
+          <div><div class="k">Template ID</div><div class="v">${d.template_id != null ? esc(d.template_id) : '<span class="muted">none</span>'}</div></div>
+          <div><div class="k">Audience Rule ID</div><div class="v">${d.audience_rule_id != null ? esc(d.audience_rule_id) : '<span class="muted">—</span>'}</div></div>
+          <div><div class="k">Created By</div><div class="v">${d.created_by ? esc(d.created_by) : '<span class="muted">—</span>'}</div></div>
+          ${d.impersonated_by ? `<div><div class="k">Impersonated By</div><div class="v">${esc(d.impersonated_by)}</div></div>` : ''}
+          <div><div class="k">Last Updated</div><div class="v">${fmt(d.updated_at)}</div></div>
+        </div>
+        ${d.description ? `<div class="mt-3"><div class="k mb-1">Description</div><div class="v">${esc(d.description)}</div></div>` : ''}
+      </div>
+    </div>
+
+    <div class="crm-card">
+      <div class="crm-card-header"><span><i class="bi bi-chat-left-text"></i>Message Body</span></div>
+      <div class="crm-card-body">
+        ${d.message_body ? `<div class="msg-body">${esc(d.message_body)}</div>` : '<span class="muted">No message body recorded.</span>'}
+      </div>
+    </div>
+
+    ${d.failure_reason ? `
+    <div class="crm-card">
+      <div class="crm-card-header"><span style="color:var(--red);"><i class="bi bi-exclamation-triangle"></i>Failure Information</span></div>
+      <div class="crm-card-body">
+        <div class="msg-body" style="border-color:rgba(248,81,73,0.35);color:var(--red);">${esc(d.failure_reason)}</div>
+      </div>
+    </div>` : ''}
+
+    <div class="crm-card">
+      <div class="crm-card-header"><span><i class="bi bi-bar-chart-line"></i>Progress Breakdown
+        <span class="live-tag" title="Recomputed from recipient rows on every request — never cached">LIVE</span>
+      </span></div>
+      <div class="crm-card-body">
+        <table class="bd-table"><thead><tr>
+          <th>Recipient Status</th><th class="num">Count</th>
+        </tr></thead><tbody>${bdRows}</tbody></table>
+      </div>
+    </div>
+
+    <div class="crm-card">
+      <div class="crm-card-header"><span><i class="bi bi-activity"></i>Recent Activity</span></div>
+      <div class="crm-card-body">${renderActivity()}</div>
+    </div>
+  `;
+}
+
+/* Derived client-side from the same /recipients rows fetched for the Pending/
+   Retry split (loadRecipientSplit()) — no separate endpoint, no extra query.
+   Sorted by last attempt (falls back to sent_at), most recent first, capped
+   at 10. Requires ADMIN/SUPER_ADMIN (same as the split); shows a note
+   otherwise rather than an empty list that looks like "no activity". */
+function renderActivity() {
+  if (!lastRetrySplit) {
+    return `<div class="note" style="font-size:0.72rem;color:var(--text-muted);border-left:2px solid var(--border);padding-left:0.6rem;">
+      Recent activity requires the Recipient Inspector data (ADMIN/SUPER_ADMIN).</div>`;
+  }
+  const rows = (lastRecipients || [])
+    .filter(r => r.last_attempt_at || r.sent_at)
+    .sort((a, b) => new Date(b.last_attempt_at || b.sent_at) - new Date(a.last_attempt_at || a.sent_at))
+    .slice(0, 10);
+
+  if (!rows.length) {
+    return `<div class="empty" style="padding:1.5rem;"><i class="bi bi-hourglass" style="font-size:1.4rem;"></i>No attempts yet.</div>`;
+  }
+
+  return `<ul class="activity">` + rows.map(r => `
+    <li>
+      <span class="act-time">${fmt(r.last_attempt_at || r.sent_at)}</span>
+      <span class="act-name">${r.name ? esc(r.name) : esc(r.phone)}</span>
+      ${badge(r.status)}
+    </li>`).join('') + `</ul>`;
+}
+
+function renderActions(d) {
+  const row = $('actionRow');
+  const btns = [];
+  const noPerm = 'Requires ADMIN or SUPER_ADMIN';
+
+  if (CANCELLABLE.has(d.status)) {
+    btns.push(`<button class="btn-ghost danger" id="btnCancel" ${IS_ADMIN ? '' : `disabled title="${noPerm}"`}>
+      <i class="bi bi-x-circle me-1"></i>Cancel</button>`);
+  }
+  if (ARCHIVABLE.has(d.status)) {
+    btns.push(`<button class="btn-ghost" id="btnArchive" ${IS_ADMIN ? '' : `disabled title="${noPerm}"`}>
+      <i class="bi bi-archive me-1"></i>Archive</button>`);
+  }
+  btns.push(`<button class="btn-ghost" id="btnRefresh"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>`);
+  row.innerHTML = btns.join('');
+
+  // Only wire handlers for controls the actor may actually use — a disabled
+  // button cannot fire, but not binding at all keeps intent unambiguous.
+  if (IS_ADMIN) {
+    const cancelBtn = $('btnCancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', doCancel);
+    const archiveBtn = $('btnArchive');
+    if (archiveBtn) archiveBtn.addEventListener('click', doArchive);
+  }
+  $('btnRefresh').addEventListener('click', load);
+
+  // Explain absent lifecycle actions rather than leaving a bare Refresh
+  // button — a campaign in draft/validated/scheduled has no legal transition
+  // available here (ALLOWED_TRANSITIONS), which is otherwise invisible.
+  const note = $('actionNote');
+  if (!note) return;
+  if (d.status === 'archived') {
+    note.textContent = 'Archived — no further actions available.';
+  } else if (!CANCELLABLE.has(d.status) && !ARCHIVABLE.has(d.status)) {
+    note.textContent = `A campaign in "${d.status}" has no cancel or archive action; `
+      + 'cancel applies once running, archive once it reaches a terminal state.';
+  } else {
+    note.textContent = '';
+  }
+}
+
+async function doCancel() {
+  if (!confirm(`Cancel campaign #${CAMPAIGN_ID}? Queued recipients will not be sent.`)) return;
+  try {
+    await api(`/${CAMPAIGN_ID}/cancel`, { method: 'POST' });
+    await load();
+  } catch (e) {
+    alert(`Cancel failed: ${e.message}`);
+  }
+}
+
+async function doArchive() {
+  if (!confirm(`Archive campaign #${CAMPAIGN_ID}?`)) return;
+  try {
+    await api(`/${CAMPAIGN_ID}/archive`, { method: 'POST' });
+    await load();
+  } catch (e) {
+    alert(`Archive failed: ${e.message}`);
+  }
+}
+
+/* ── Recipient Inspector (Phase 9.4) ─────────────────────────────────────
+   Manual refresh only — deliberately NOT tied to the Summary card's 8s
+   poll while running, so an operator's filter/page selection is never
+   reset out from under them mid-review. */
+const recipState = { status: '', page: 1, pages: 1, total: 0 };
+
+async function loadRecipients() {
+  const tb = $('recipTbody');
+  if (!IS_ADMIN) {
+    tb.innerHTML = `<tr><td colspan="7" class="empty">
+      <i class="bi bi-shield-lock"></i>
+      Recipient details require ADMIN or SUPER_ADMIN.</td></tr>`;
+    $('recipPager').style.display = 'none';
+    $('recipTotalLabel').textContent = '';
+    $('btnRecipRefresh').disabled = true;
+    return;
+  }
+  tb.innerHTML = `<tr><td colspan="7" class="empty">Loading…</td></tr>`;
+  try {
+    const qs = new URLSearchParams({ page: recipState.page, limit: 50 });
+    if (recipState.status) qs.set('status', recipState.status);
+    const d = await api(`/${CAMPAIGN_ID}/recipients?${qs.toString()}`);
+
+    recipState.pages = d.pages || 1;
+    recipState.total = d.total || 0;
+    recipState.page  = d.page  || 1;
+    renderRecipients(d.recipients || []);
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--red);">
+      ${esc(e.message)}${e.status === 403
+        ? '<br><span class="muted">Recipient Inspector requires ADMIN or SUPER_ADMIN.</span>'
+        : ''}</td></tr>`;
+    $('recipPager').style.display = 'none';
+    $('recipTotalLabel').textContent = '';
+  }
+}
+
+function renderRecipients(rows) {
+  const tb = $('recipTbody');
+  $('recipTotalLabel').textContent = recipState.total
+    ? `${recipState.total} recipient${recipState.total === 1 ? '' : 's'}`
+    : '';
+
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="7" class="empty">
+      <i class="bi bi-inbox"></i>
+      ${recipState.status
+        ? `No recipients with status <strong>${esc(recipState.status)}</strong>.`
+        : 'No recipients materialised for this campaign.'}
+      </td></tr>`;
+    $('recipPager').style.display = 'none';
+    return;
+  }
+
+  tb.innerHTML = rows.map(r => `
+    <tr>
+      <td class="recip-name">${r.name ? esc(r.name) : '<span class="muted">—</span>'}</td>
+      <td class="recip-phone">${esc(r.phone)}</td>
+      <td>${badge(r.status)}</td>
+      <td class="num">${r.retry_count ?? 0}</td>
+      <td class="nowrap muted">${fmt(r.last_attempt_at)}</td>
+      <td class="nowrap muted">${fmt(r.sent_at)}</td>
+      <td class="fail-text" title="${r.failure_reason ? esc(r.failure_reason) : ''}">${r.failure_reason ? esc(r.failure_reason) : '<span class="muted">—</span>'}</td>
+    </tr>`).join('');
+
+  $('recipPager').style.display = recipState.pages > 1 ? 'flex' : 'none';
+  $('recipPageLabel').textContent = `Page ${recipState.page} of ${recipState.pages}`;
+  $('recipBtnPrev').disabled = recipState.page <= 1;
+  $('recipBtnNext').disabled = recipState.page >= recipState.pages;
+}
+
+function wireRecipientCard() {
+  $('recipFilterRow').addEventListener('click', (ev) => {
+    const pill = ev.target.closest('.pill');
+    if (!pill) return;
+    document.querySelectorAll('#recipFilterRow .pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    recipState.status = pill.dataset.status || '';
+    recipState.page = 1;
+    loadRecipients();
+  });
+  $('recipBtnPrev').addEventListener('click', () => {
+    if (recipState.page > 1) { recipState.page--; loadRecipients(); }
+  });
+  $('recipBtnNext').addEventListener('click', () => {
+    if (recipState.page < recipState.pages) { recipState.page++; loadRecipients(); }
+  });
+  $('btnRecipRefresh').addEventListener('click', loadRecipients);
+}
+
+load();
+wireRecipientCard();
+loadRecipients();
+</script>
+</body>
+</html>

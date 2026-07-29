@@ -495,9 +495,24 @@ body {
         <i class="bi bi-megaphone-fill"></i>
         <span class="nav-label">Marketing Hub</span>
       </a>
-      <a class="nav-item" href="/crm/campaigns" data-path="/crm/campaigns">
+      <a class="nav-item" href="/crm/campaigns/center" data-path="/crm/campaigns/center">
         <i class="bi bi-rocket-fill"></i>
         <span class="nav-label">Campaign Center</span>
+      </a>
+      <a class="nav-item" href="/crm/campaigns/history" data-path="/crm/campaigns/history">
+        <i class="bi bi-clock-history"></i>
+        <span class="nav-label">Campaign History</span>
+      </a>
+      <!-- Legacy V1 builder (Phase 6G). Retained and reachable, but separated
+           from the primary operator path: Campaign Engine V2 above is the
+           supported surface. V1 bypasses the ADR-023/024/025 contracts (no
+           delivery ledger, no retry, no cancel), so it must not read as an
+           equal sibling of Campaign Center. Retiring it is a separate phase
+           with its own approval (Phase 9.6A). -->
+      <a class="nav-item" href="/crm/campaigns" data-path="/crm/campaigns"
+         style="opacity:0.55;" title="Legacy V1 campaign builder — superseded by Campaign Center">
+        <i class="bi bi-box-seam"></i>
+        <span class="nav-label">Campaign Builder <span style="font-size:0.62rem;opacity:0.8;">(Legacy)</span></span>
       </a>
     </div>
     <div class="nav-divider"></div>

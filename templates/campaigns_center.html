@@ -182,12 +182,36 @@
           <i class="bi bi-rocket-fill me-2" style="color:var(--green);"></i>Campaign Center
         </h1>
         <div class="v1-note mt-2">
-          Campaign Engine V2 — messages are dispatched by the background worker.
-          The legacy builder remains at <a href="/crm/campaigns" style="color:var(--text-muted);">/crm/campaigns</a>.
+          Campaign Engine V2 — messages are dispatched by the background worker,
+          which sweeps roughly every 5 minutes. The superseded legacy builder
+          remains at <a href="/crm/campaigns" style="color:var(--text-muted);">/crm/campaigns</a>.
         </div>
       </div>
-      <button class="btn-ghost" id="btnReset"><i class="bi bi-arrow-counterclockwise me-1"></i>New Campaign</button>
+      <div class="d-flex gap-2">
+        <a class="btn-ghost text-decoration-none" href="/crm/campaigns/history">
+          <i class="bi bi-clock-history me-1"></i>Campaign History
+        </a>
+        <button class="btn-ghost" id="btnReset"><i class="bi bi-arrow-counterclockwise me-1"></i>New Campaign</button>
+      </div>
     </div>
+
+    {% if get_current_actor().role not in ['ADMIN', 'SUPER_ADMIN'] %}
+    <!-- Phase 9.6A: every mutation on this page (create, validate, schedule,
+         launch, cancel, archive) is @campaign_admin_required server-side and
+         returns 403 for STAFF. Rather than present a full builder whose every
+         control fails on submit, the form is disabled up front with the
+         reason stated. The server remains the authority; this is presentation
+         only. Read-only surfaces (History, Details) stay available. -->
+    <div class="crm-card" style="border-color:rgba(210,153,34,0.35);">
+      <div class="crm-card-body" style="padding:0.9rem 1.1rem;font-size:0.82rem;">
+        <i class="bi bi-shield-lock me-1" style="color:var(--yellow);"></i>
+        <strong>Read-only access.</strong> Creating and launching campaigns requires
+        ADMIN or SUPER_ADMIN. You can still review past campaigns in
+        <a href="/crm/campaigns/history" style="color:var(--green);">Campaign History</a>.
+      </div>
+    </div>
+    <script>window.__CAMPAIGN_READONLY__ = true;</script>
+    {% endif %}
 
     <!-- Step rail -->
     <div class="step-rail" id="stepRail">
@@ -638,7 +662,20 @@ $('fBody').addEventListener('input', () => {
   $('charCount').textContent = `${$('fBody').value.length} / 4096`;
 });
 
-loadSegments();
+/* Phase 9.6A: hard-disable every control for a non-admin actor. Runs last so
+   nothing re-enables afterwards; the banner above states the reason. Purely
+   presentational — @campaign_admin_required is still the real gate. */
+if (window.__CAMPAIGN_READONLY__) {
+  document.querySelectorAll(
+    '#btnCreate, #btnValidate, #btnPreview, #btnReset, #btnCancel, #btnArchive, ' +
+    '#fName, #fBody, #fSegment'
+  ).forEach(el => {
+    el.disabled = true;
+    el.title = 'Requires ADMIN or SUPER_ADMIN';
+  });
+} else {
+  loadSegments();
+}
 </script>
 </body>
 </html>

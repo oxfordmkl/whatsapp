@@ -776,6 +776,18 @@ class CampaignService:
         self._require_tenant(tenant_id)
         return self.repository.status_breakdown(tenant_id, campaign_id)
 
+    def list_recipients(self, tenant_id, campaign_id, status=None, limit=50, offset=0):
+        """Phase 9.4: paginated recipient rows for one campaign."""
+        self._require_tenant(tenant_id)
+        return self.repository.list_recipients(
+            tenant_id, campaign_id, status=status, limit=limit, offset=offset
+        )
+
+    def count_recipients(self, tenant_id, campaign_id, status=None) -> int:
+        """Phase 9.4: total recipient count matching the same filter as list_recipients."""
+        self._require_tenant(tenant_id)
+        return self.repository.count_recipients(tenant_id, campaign_id, status=status)
+
     # ── Reconciliation (Phase 8.2C.4) ─────────────────────────────────────
 
     def reconcile_campaign(self, tenant_id, campaign_id) -> str:

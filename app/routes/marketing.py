@@ -503,7 +503,16 @@ def launch_campaign(campaign_id):
 @require_campaign_engine
 @campaign_admin_required
 def cancel_campaign(campaign_id):
-    """POST /crm/campaigns/v2/<id>/cancel — running/validated/scheduled → cancelled."""
+    """POST /crm/campaigns/v2/<id>/cancel — running → cancelled.
+
+    Phase 9.6A: this docstring previously claimed
+    "running/validated/scheduled -> cancelled", contradicting the transition
+    map in campaign_service.py, which permits the cancelled state only from
+    running. A validated or scheduled campaign returns 409 here. The prose was
+    the sole source of that claim and had already misled the Phase 9.3 Details
+    UI into offering Cancel where the server refuses it; corrected to match
+    the map, which is the authority.
+    """
     return _run_lifecycle(
         campaign_id,
         lambda svc, tid: svc.cancel(tid, campaign_id),
@@ -550,6 +559,87 @@ def campaign_progress(campaign_id):
         "campaign_id": campaign_id,
         "breakdown":   breakdown,
         "total":       sum(breakdown.values()),
+    })
+
+
+# ── Recipient Inspector (Phase 9.4) ───────────────────────────────────────────
+
+def _recipient_summary(r) -> dict:
+    """Per-recipient shape for the Recipient Inspector.
+
+    tenant_id and campaign_id are withheld — implicit in the request scope,
+    same rationale as Campaign._campaign_summary withholding tenant_id.
+    delivered_at/read_at are included but will read null for every row until
+    a future Meta status webhook writes them (see CampaignRecipient docstring,
+    app/models.py) — this endpoint does not change that.
+    """
+    return {
+        "id":              r.id,
+        "phone":           r.phone,
+        "name":            r.name,
+        "status":          r.status,
+        "retry_count":     r.retry_count,
+        "failure_reason":  r.failure_reason,
+        "wa_message_id":   r.wa_message_id,
+        "send_at":         r.send_at.isoformat()         if r.send_at         else None,
+        "last_attempt_at": r.last_attempt_at.isoformat() if r.last_attempt_at else None,
+        "sent_at":         r.sent_at.isoformat()         if r.sent_at         else None,
+        "delivered_at":    r.delivered_at.isoformat()    if r.delivered_at    else None,
+        "read_at":         r.read_at.isoformat()         if r.read_at         else None,
+        "created_at":      r.created_at.isoformat()      if r.created_at      else None,
+    }
+
+
+@marketing_bp.route("/<int:campaign_id>/recipients", methods=["GET"])
+@require_campaign_engine
+@campaign_admin_required
+def list_campaign_recipients(campaign_id):
+    """GET /crm/campaigns/v2/<campaign_id>/recipients — paginated recipient rows.
+
+    ADMIN/SUPER_ADMIN only (@campaign_admin_required), unlike the other GET
+    routes on this blueprint which are authn-only. This is the one GET that
+    returns bulk recipient PII (phone numbers, names) for a campaign; the
+    legacy CRM restricts STAFF to leads assigned to them (see crm_leads(),
+    crm_lead_detail() in app/routes/admin.py), and an authn-only recipient
+    list would let any STAFF user enumerate numbers for leads they are not
+    assigned to. Gating this route closes that gap (Phase 9.4 discovery,
+    approved 2026-07-28).
+
+    Query params:
+        status  (optional) — filter by recipient status
+        page    (optional, default 1)
+        limit   (optional, default 50, max 100)
+    """
+    from flask import request as req
+
+    tenant_id, err = _require_tenant()
+    if err:
+        return err
+
+    svc = _make_service()
+
+    # 404 the campaign first — an empty recipient list is otherwise ambiguous
+    # between "no recipients", "wrong tenant" and "not found" (same rationale
+    # as campaign_progress()).
+    if svc.get_campaign(tenant_id, campaign_id) is None:
+        return jsonify({"error": "Campaign not found"}), 404
+
+    status = req.args.get("status") or None
+    page   = max(1, req.args.get("page",  1,           type=int))
+    limit  = min(100, max(1, req.args.get("limit", _PAGE_SIZE, type=int)))
+    offset = (page - 1) * limit
+
+    recipients = svc.list_recipients(tenant_id, campaign_id, status=status, limit=limit, offset=offset)
+    total = svc.count_recipients(tenant_id, campaign_id, status=status)
+    pages = max(1, -(-total // limit))   # ceiling division
+
+    return jsonify({
+        "campaign_id": campaign_id,
+        "recipients":  [_recipient_summary(r) for r in recipients],
+        "total":  total,
+        "page":   page,
+        "limit":  limit,
+        "pages":  pages,
     })
 
 

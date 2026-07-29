@@ -1531,6 +1531,26 @@ def campaigns_history():
     return render_template("campaigns_history.html")
 
 
+@admin_bp.route("/crm/campaigns/details/<int:campaign_id>", methods=["GET"])
+def campaign_details(campaign_id):
+    """Phase 9.3: Campaign Details (V2) — dedicated single-campaign inspection
+    surface.
+
+    Shell only, exactly like campaigns_center/campaigns_history: the browser
+    reads everything from the existing /crm/campaigns/v2 API
+    (GET /<id>, GET /<id>/progress) and reuses the existing lifecycle actions
+    (cancel, archive). This view issues no campaign queries and introduces
+    no new backend contract.
+
+    Route naming: /crm/campaigns/details/<id> cannot collide with the
+    marketing blueprint, which is mounted at the /crm/campaigns/v2 prefix.
+    """
+    if not check_auth():
+        return _deny()
+
+    return render_template("campaign_details.html", campaign_id=campaign_id)
+
+
 @admin_bp.route("/crm/campaigns/preview", methods=["POST"])
 @admin_required
 def campaign_preview():
