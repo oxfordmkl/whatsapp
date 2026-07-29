@@ -1126,7 +1126,7 @@ def crm_leads_import():
                                summary=None, err=request.args.get("err", ""))
 
     import csv, io
-    from app.models import ConversationState
+    from app.models import ConversationState, LEAD_STATUSES
     from app.extensions import db
 
     _tid = _actor_tenant_id()
@@ -1185,6 +1185,33 @@ def crm_leads_import():
             except (TypeError, ValueError):
                 summary["errors"].append(f"Row {idx}: lead_score not a number — ignored")
 
+        # Phase 10.5: validate lead_status against the approved vocabulary.
+        #
+        # Import previously wrote this cell straight through, so a spreadsheet
+        # could introduce statuses the operator dropdown exists to constrain —
+        # production picked up "fresh" this way. That matters beyond tidiness:
+        # LEAD_TERMINAL_STATUSES decides whether a lead still counts as open
+        # work, and an unrecognised value is silently non-terminal, so such a
+        # lead never leaves anyone's queue.
+        #
+        # Handling mirrors lead_score directly above: report the problem, drop
+        # that one field, keep the rest of the row. Rejecting the whole row
+        # would discard a good name and phone over a single typo'd cell.
+        #
+        # A case-only difference is canonicalised rather than rejected
+        # ("enrolled" -> "Enrolled"). That is validation, not widening: the
+        # vocabulary stays exactly LEAD_STATUSES.
+        status_value = None
+        if clean.get("lead_status"):
+            raw_status = clean["lead_status"]
+            match = next((s for s in LEAD_STATUSES if s.lower() == raw_status.lower()), None)
+            if match is None:
+                summary["errors"].append(
+                    f"Row {idx}: lead_status {raw_status!r} is not a recognised status — ignored"
+                )
+            else:
+                status_value = match
+
         try:
             lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
             created = lead is None
@@ -1205,6 +1232,13 @@ def crm_leads_import():
                 if field == "lead_score":
                     if score is not None and lead.lead_score != score:
                         lead.lead_score = score; changed.append(field)
+                    continue
+                if field == "lead_status":
+                    # Phase 10.5: only the validated/canonicalised value is
+                    # written. None means the cell failed validation and was
+                    # reported above — leave the stored status untouched.
+                    if status_value is not None and lead.lead_status != status_value:
+                        lead.lead_status = status_value; changed.append(field)
                     continue
                 if getattr(lead, field, None) != val:
                     setattr(lead, field, val); changed.append(field)
