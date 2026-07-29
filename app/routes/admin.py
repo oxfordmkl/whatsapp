@@ -1270,8 +1270,14 @@ def crm_lead_detail(phone):
                 except:
                     pass
 
+    # Phase 10.2A: the status vocabulary is owned by models.LEAD_STATUSES, not
+    # by the template. Passed as a list so the template can append the lead's
+    # current value when it predates the vocabulary.
+    from app.models import LEAD_STATUSES
+
     return render_template(
         "crm_lead_detail.html",
+        lead_status_options=list(LEAD_STATUSES),
         lead=lead,
         logs=logs,
         timeline=timeline,
@@ -1326,7 +1332,15 @@ def crm_lead_update(phone):
 
     try:
         old_staff = lead.assigned_staff
-        
+        # Phase 10.2A: snapshot every audited field BEFORE mutation. Read off
+        # the instance rather than re-querying — after assignment the ORM has
+        # already overwritten the attribute, so the previous value is otherwise
+        # unrecoverable for the audit record.
+        old_status   = lead.lead_status
+        old_score    = lead.lead_score
+        old_admitted = lead.is_admitted
+        old_notes    = lead.notes
+
         lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
         lead.notes          = request.form.get("notes",          "").strip() or None
 
@@ -1359,6 +1373,41 @@ def crm_lead_update(phone):
         lead.is_admitted = new_admitted
 
         db.session.commit()
+
+        # ── Phase 10.2A: sovereign audit trail, AFTER the business commit ──
+        # log_audit() commits the session, so it must never run between a
+        # mutation and its commit. Placed here, the lead write is already
+        # durable and each audit row is its own small transaction. log_audit()
+        # never raises, so a failed audit cannot undo a successful edit — it is
+        # logged loudly instead.
+        #
+        # Emitted per changed field rather than one blanket LEAD_UPDATE: the
+        # questions this log exists to answer ("who changed the score", "who
+        # reassigned this") are field-specific, and a single row carrying a
+        # whole form is far harder to query.
+        from app.services.audit_service import log_audit, request_ip
+        _audit_actor = getattr(current_user, "email", None) or _actor_name()
+        _audit_ip     = request_ip()
+        _audit_target = f"lead:{phone}"
+
+        def _audit(action, detail):
+            log_audit(action, actor=_audit_actor, tenant_id=_tid,
+                      target=_audit_target, detail=detail, ip=_audit_ip)
+
+        if old_staff != lead.assigned_staff:
+            _audit("LEAD_ASSIGN", {"from": old_staff or "", "to": lead.assigned_staff or ""})
+        if old_status != lead.lead_status:
+            _audit("LEAD_STATUS_CHANGE", {"from": old_status or "", "to": lead.lead_status or ""})
+        if old_score != lead.lead_score:
+            _audit("LEAD_SCORE_CHANGE", {"from": old_score, "to": lead.lead_score})
+        if old_admitted != lead.is_admitted:
+            _audit("LEAD_ADMISSION", {"from": bool(old_admitted), "to": bool(lead.is_admitted),
+                                      "staff": lead.assigned_staff or ""})
+        # Notes are free text and may contain personal detail about a student,
+        # so the audit records THAT they changed, never their content — the
+        # service contract forbids logging message bodies.
+        if old_notes != lead.notes:
+            _audit("LEAD_UPDATE", {"field": "notes", "changed": True})
 
         # ── Phase 7E & 9.1: Fire events AFTER successful commit ──────────
         import json
@@ -1671,6 +1720,15 @@ def crm_lead_send(phone):
                 event_type="MANUAL_MESSAGE",
                 event_data=json.dumps({"staff": sender_name})
             )
+            # Phase 10.2A: sovereign audit record of an outbound message to a
+            # customer. Records sender and length only — never the body, which
+            # the audit service contract explicitly forbids.
+            from app.services.audit_service import log_audit, request_ip
+            log_audit("LEAD_MESSAGE_SENT",
+                      actor=getattr(current_user, "email", None) or sender_name,
+                      tenant_id=_tid, target=f"lead:{phone}",
+                      detail={"channel": "whatsapp", "length": len(message)},
+                      ip=request_ip())
             return redirect(f"/crm/lead/{phone}?msg=Message+sent+successfully{qs}")
 
         else:
@@ -3507,6 +3565,7 @@ def calculate_automation_intelligence(leads, events):
     Computes Aging, Recovery, Follow-Up Recommendations, and Staff Productivity.
     """
     from datetime import datetime
+    from app.models import LEAD_TERMINAL_STATUSES
     import json
 
     now = datetime.utcnow()
@@ -3520,7 +3579,7 @@ def calculate_automation_intelligence(leads, events):
     aging = {"fresh": 0, "attention": 0, "risk": 0, "dormant": 0}
     
     for lead in leads:
-        if lead.is_admitted or lead.lead_status in ("Enrolled", "Dropped", "Lost"):
+        if lead.is_admitted or lead.lead_status in LEAD_TERMINAL_STATUSES:
             continue
         days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
         bucket = get_aging_bucket(days, mode="automation")
@@ -3577,7 +3636,7 @@ def calculate_automation_intelligence(leads, events):
     stalled_admissions = []
     
     for lead in leads:
-        if lead.is_admitted or lead.lead_status in ("Enrolled", "Dropped", "Lost"):
+        if lead.is_admitted or lead.lead_status in LEAD_TERMINAL_STATUSES:
             continue
             
         days = (today - (lead.updated_at.date() if lead.updated_at else today)).days
@@ -4676,14 +4735,14 @@ def crm_staff_dashboard():
             staff_name = active_staff[0]
             return redirect(url_for("admin.crm_staff_dashboard", key=request.args.get("key", ""), staff=staff_name))
             
-    from app.models import ConversationState
+    from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     from sqlalchemy.sql import func
 
     _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
     staff_name_normalized = staff_name.strip().lower()
     leads = tenant_query(ConversationState, _tid).filter(
         func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
-        ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
+        ConversationState.lead_status.notin_(tuple(LEAD_TERMINAL_STATUSES))
     ).all()
     
     my_leads_count = len(leads)
@@ -4752,7 +4811,7 @@ def crm_my_leads():
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()
     
-    from app.models import ConversationState
+    from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     
     if staff_name:
         from sqlalchemy.sql import func
@@ -4760,7 +4819,7 @@ def crm_my_leads():
         _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
         leads = tenant_query(ConversationState, _tid).filter(
             func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
-            ConversationState.lead_status.notin_(["Enrolled", "Dropped", "Lost"])
+            ConversationState.lead_status.notin_(tuple(LEAD_TERMINAL_STATUSES))
         ).order_by(ConversationState.updated_at.desc()).all()
     else:
         leads = []
@@ -4788,7 +4847,7 @@ def crm_staff_performance_detail():
     active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
     active_staff.sort()
     
-    from app.models import ConversationState
+    from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     
     _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
     leads = tenant_query(ConversationState, _tid).all()
@@ -4813,17 +4872,17 @@ def crm_staff_performance_detail():
             
         staff_metrics[s]["assigned_leads"] += 1
         
-        if lead.lead_status not in ["Enrolled", "Dropped", "Lost"]:
+        if lead.lead_status not in LEAD_TERMINAL_STATUSES:
             staff_metrics[s]["active_leads"] += 1
             
         if lead.is_admitted:
             staff_metrics[s]["admissions"] += 1
             
         score = lead.lead_score or 0
-        if score >= 80 and lead.lead_status not in ["Enrolled", "Dropped", "Lost"]:
+        if score >= 80 and lead.lead_status not in LEAD_TERMINAL_STATUSES:
             staff_metrics[s]["hot_leads"] += 1
             
-        if lead.lead_status not in ["Enrolled", "Dropped", "Lost"]:
+        if lead.lead_status not in LEAD_TERMINAL_STATUSES:
             staff_metrics[s]["total_score"] += score
             staff_metrics[s]["leads_with_score"] += 1
 

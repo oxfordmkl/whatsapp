@@ -134,6 +134,20 @@ def _load_or_create_row(phone: str, name: str, tenant_id: str):
     )
     db.session.add(row)
     db.session.commit()
+
+    # Phase 10.2A: record the creation of a customer record. Placed after the
+    # commit that already exists here, so the extra audit transaction adds no
+    # hazard this path did not already carry. log_audit() never raises, so a
+    # failed audit cannot stop a lead being created from an inbound message.
+    # actor is the channel, not a user: nobody in the CRM performed this — it
+    # is the system reacting to a first contact, and the log should say so.
+    try:
+        from app.services.audit_service import log_audit
+        log_audit("LEAD_CREATE", actor="whatsapp-inbound", tenant_id=tenant_id,
+                  target=f"lead:{phone}", detail={"source": "inbound_message"})
+    except Exception:
+        pass
+
     return row, True
 
 

@@ -103,6 +103,37 @@ class User(UserMixin, db.Model):
         db.UniqueConstraint('tenant_id', 'username', name='uq_users_tenant_username'),
     )
 
+# ── Lead status vocabulary (Phase 10.2A) ─────────────────────────────────────
+# Single source of truth for `ConversationState.lead_status`.
+#
+# Before this phase the operator dropdown lived in crm_lead_detail.html and the
+# terminal-state checks were a literal ("Enrolled", "Dropped", "Lost") repeated
+# in seven places. The two disagreed: the UI offered "Not Interested", which no
+# backend check recognised, so a lead marked Not Interested stayed in My Leads,
+# staff workload and the action centre as live work forever; and the backend
+# treated "Dropped" as terminal although the form never offered it.
+#
+# `lead_status` stays a free String column — no CHECK constraint, no migration.
+# Rows written before this phase (or by any future import) keep working; a
+# value outside LEAD_STATUSES is simply non-terminal, which is the safe default.
+LEAD_STATUSES = (
+    "Lead", "Contacted", "Interested",
+    "Demo Scheduled", "Demo Done", "Proposal Sent", "Negotiation",
+    "Enrolled", "Lost", "Not Interested",
+)
+
+# Statuses meaning "no further work is owed on this lead". Excluded from
+# workload, My Leads and follow-up prompting.
+#
+# "Dropped" is deliberately retained though it is not offered in LEAD_STATUSES:
+# it is a legacy value that pre-existing rows may still carry, and dropping it
+# from this set would silently resurrect those leads into active work queues.
+# Accepting a legacy terminal value costs nothing; forgetting one is a defect.
+LEAD_TERMINAL_STATUSES = frozenset({
+    "Enrolled", "Lost", "Not Interested", "Dropped",
+})
+
+
 class ConversationState(db.Model):
     """
     Persistent replacement for the old conversation_state dict.
@@ -192,6 +223,11 @@ class ConversationState(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('phone', 'tenant_id', name='uq_conversation_state_phone_tenant'),
+        # Phase 10.2A: the lead list orders by updated_at DESC within a tenant
+        # (crm_leads, crm_my_leads). tenant_id alone was indexed, so the sort
+        # was unassisted. Composite, not a second single-column index, because
+        # every such query filters tenant first.
+        db.Index('ix_conversation_state_tenant_updated', 'tenant_id', 'updated_at'),
     )
 
     # ── Adapter constructor bridge ──────────────────────────────────────────

@@ -719,9 +719,16 @@
               <div class="mb-3">
                 <label class="form-label-crm" for="lead_status">Lead Status</label>
                 <select class="crm-input" name="lead_status" id="lead_status">
-                  {% set statuses = ['Lead', 'Contacted', 'Interested', 'Demo Scheduled',
-                                     'Demo Done', 'Proposal Sent', 'Negotiation',
-                                     'Enrolled', 'Lost', 'Not Interested'] %}
+                  {# Phase 10.2A: options come from models.LEAD_STATUSES via the
+                     route. Previously hardcoded here, which is how the form came
+                     to offer "Not Interested" while no backend check treated it
+                     as terminal. A lead's current value is appended below if it
+                     predates this vocabulary, so editing never silently rewrites
+                     an unrecognised status. #}
+                  {% set statuses = lead_status_options %}
+                  {% if lead.lead_status and lead.lead_status not in statuses %}
+                    {% set statuses = statuses + [lead.lead_status] %}
+                  {% endif %}
                   {% for s in statuses %}
                   <option value="{{ s }}" {% if lead.lead_status == s %}selected{% endif %}>{{ s }}</option>
                   {% endfor %}

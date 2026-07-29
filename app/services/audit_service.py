@@ -17,6 +17,17 @@ Actions (Phase 8.2E.6A): IMPERSONATION_START, IMPERSONATION_END — a
 SUPER_ADMIN entering or leaving a tenant context. Recorded so that a platform
 operator acting inside a customer tenant is never indistinguishable from that
 tenant's own staff (ADR-023 D3).
+
+Actions (Phase 10.2A): LEAD_* — mutations to customer records. Until this
+phase the audit log covered authentication and broadcasts but no CRM data
+change, so "who reassigned this lead / changed this score" was unanswerable
+from a tamper-evident source. LEAD_REASSIGNED was written to lead_event, but
+that is the lead's own timeline — operator-visible business data, not an
+append-only security record.
+
+IMPORTANT for callers: log_audit() COMMITS the session. Call it only after the
+business transaction has itself committed, never between a mutation and its
+commit, or the audit write will commit that mutation early.
 """
 import json
 import logging
@@ -28,6 +39,10 @@ VALID_ACTIONS = {
     "BROADCAST_SEND", "DATA_EXPORT",
     # Phase 8.2E.6A (ADR-023 D3): platform-operator impersonation boundaries.
     "IMPERSONATION_START", "IMPERSONATION_END",
+    # Phase 10.2A: lead record mutations.
+    "LEAD_CREATE", "LEAD_UPDATE", "LEAD_ASSIGN",
+    "LEAD_STATUS_CHANGE", "LEAD_SCORE_CHANGE",
+    "LEAD_ADMISSION", "LEAD_MESSAGE_SENT",
 }
 
 
