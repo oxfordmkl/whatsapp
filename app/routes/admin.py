@@ -993,6 +993,15 @@ def crm_lead_new():
                       "assigned_staff": lead.assigned_staff or ""},
               ip=request_ip())
 
+    # Phase 10.8: a manually created lead enters the pipeline — record it as
+    # its first movement (from_stage_id NULL). notify=False: assignment below
+    # already sends TYPE_NEW_LEAD_ASSIGNED, and a second notification for the
+    # same act would be noise.
+    from app.services import sales_pipeline_service as _sps
+    _sps.record_stage_change(_tid, lead, None, None,
+                             actor=getattr(current_user, "email", None) or _actor_name(),
+                             notify=False)
+
     if lead.assigned_staff:
         log_audit("LEAD_ASSIGN",
                   actor=getattr(current_user, "email", None) or _actor_name(),
@@ -1215,6 +1224,11 @@ def crm_leads_import():
         try:
             lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
             created = lead is None
+            # Phase 10.8: stage state before the import touches this row.
+            # None for a new lead — its first pipeline entry has no prior
+            # stage, which the history table records as from_stage_id NULL.
+            pre_stage_id = lead.sales_stage_id if lead is not None else None
+            pre_status = lead.lead_status if lead is not None else None
             if created:
                 lead = ConversationState(
                     phone=phone, name=clean.get("name") or "", tenant_id=_tid,
@@ -1266,6 +1280,17 @@ def crm_leads_import():
                           tenant_id=_tid, target=f"lead:{phone}",
                           detail={"entry": "csv_import", "fields": sorted(changed)},
                           ip=request_ip())
+
+            # Phase 10.8: record the movement for history and the lead
+            # timeline, with notify=False. A 5,000-row import must never emit
+            # 5,000 notifications — the approved policy limits notification to
+            # operator-initiated single changes, and LEAD_IMPORT already
+            # summarises the run.
+            if created or "lead_status" in changed:
+                from app.services import sales_pipeline_service as _sps
+                _sps.record_stage_change(
+                    _tid, lead, pre_stage_id, pre_status,
+                    actor=_sps.ACTOR_CSV_IMPORT, notify=False)
         except Exception as exc:
             db.session.rollback()
             summary["skipped"] += 1
@@ -1281,6 +1306,83 @@ def crm_leads_import():
 
     return render_template("crm_lead_import.html", fields=LEAD_CSV_FIELDS,
                            writable=LEAD_IMPORT_WRITABLE, summary=summary, err="")
+
+
+# ── Phase 10.8: explicit stage move ──────────────────────────────────────────
+
+@admin_bp.route("/crm/lead/<phone>/stage", methods=["POST"])
+def crm_lead_move_stage(phone):
+    """Move one lead to a different Sales Pipeline stage.
+
+    A dedicated action so an operator can advance a lead without opening the
+    full edit form and resubmitting every field. It writes through the SAME
+    lead_status adapter as the form — sales_stage_id is never set directly —
+    so Phase 10.6's architecture is observed, not bypassed.
+
+    check_auth() rather than @admin_required: this follows existing lead
+    visibility rules, and the STAFF ownership check below mirrors
+    crm_lead_update exactly, so a staff member can only move their own leads.
+    """
+    if not check_auth():
+        return _deny()
+
+    from app.models import ConversationState
+    from app.extensions import db
+    from app.services import sales_pipeline_service as sps
+
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return _deny()
+
+    lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
+    if lead is None:
+        return _not_found(phone)
+
+    # Same ownership rule as crm_lead_update — STAFF may only act on leads
+    # assigned to them.
+    actor = get_current_actor()
+    if actor.get("source") == "SESSION" and actor.get("role") == "STAFF":
+        if (lead.assigned_staff or "").strip().lower() != (actor.get("username") or "").strip().lower():
+            return _deny()
+
+    # The target stage must belong to THIS tenant's sales pipeline. stage_id
+    # arrives from a form and is never trusted; get_stage() refuses another
+    # tenant's stage and refuses AI-funnel stages.
+    stage = sps.get_stage(_tid, request.form.get("stage_id", type=int))
+    if stage is None:
+        return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                                err="Invalid+stage+selected."))
+
+    old_stage_id = lead.sales_stage_id
+    old_status = lead.lead_status
+    if old_stage_id == stage.id:
+        return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                                msg="Lead+is+already+in+that+stage."))
+
+    try:
+        lead.lead_status = stage.display_name      # adapter resolves the link
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                                err="Could+not+move+the+lead."))
+
+    # Post-commit only — log_audit() commits, so calling it earlier would
+    # flush a partial write (Phase 10.2A contract).
+    from app.services.audit_service import log_audit, request_ip
+    _actor_id = getattr(current_user, "email", None) or _actor_name()
+    moved = sps.record_stage_change(_tid, lead, old_stage_id, old_status,
+                                    actor=_actor_id, notify=True,
+                                    notify_actor_name=_actor_name())
+    detail = {"from": old_status or "", "to": lead.lead_status or "",
+              "entry": "stage_move"}
+    if moved:
+        detail.update(moved)
+    log_audit("LEAD_STATUS_CHANGE", actor=_actor_id, tenant_id=_tid,
+              target=f"lead:{phone}", detail=detail, ip=request_ip())
+
+    return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                            msg=f"Moved+to+{stage.display_name.replace(' ', '+')}."))
 
 
 # ── Phase 10.7: Sales Pipeline (read-only) ───────────────────────────────────
@@ -1789,9 +1891,17 @@ def crm_lead_detail(phone):
     # current value when it predates the vocabulary.
     from app.models import LEAD_STATUSES
 
+    # Phase 10.8: sales stages for the move widget, plus this lead's movement
+    # history. Both come from the service — the route holds no query logic.
+    from app.services import sales_pipeline_service as _sps
+    _pipeline_stages = _sps.get_pipeline_summary(_tid, get_current_actor())
+    _stage_history = _sps.get_stage_history(_tid, lead.id)
+
     return render_template(
         "crm_lead_detail.html",
         lead_status_options=list(LEAD_STATUSES),
+        pipeline_stages=_pipeline_stages,
+        stage_history=_stage_history,
         lead=lead,
         logs=logs,
         timeline=timeline,
@@ -1854,6 +1964,10 @@ def crm_lead_update(phone):
         old_score    = lead.lead_score
         old_admitted = lead.is_admitted
         old_notes    = lead.notes
+        # Phase 10.8: the sales stage link, captured before the adapter setter
+        # re-resolves it. Read from the column, not lead.lead_status, so this
+        # is the id the lead actually sat on.
+        old_sales_stage_id = lead.sales_stage_id
 
         lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
         lead.notes          = request.form.get("notes",          "").strip() or None
@@ -1911,7 +2025,26 @@ def crm_lead_update(phone):
         if old_staff != lead.assigned_staff:
             _audit("LEAD_ASSIGN", {"from": old_staff or "", "to": lead.assigned_staff or ""})
         if old_status != lead.lead_status:
-            _audit("LEAD_STATUS_CHANGE", {"from": old_status or "", "to": lead.lead_status or ""})
+            # Phase 10.8: record the movement (history + timeline + notify),
+            # then enrich the existing audit detail with the stage ids. The
+            # audit row stays the single security record — record_stage_change
+            # deliberately does not write one.
+            #
+            # Admission auto-promotion is excluded from notification per the
+            # approved policy: when is_admitted flips, the status change to
+            # "Enrolled" was made by the system, not chosen by the operator.
+            from app.services import sales_pipeline_service as _sps
+            _auto_promoted = (old_admitted != lead.is_admitted) and bool(lead.is_admitted)
+            _moved = _sps.record_stage_change(
+                _tid, lead, old_sales_stage_id, old_status,
+                actor=(_sps.ACTOR_AUTO_ADMISSION if _auto_promoted else _audit_actor),
+                notify=not _auto_promoted,
+                notify_actor_name=_actor_name(),
+            )
+            _detail = {"from": old_status or "", "to": lead.lead_status or ""}
+            if _moved:
+                _detail.update(_moved)      # from_stage_id / to_stage_id
+            _audit("LEAD_STATUS_CHANGE", _detail)
         if old_score != lead.lead_score:
             _audit("LEAD_SCORE_CHANGE", {"from": old_score, "to": lead.lead_score})
         if old_admitted != lead.is_admitted:

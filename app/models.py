@@ -922,6 +922,73 @@ class PipelineStage(db.Model):
     )
 
 
+class LeadStageHistory(db.Model):
+    """Phase 10.8: one row per Sales Pipeline stage movement.
+
+    The substrate the pipeline has never had. audit_log records THAT a status
+    changed but stores display names only, so a row cannot be joined to a
+    stage and a stage rename orphans the history. This table stores both the
+    stage ids (joinable, rename-proof) and the names as the operator saw them
+    at the time.
+
+    Scope is the SALES pipeline only. The AI conversation funnel (_stage /
+    pipeline_stage_id) is not recorded here — those transitions belong to the
+    bot and are already reflected in lead_event.
+
+    History starts at deployment. It is deliberately NOT backfilled: the only
+    available source is audit_log, which carries names without ids and
+    predates the sales pipeline entirely, so any reconstruction would be
+    guesswork presented as fact.
+
+    Written post-commit and never raises — a failed history row must not undo
+    a lead edit that already succeeded.
+    """
+    __tablename__ = "lead_stage_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Explicit tenant on every row — never inferred from the lead at read time,
+    # so history queries are tenant-filterable without a join.
+    tenant_id = db.Column(db.String(36), db.ForeignKey("tenants.id"),
+                          nullable=False, index=True)
+    conversation_state_id = db.Column(db.Integer,
+                                      db.ForeignKey("conversation_state.id",
+                                                    ondelete="CASCADE"),
+                                      nullable=False, index=True)
+
+    # from_stage_id is NULL for a lead's FIRST entry into the pipeline — there
+    # is no prior stage, and inventing a synthetic one would corrupt any
+    # time-in-stage calculation built on this table later.
+    from_stage_id = db.Column(db.Integer, db.ForeignKey("pipeline_stages.id"),
+                              nullable=True)
+    to_stage_id = db.Column(db.Integer, db.ForeignKey("pipeline_stages.id"),
+                            nullable=True)
+
+    # Names as displayed at the moment of the change. Kept alongside the ids
+    # so history stays readable if a stage is later renamed or deactivated,
+    # and so an unmapped status (no stage link) is still recorded.
+    from_status = db.Column(db.String(50), nullable=True)
+    to_status = db.Column(db.String(50), nullable=True)
+
+    # Who moved it: an operator email, or a system label such as
+    # "csv-import" / "auto-admission" for non-operator movements.
+    actor = db.Column(db.String(120), nullable=True)
+
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
+
+    __table_args__ = (
+        # The read pattern: one lead's movements in order. Also serves
+        # tenant-wide velocity queries, which lead with tenant_id.
+        db.Index("ix_lead_stage_history_tenant_lead_time",
+                 "tenant_id", "conversation_state_id", "changed_at"),
+    )
+
+    def __repr__(self):
+        return (f"<LeadStageHistory lead={self.conversation_state_id} "
+                f"{self.from_status!r}->{self.to_status!r} at {self.changed_at}>")
+
+
 class TagDefinition(db.Model):
     """
     Phase 16.5A3: Tenant-owned assignable label for leads / contacts.
@@ -1399,11 +1466,15 @@ class Notification(db.Model):
     TYPE_LEAD_REASSIGNED   = 'LEAD_REASSIGNED'
     TYPE_REMINDER_DUE      = 'REMINDER_DUE'
     TYPE_SYSTEM_ALERT      = 'SYSTEM_ALERT'
+    # Phase 10.8: operator moved a lead to a different Sales Pipeline stage.
+    # notify() REJECTS any type absent from VALID_TYPES, so the constant and
+    # the whitelist entry below must land together.
+    TYPE_STAGE_CHANGED     = 'STAGE_CHANGED'
 
     VALID_TYPES = (
         TYPE_NEW_LEAD_ASSIGNED, TYPE_TASK_ASSIGNED, TYPE_TASK_UPDATED,
         TYPE_TASK_COMPLETED, TYPE_LEAD_REASSIGNED, TYPE_REMINDER_DUE,
-        TYPE_SYSTEM_ALERT,
+        TYPE_SYSTEM_ALERT, TYPE_STAGE_CHANGED,
     )
 
     id          = db.Column(db.Integer, primary_key=True)

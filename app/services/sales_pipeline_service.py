@@ -177,6 +177,151 @@ def get_stage(tenant_id, stage_id):
     )
 
 
+# ── Phase 10.8: stage movement recording ─────────────────────────────────────
+#
+# Actor labels for movements no operator initiated. Kept as constants so the
+# notification-suppression rules below and the history rows agree on one
+# vocabulary rather than repeating string literals at each call site.
+ACTOR_CSV_IMPORT = "csv-import"
+ACTOR_AUTO_ADMISSION = "auto-admission"
+
+
+def record_stage_change(tenant_id, lead, from_stage_id, from_status,
+                        actor=None, notify=False, notify_actor_name=None):
+    """Record one Sales Pipeline movement. Call AFTER the business commit.
+
+    Three complementary records, each with a distinct job:
+
+      * lead_stage_history — analytics substrate (velocity, time-in-stage)
+      * LeadEvent STAGE_CHANGED — the operator-visible lead timeline
+      * notification — only when `notify` is True (see below)
+
+    The audit_log entry is NOT written here: crm_lead_update already emits
+    LEAD_STATUS_CHANGE and owns that record, so writing a second one would
+    double-count. This function returns the stage ids so that caller can
+    enrich its existing audit detail.
+
+    NEVER RAISES. This runs after the lead write is already durable, so a
+    failure here must not surface as a failed edit — the movement is recorded
+    on a best-effort basis and logged loudly if it cannot be.
+
+    `notify` is False by default and deliberately opt-in per call site.
+    Approved policy (Phase 10.8): notify only on operator-initiated single
+    changes — never CSV import (a 500-row file would emit 500 notifications)
+    and never the automatic admission promotion.
+
+    Returns {"from_stage_id", "to_stage_id"} for audit enrichment, or None if
+    nothing was recorded.
+    """
+    from app.extensions import db
+
+    try:
+        to_stage_id = lead.sales_stage_id
+        to_status = lead.lead_status
+
+        # No movement, nothing to record. Guards against a form resubmit
+        # writing an identical status and inflating the history.
+        if from_stage_id == to_stage_id and (from_status or "") == (to_status or ""):
+            return None
+
+        _write_history(tenant_id, lead, from_stage_id, from_status,
+                       to_stage_id, to_status, actor)
+        _write_timeline(tenant_id, lead, from_status, to_status)
+
+        if notify:
+            _notify_stage_change(tenant_id, lead, from_status, to_status,
+                                 notify_actor_name)
+
+        return {"from_stage_id": from_stage_id, "to_stage_id": to_stage_id}
+    except Exception:
+        logger.exception(
+            "[pipeline] FAILED to record stage change for lead %s — the lead "
+            "edit itself is committed and unaffected", getattr(lead, "id", "?"))
+        return None
+
+
+def _write_history(tenant_id, lead, from_stage_id, from_status,
+                   to_stage_id, to_status, actor):
+    """Append the analytics row. Owns its own commit, like log_audit()."""
+    from app.models import LeadStageHistory
+    from app.extensions import db
+
+    db.session.add(LeadStageHistory(
+        tenant_id=tenant_id,
+        conversation_state_id=lead.id,
+        from_stage_id=from_stage_id,
+        to_stage_id=to_stage_id,
+        from_status=from_status,
+        to_status=to_status,
+        actor=actor,
+    ))
+    db.session.commit()
+
+
+def _write_timeline(tenant_id, lead, from_status, to_status):
+    """Put the movement on the operator-visible lead timeline.
+
+    Reuses log_lead_event (which never raises) rather than writing LeadEvent
+    directly, so the timeline entry is created exactly like every other one.
+    """
+    import json
+    from app.services.log_service import log_lead_event
+
+    log_lead_event(
+        tenant_id=tenant_id,
+        phone=lead.phone,
+        event_type="STAGE_CHANGED",
+        event_data=json.dumps({"from": from_status or "", "to": to_status or ""}),
+    )
+
+
+def _notify_stage_change(tenant_id, lead, from_status, to_status, actor_name):
+    """Tell the assigned staff member their lead moved stage.
+
+    Suppressed when there is no assignee (nobody to tell) and when the actor
+    is the assignee — a staff member who just moved their own lead does not
+    need to be told they did it.
+    """
+    from app.models import Notification
+    from app.services import notification_service
+
+    recipient = (lead.assigned_staff or "").strip()
+    if not recipient:
+        return
+    if actor_name and recipient.lower() == actor_name.strip().lower():
+        return
+
+    label = (lead.name or "").strip() or lead.phone
+    notification_service.notify(
+        tenant_id=tenant_id,
+        recipient=recipient,
+        notif_type=Notification.TYPE_STAGE_CHANGED,
+        title=f"Stage changed: {label}",
+        body=f"{from_status or 'unset'} -> {to_status or 'unset'}"
+             + (f" by {actor_name}" if actor_name else ""),
+        lead_phone=lead.phone,
+    )
+
+
+def get_stage_history(tenant_id, lead_id, limit=20):
+    """Recent stage movements for one lead, newest first.
+
+    Tenant-scoped on this table's own tenant_id rather than by joining the
+    lead, so a mis-scoped call cannot read another tenant's history.
+    """
+    from app.models import LeadStageHistory
+    from app.extensions import db
+
+    if not tenant_id or not lead_id:
+        return []
+    return (db.session.query(LeadStageHistory)
+            .filter(LeadStageHistory.tenant_id == tenant_id,
+                    LeadStageHistory.conversation_state_id == lead_id)
+            .order_by(LeadStageHistory.changed_at.desc(),
+                      LeadStageHistory.id.desc())
+            .limit(limit).all())
+
+
 def get_stage_leads(tenant_id, stage_id, actor=None, page=1, per_page=25):
     """Paginated leads sitting in one sales stage.
 

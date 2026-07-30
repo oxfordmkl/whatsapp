@@ -713,6 +713,46 @@
             <i class="bi bi-pencil-square"></i>CRM Updates
           </div>
           <div class="crm-card-body">
+
+            {# ── Phase 10.8: Sales Pipeline stage ──────────────────────────
+               A dedicated move action so a stage can be advanced without
+               resubmitting the whole edit form. It posts to its own route and
+               is therefore OUTSIDE the update form below — nesting forms is
+               invalid HTML and the inner one would be dropped by the browser.
+               Writes through the same lead_status adapter, so sales_stage_id
+               is never set directly. #}
+            {% if pipeline_stages %}
+            <div class="mb-3 pb-3" style="border-bottom:1px solid var(--border);">
+              <label class="form-label-crm" for="stage_id">Sales Pipeline Stage</label>
+              <form method="POST" action="/crm/lead/{{ lead.phone }}/stage"
+                    class="d-flex gap-2 align-items-center flex-wrap">
+                <select class="crm-input" name="stage_id" id="stage_id" style="flex:1;min-width:160px;">
+                  {% for s in pipeline_stages %}
+                  <option value="{{ s.stage_id }}"
+                    {% if lead.lead_status == s.display_name %}selected{% endif %}>
+                    {{ s.display_name }}{% if s.stage_category != 'open' %} ({{ s.stage_category }}){% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+                <button class="btn-save" type="submit" style="white-space:nowrap;">
+                  <i class="bi bi-arrow-right-circle me-1"></i>Move
+                </button>
+              </form>
+              {% if stage_history %}
+              <div class="mt-2" style="font-size:0.72rem;color:var(--text-muted);">
+                <strong>Recent movements</strong>
+                {% for h in stage_history[:5] %}
+                <div style="padding:0.15rem 0;">
+                  {{ h.from_status or '—' }} &rarr; <strong>{{ h.to_status or '—' }}</strong>
+                  {% if h.changed_at %}· {{ h.changed_at.strftime('%d %b %Y, %H:%M') }}{% endif %}
+                  {% if h.actor %}· {{ h.actor }}{% endif %}
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+
             <form method="POST" action="/crm/lead/{{ lead.phone }}/update">
 
               <!-- Lead Status -->
