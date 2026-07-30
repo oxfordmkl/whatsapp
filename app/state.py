@@ -131,6 +131,21 @@ def _load_or_create_row(phone: str, name: str, tenant_id: str):
         last_msg=datetime.now().isoformat(),
         last_text="",
         tenant_id=tenant_id,  # Phase 12-C2: Required after Phase 12-B migration
+        # Phase 10.8C: passed explicitly so creation routes through the
+        # lead_status hybrid setter, which resolves sales_stage_id.
+        #
+        # Omitting it let the COLUMN DEFAULT supply "Lead" at flush time, and a
+        # column default never passes through the setter — so bot-created leads
+        # entered with sales_stage_id NULL and were invisible to the Sales
+        # Pipeline. The two admin creation paths (crm_lead_new,
+        # crm_leads_import) already pass this kwarg; this path was the only one
+        # that did not.
+        #
+        # Behaviour-neutral for the bot: the stored value is "Lead" either way
+        # (it is both the column default and LEAD_STATUSES[0]). _stage stays
+        # "new" and pipeline_stage_id stays NULL — _sync_sales_stage_link
+        # writes sales_stage_id and nothing else, so the AI funnel is untouched.
+        lead_status="Lead",
     )
     db.session.add(row)
     db.session.commit()
