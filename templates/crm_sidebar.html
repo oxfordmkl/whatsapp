@@ -459,6 +459,13 @@ body {
         <i class="bi bi-person-fill"></i>
         <span class="nav-label">My Leads</span>
       </a>
+      {# Phase 10.7: visible to STAFF as well as ADMIN — pipeline visibility
+         follows the existing lead visibility rules, and a STAFF member's
+         counts are filtered to leads they own by the service layer. #}
+      <a class="nav-item" href="/crm/pipeline?key={{ key }}" data-path="/crm/pipeline">
+        <i class="bi bi-funnel-fill"></i>
+        <span class="nav-label">Sales Pipeline</span>
+      </a>
       {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
       <a class="nav-item" href="/crm/leads/unassigned?key={{ key }}" data-path="/crm/leads/unassigned">
         <i class="bi bi-inbox-fill"></i>

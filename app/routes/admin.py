@@ -1283,6 +1283,78 @@ def crm_leads_import():
                            writable=LEAD_IMPORT_WRITABLE, summary=summary, err="")
 
 
+# ── Phase 10.7: Sales Pipeline (read-only) ───────────────────────────────────
+
+@admin_bp.route("/crm/pipeline", methods=["GET"])
+def crm_sales_pipeline():
+    """Sales Pipeline dashboard — stage distribution for this tenant.
+
+    check_auth() rather than @admin_required: pipeline visibility follows the
+    existing lead visibility rules, so STAFF may view it. Their counts are
+    filtered to leads they own by the service layer — a tenant-wide count is a
+    leak even when no individual lead is shown.
+
+    Holds no query logic: sales_pipeline_service owns every query.
+    """
+    if not check_auth():
+        return _deny()
+
+    from app.services import sales_pipeline_service as sps
+
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return _deny()
+
+    actor = get_current_actor()
+    summary = sps.get_pipeline_summary(_tid, actor)
+    metrics = sps.get_conversion_metrics(summary)
+
+    return render_template(
+        "crm_sales_pipeline.html",
+        key=request.args.get("key", ""),
+        open_stages=[s for s in summary if not s["is_terminal"]],
+        terminal_stages=[s for s in summary if s["is_terminal"]],
+        metrics=metrics,
+        actor=actor,
+    )
+
+
+@admin_bp.route("/crm/pipeline/stage/<int:stage_id>", methods=["GET"])
+def crm_pipeline_stage(stage_id):
+    """Leads currently sitting in one sales stage.
+
+    stage_id comes from the URL and is never trusted: get_stage() resolves it
+    only within the acting tenant's 'sales' pipeline, so another tenant's id —
+    or an AI-funnel stage id — returns None and 404s here rather than leaking
+    a stage name or a lead list.
+    """
+    if not check_auth():
+        return _deny()
+
+    from app.services import sales_pipeline_service as sps
+
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return _deny()
+
+    stage = sps.get_stage(_tid, stage_id)
+    if stage is None:
+        return _not_found(f"stage {stage_id}")
+
+    actor = get_current_actor()
+    page = max(1, request.args.get("page", 1, type=int))
+    pagination = sps.get_stage_leads(_tid, stage_id, actor, page=page, per_page=25)
+
+    return render_template(
+        "crm_pipeline_stage.html",
+        key=request.args.get("key", ""),
+        stage=stage,
+        leads=pagination.items if pagination else [],
+        pagination=pagination,
+        actor=actor,
+    )
+
+
 # ── Phase 6G: Audience Calculation Helper ──
 def _calculate_audiences(tenant_id=None):
     from app.extensions import db
