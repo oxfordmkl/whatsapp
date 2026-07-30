@@ -133,6 +133,15 @@ LEAD_TERMINAL_STATUSES = frozenset({
     "Enrolled", "Lost", "Not Interested", "Dropped",
 })
 
+# Phase 10.6: internal_key of the tenant's SALES PipelineDefinition.
+#
+# Deliberately distinct from the bot funnel's pipeline. A tenant has both: the
+# conversation pipeline the AI drives (reached via pipeline_stage_id) and this
+# sales pipeline the staff drive (reached via sales_stage_id). Keying them
+# separately is what lets one PipelineStage table serve both without the two
+# systems ever resolving through the same column.
+SALES_PIPELINE_KEY = "sales"
+
 
 class ConversationState(db.Model):
     """
@@ -188,7 +197,18 @@ class ConversationState(db.Model):
     #   Migration to TagDefinition is DEFERRED — no adapter is applied yet, only a
     #   future hook. group_by(lead_status) analytics in admin.py depend on this
     #   physical column and MUST keep working unchanged.
-    lead_status    = db.Column(db.String(50),  nullable=True, default="Lead")
+    # Phase 10.6: legacy storage for the sales stage, exposed through the
+    # `lead_status` hybrid adapter defined further down. The PHYSICAL column is
+    # still named lead_status, so this rename is Python-side only and needs no
+    # DDL — the same technique already used for _stage/_course/_batch_time/
+    # _offer_course.
+    #
+    # TRANSITIONAL. sales_stage_id is the canonical Sales Pipeline reference;
+    # this column exists only to keep unlinked rows working during the
+    # migration and to make every step of it reversible. Later phases move
+    # business logic onto sales_stage_id until this string is no longer read.
+    _lead_status   = db.Column('lead_status', db.String(50), nullable=True,
+                               default="Lead")
     assigned_staff = db.Column(db.String(100), nullable=True)
     lead_score     = db.Column(db.Integer,     nullable=True, default=0)
 
@@ -216,6 +236,18 @@ class ConversationState(db.Model):
     pipeline_stage_id = db.Column(db.Integer, db.ForeignKey('pipeline_stages.id'),
                                   nullable=True, index=True)
 
+    # ── Phase 10.6: Sales Pipeline link ────────────────────────────────────
+    # Deliberately a SECOND column rather than a reuse of pipeline_stage_id.
+    # That column is owned by the AI conversation engine — the `stage` hybrid
+    # resolves through it, and the bot reads/writes it on every message via
+    # StateProxy. Pointing it at sales stages would make `stage` return a sales
+    # key and break the router's branching. One FK cannot serve two pipelines.
+    #
+    # Canonical reference for the Sales Pipeline. Nullable so existing rows
+    # remain valid and every migration step stays reversible.
+    sales_stage_id = db.Column(db.Integer, db.ForeignKey('pipeline_stages.id'),
+                               nullable=True, index=True)
+
     # JSON blob for legacy attributes without a dedicated relational home
     # (offer_course, batch_time). db.JSON: TEXT on SQLite, JSON on PostgreSQL.
     # Enterprise Baseline v1.1 — upgraded from db.Text per ADR-013.
@@ -236,7 +268,14 @@ class ConversationState(db.Model):
     # SQLAlchemy __init__). Route adapter kwargs through the hybrid setters.
     # `is_admitted` is absent by design (ADR-018) — it is a plain column and is
     # handled natively by SQLAlchemy's __init__.
-    _ADAPTER_INIT_KEYS = ('stage', 'course', 'batch_time', 'offer_course')
+    # Phase 10.6: 'lead_status' joins this list because it is now a
+    # hybrid_property. SQLAlchemy's default __init__ only accepts mapped
+    # column names, so without this ConversationState(lead_status=...) raises
+    # TypeError — and that constructor form is used by manual lead creation
+    # and by CSV import. super().__init__ runs first, so tenant_id is already
+    # set by the time the adapter setter needs it to resolve the stage.
+    _ADAPTER_INIT_KEYS = ('stage', 'course', 'batch_time', 'offer_course',
+                          'lead_status')
 
     def __init__(self, **kwargs):
         adapter_vals = {k: kwargs.pop(k) for k in self._ADAPTER_INIT_KEYS if k in kwargs}
@@ -252,6 +291,51 @@ class ConversationState(db.Model):
             return None
         from app.models import PipelineStage
         return db.session.get(PipelineStage, self.pipeline_stage_id)
+
+    def _lookup_sales_stage(self):
+        """Load the linked sales PipelineStage, or None.
+
+        Guarded by the caller on sales_stage_id, so no query runs for a row
+        that has not been linked yet.
+        """
+        if self.sales_stage_id is None:
+            return None
+        from app.models import PipelineStage
+        return db.session.get(PipelineStage, self.sales_stage_id)
+
+    def _sync_sales_stage_link(self, value):
+        """Point sales_stage_id at the stage matching this status name.
+
+        Unlike _sync_stage_link (the bot adapter), this DOES create a link
+        rather than only refreshing an existing one. That difference is the
+        entire point: the bot adapter's refusal to create is why
+        pipeline_stage_id froze at 29 rows and its coverage decayed with every
+        new lead. Resolving on write keeps sales_stage_id complete on its own.
+
+        Resolution is by display_name within THIS tenant's sales pipeline, so
+        one tenant's stage names can never match another's.
+
+        An unresolvable value clears the link instead of leaving a stale one —
+        otherwise the getter would keep returning the previous stage's name
+        after the status had changed. The row then falls back to
+        _lead_status, which is exactly the behaviour an unrecognised status
+        should have (and which Phase 10.5 already prevents on import).
+        """
+        if not self.tenant_id or not value:
+            self.sales_stage_id = None
+            return
+        from app.models import PipelineStage, PipelineDefinition
+        match = (
+            db.session.query(PipelineStage)
+            .join(PipelineDefinition, PipelineStage.pipeline_id == PipelineDefinition.id)
+            .filter(
+                PipelineDefinition.tenant_id == self.tenant_id,
+                PipelineDefinition.internal_key == SALES_PIPELINE_KEY,
+                func.lower(func.trim(PipelineStage.display_name)) == value.strip().lower(),
+            )
+            .first()
+        )
+        self.sales_stage_id = match.id if match is not None else None
 
     def _first_offering(self):
         """First linked Offering via the bridge, or None. Guarded by the caller
@@ -369,6 +453,51 @@ class ConversationState(db.Model):
             (cls.pipeline_stage_id.is_(None), cls._stage),
             else_=select(PipelineStage.internal_key)
                   .where(PipelineStage.id == cls.pipeline_stage_id)
+                  .scalar_subquery()
+        )
+
+    # ── lead_status adapter (Phase 10.6 — Sales Pipeline) ───────────────────
+    # Backward-compatibility bridge. Every existing reader — 5 templates,
+    # to_dict(), CSV export, the LEAD_TERMINAL_STATUSES filters — keeps working
+    # unchanged while sales_stage_id becomes the canonical reference.
+    #
+    # Returns display_name, NOT internal_key. The bot adapter above returns
+    # internal_key because the router matches machine keys; lead_status is
+    # shown to operators and compared against LEAD_STATUSES ("Demo Scheduled",
+    # not demo_scheduled), so display_name is what keeps every existing
+    # comparison, template and exported CSV byte-identical.
+
+    @hybrid_property
+    def lead_status(self):
+        """Linked sales stage name when relationally activated, else the
+        legacy string. No query runs on an unlinked row."""
+        if self.sales_stage_id is not None:
+            ps = self._lookup_sales_stage()
+            if ps is not None:
+                return ps.display_name
+        return self._lead_status
+
+    @lead_status.setter
+    def lead_status(self, value):
+        """Write the legacy string AND resolve the canonical link.
+
+        Both are written during the transition: _lead_status keeps unlinked
+        rows and rollback safe, sales_stage_id is the reference future phases
+        read. Once business logic has moved onto sales_stage_id, the string
+        write can be retired without touching callers.
+        """
+        self._lead_status = value
+        self._sync_sales_stage_link(value)
+
+    @lead_status.expression
+    def lead_status(cls):
+        """SQL form, so .notin_(LEAD_TERMINAL_STATUSES) and other filters keep
+        working at the database level (crm_my_leads, crm_staff_dashboard)."""
+        from app.models import PipelineStage
+        return case(
+            (cls.sales_stage_id.is_(None), cls._lead_status),
+            else_=select(PipelineStage.display_name)
+                  .where(PipelineStage.id == cls.sales_stage_id)
                   .scalar_subquery()
         )
 

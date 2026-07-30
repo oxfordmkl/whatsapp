@@ -89,12 +89,21 @@ class TestCsvContracts:
 
     def test_export_fields_exist_on_model(self):
         """Every exported column must be a real attribute — the `source`
-        column was assumed to exist during implementation and did not."""
+        column was assumed to exist during implementation and did not.
+
+        Adapters are DERIVED from the @hybrid_property declarations rather
+        than listed, so this guard cannot go stale. It previously hardcoded
+        four adapter names and broke when Phase 10.6 made lead_status the
+        fifth; deriving them means the next adapter is handled automatically
+        while the check itself stays just as strict.
+        """
         models = open(os.path.join(_ROOT, "app", "models.py"), encoding="utf-8").read()
         blk = models.split("class ConversationState")[1].split("\nclass ")[0]
         cols = set(re.findall(r"^\s{4}(\w+)\s*=\s*db\.Column", blk, re.M))
-        cols |= {"stage", "course", "batch_time", "offer_course"}   # hybrid adapters
-        cols -= {"_stage", "_course", "_batch_time", "_offer_course"}
+        adapters = set(re.findall(r"@hybrid_property\s*\n\s*def (\w+)", blk))
+        assert adapters, "no hybrid adapters found — parsing has drifted"
+        cols |= adapters
+        cols -= {"_" + a for a in adapters}      # underscore-prefixed storage
         for f in _const("LEAD_CSV_FIELDS"):
             assert f in cols, f"exported field {f!r} is not a ConversationState attribute"
 
