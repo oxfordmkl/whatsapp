@@ -712,6 +712,38 @@ def normalize_lead_phone(raw):
     return digits
 
 
+def canonical_lead_status(raw, default=None):
+    """Return the approved LEAD_STATUSES spelling of `raw`, else `default`.
+
+    Phase 10.9A. Applies the Phase 10.5 strategy (case-insensitive match,
+    canonicalised to the approved spelling) to the two operator-facing FORM
+    paths, which had no validation at all: crm_lead_update assigned
+    request.form["lead_status"] straight to the model, and crm_lead_new passed
+    it straight to the constructor. The dropdown was the only constraint, and a
+    crafted POST bypasses it.
+
+    That mattered beyond tidiness. An unrecognised status has no matching
+    PipelineStage, so _sync_sales_stage_link() clears sales_stage_id and the
+    lead drops out of the Sales Pipeline entirely — silently undoing the 100%
+    coverage established in Phase 10.8C.3.
+
+    Returns `default` for blank input too, so callers can express "no value
+    submitted" and "value rejected" with the same fallback: keep what is
+    already stored. This never widens the vocabulary — the return value is
+    always either an entry from LEAD_STATUSES or the caller's default.
+
+    Deliberately NOT wired into crm_leads_import: that path already validates
+    (Phase 10.5) and needs to report per-row errors into its import summary,
+    which this helper has no way to express. Adopting it there is a tidy-up for
+    a later phase, not part of this scope.
+    """
+    from app.models import LEAD_STATUSES
+    value = (raw or "").strip()
+    if not value:
+        return default
+    return next((s for s in LEAD_STATUSES if s.lower() == value.lower()), default)
+
+
 def _build_leads_query(tenant_id, actor, search="", stage_filter="", admitted_filter=""):
     """The canonical filtered lead query — shared by the list and the export.
 
@@ -967,7 +999,10 @@ def crm_lead_new():
         stage="new",
         course="", goal="", batch_time="", offer_course="",
         last_msg="", last_text="",
-        lead_status=(request.form.get("lead_status", "") or "Lead").strip(),
+        # Phase 10.9A: validated against LEAD_STATUSES. A blank or
+        # unrecognised submission falls back to the entry status "Lead", so a
+        # new lead can never be created with a status outside the vocabulary.
+        lead_status=canonical_lead_status(request.form.get("lead_status"), default="Lead"),
         assigned_staff=(request.form.get("assigned_staff", "") or "").strip() or None,
         notes=(request.form.get("notes", "") or "").strip() or None,
         lead_score=0,
@@ -1969,7 +2004,22 @@ def crm_lead_update(phone):
         # is the id the lead actually sat on.
         old_sales_stage_id = lead.sales_stage_id
 
-        lead.lead_status    = request.form.get("lead_status",    "").strip() or lead.lead_status
+        # Phase 10.9A: validated against LEAD_STATUSES. Defaulting to the
+        # CURRENT value means a blank or unrecognised submission leaves the
+        # lead untouched rather than writing an unknown status — which would
+        # clear sales_stage_id and drop the lead out of the Sales Pipeline.
+        _submitted_status = request.form.get("lead_status")
+        # Resolve with no default first, so a REJECTED value is distinguishable
+        # from a legitimate case variant ("enrolled" -> "Enrolled", which is
+        # accepted and must not warn).
+        _resolved_status = canonical_lead_status(_submitted_status)
+        if (_submitted_status or "").strip() and _resolved_status is None:
+            # Unreachable from the dropdown; only a crafted POST or a bug gets
+            # here, so it is logged rather than silently discarded.
+            logging.warning(
+                "Rejected lead_status %r for lead %s — not in LEAD_STATUSES; kept %r",
+                _submitted_status, phone, lead.lead_status)
+        lead.lead_status    = _resolved_status or lead.lead_status
         lead.notes          = request.form.get("notes",          "").strip() or None
 
         if not is_staff:
