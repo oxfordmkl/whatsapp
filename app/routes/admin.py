@@ -43,6 +43,9 @@ def normalize_staff_name(name):
 
 from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
 from app.services.whatsapp_service import send_text
+# Phase 10.9B.2: warn-only transition diagnostics. Safe to import at module
+# level — the engine imports no Flask and touches no database until called.
+from app.services import sales_transition_service as _sts_mod
 
 from functools import wraps
 from flask import abort
@@ -744,6 +747,55 @@ def canonical_lead_status(raw, default=None):
     return next((s for s in LEAD_STATUSES if s.lower() == value.lower()), default)
 
 
+def transition_verdict(tenant_id, from_status, to_status, context):
+    """Phase 10.9B.2 — WARN-ONLY. Ask the transition engine, block nothing.
+
+    Returns a TransitionVerdict, or None if the engine could not answer.
+
+    Every caller ignores `verdict.allowed` entirely; the value is recorded and
+    nothing else. That is the whole point of this phase: with only one operator
+    transition in lead_stage_history, enforcing a matrix would mean enforcing
+    assumptions nobody has tested. Observability first, rules second.
+
+    NEVER RAISES. The engine already fails open internally, but a lead edit
+    must not fail because a diagnostic did — this phase is required to preserve
+    existing behaviour exactly, and an exception here would break that promise.
+    """
+    try:
+        from app.services import sales_transition_service as _sts
+        return _sts.can_transition(from_status, to_status,
+                                   tenant_id=tenant_id, context=context)
+    except Exception:
+        logging.exception("Transition engine failed for %r -> %r (%s)",
+                          from_status, to_status, context)
+        return None
+
+
+def transition_detail(verdict, context):
+    """The audit-detail fragment for a verdict, or {} when there is none.
+
+    Nested under a single "transition" key so it extends the existing
+    LEAD_STATUS_CHANGE detail rather than colliding with from/to/stage ids.
+
+    Deliberately NOT a new audit action: audit_service.VALID_ACTIONS gates
+    every action and carries a guard test asserting its exact size, so adding
+    one for a diagnostic that is temporary by design would permanently widen
+    the audit vocabulary. `detail` is already JSON, so a new key inside it
+    costs no migration and no constant change.
+
+    `context` is passed in rather than read off the verdict — the engine is
+    unmodified by this phase.
+    """
+    if verdict is None:
+        return {}
+    return {"transition": {
+        "code": verdict.code,
+        "rule": verdict.rule_id,
+        "severity": verdict.severity,
+        "context": context,
+    }}
+
+
 def _build_leads_query(tenant_id, actor, search="", stage_filter="", admitted_filter=""):
     """The canonical filtered lead query — shared by the list and the export.
 
@@ -1287,6 +1339,20 @@ def crm_leads_import():
                     # written. None means the cell failed validation and was
                     # reported above — leave the stored status untouched.
                     if status_value is not None and lead.lead_status != status_value:
+                        # Phase 10.9B.2: warn-only, LOG ONLY. Deliberately not
+                        # added to summary["errors"]: that list is the
+                        # operator's row-by-row report and this phase blocks
+                        # nothing, so surfacing warnings there would make a
+                        # successful import look partly failed. Only non-ok
+                        # verdicts are logged — a 500-row file must not emit
+                        # 500 lines saying everything was fine.
+                        _v = transition_verdict(_tid, lead.lead_status,
+                                                status_value,
+                                                _sts_mod.CONTEXT_CSV_IMPORT)
+                        if _v is not None and _v.severity != _sts_mod.SEVERITY_OK:
+                            logging.warning(
+                                "Transition %s (%s) on CSV import row %s: %s",
+                                _v.code, _v.rule_id, idx, _v.reason)
                         lead.lead_status = status_value; changed.append(field)
                     continue
                 if getattr(lead, field, None) != val:
@@ -1394,6 +1460,11 @@ def crm_lead_move_stage(phone):
         return redirect(url_for("admin.crm_lead_detail", phone=phone,
                                 msg="Lead+is+already+in+that+stage."))
 
+    # Phase 10.9B.2: warn-only. Asked before the write; `allowed` is ignored,
+    # so an operator who could make this move yesterday can still make it.
+    _transition = transition_verdict(_tid, old_status, stage.display_name,
+                                     _sts_mod.CONTEXT_OPERATOR_MOVE)
+
     try:
         lead.lead_status = stage.display_name      # adapter resolves the link
         db.session.commit()
@@ -1413,6 +1484,7 @@ def crm_lead_move_stage(phone):
               "entry": "stage_move"}
     if moved:
         detail.update(moved)
+    detail.update(transition_detail(_transition, _sts_mod.CONTEXT_OPERATOR_MOVE))
     log_audit("LEAD_STATUS_CHANGE", actor=_actor_id, tenant_id=_tid,
               target=f"lead:{phone}", detail=detail, ip=request_ip())
 
@@ -2019,7 +2091,14 @@ def crm_lead_update(phone):
             logging.warning(
                 "Rejected lead_status %r for lead %s — not in LEAD_STATUSES; kept %r",
                 _submitted_status, phone, lead.lead_status)
-        lead.lead_status    = _resolved_status or lead.lead_status
+        # Phase 10.9B.2: warn-only. Asked BEFORE the write, so the engine sees
+        # the transition the operator actually proposed. `allowed` is ignored —
+        # nothing is blocked in this phase.
+        _target_status = _resolved_status or lead.lead_status
+        _transition_context = _sts_mod.CONTEXT_OPERATOR_FORM
+        _transition = transition_verdict(_tid, old_status, _target_status,
+                                         _transition_context)
+        lead.lead_status    = _target_status
         lead.notes          = request.form.get("notes",          "").strip() or None
 
         if not is_staff:
@@ -2046,6 +2125,14 @@ def crm_lead_update(phone):
         # ── Phase 8.2 Gap 3: Auto-promote lead_status → Enrolled on admission ────
         _PROMOTE_STATUSES = {"Lead", "Contacted", "Interested"}
         if new_admitted and (lead.lead_status or "").strip() in _PROMOTE_STATUSES:
+            # Phase 10.9B.2: the promotion is a SECOND, distinct transition —
+            # the system's, not the operator's — so it gets its own verdict
+            # under AUTO_ADMISSION rather than inheriting the form's. Asked
+            # before the write, and it replaces the earlier verdict because the
+            # audit detail below reports the lead's FINAL status.
+            _transition_context = _sts_mod.CONTEXT_AUTO_ADMISSION
+            _transition = transition_verdict(_tid, lead.lead_status, "Enrolled",
+                                             _transition_context)
             lead.lead_status = "Enrolled"
 
         lead.is_admitted = new_admitted
@@ -2094,6 +2181,10 @@ def crm_lead_update(phone):
             _detail = {"from": old_status or "", "to": lead.lead_status or ""}
             if _moved:
                 _detail.update(_moved)      # from_stage_id / to_stage_id
+            # Phase 10.9B.2: warn-only verdict, nested under its own key so it
+            # extends this detail rather than colliding with from/to. No new
+            # audit action — VALID_ACTIONS is untouched.
+            _detail.update(transition_detail(_transition, _transition_context))
             _audit("LEAD_STATUS_CHANGE", _detail)
         if old_score != lead.lead_score:
             _audit("LEAD_SCORE_CHANGE", {"from": old_score, "to": lead.lead_score})
