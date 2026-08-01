@@ -56,6 +56,7 @@ class _Campaign(_Base):
     message_body = Column(Text)
     template_id = Column(Integer)
     audience_rule_id = Column(Integer)
+    audience_segment = Column(String(100))
     scheduled_at = Column(DateTime)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
@@ -63,6 +64,7 @@ class _Campaign(_Base):
     sent_count = Column(Integer, nullable=False, default=0)
     failed_count = Column(Integer, nullable=False, default=0)
     created_by = Column(String(120))
+    impersonated_by = Column(String(120))
     failure_reason = Column(Text)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow,

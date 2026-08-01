@@ -1,7 +1,9 @@
+import hashlib
+import hmac
 import logging
 import threading
 from flask import Blueprint, request, jsonify, current_app
-from app.config import VERIFY_TOKEN
+from app.config import VERIFY_TOKEN, META_APP_SECRET
 from app.state import phone_exists, resolve_is_new_lead
 from app.bot.router import smart_reply
 from app.services.whatsapp_service import send_reply
@@ -26,8 +28,49 @@ def verify_webhook():
     return "Forbidden", 403
 
 
+def verify_meta_signature() -> bool:
+    """True when the inbound webhook POST may be trusted.
+
+    Phase 14C. VERIFY_TOKEN authenticates only the GET subscription handshake;
+    it is never sent on delivered messages. Without this check the endpoint
+    accepted any payload from anyone who knew the URL — allowing forged inbound
+    messages attributed to any tenant, which create leads, drive AI replies and
+    consume that tenant's WhatsApp quota.
+
+    Meta signs every POST with HMAC-SHA256 of the RAW body under the app
+    secret, in X-Hub-Signature-256.
+
+    When META_APP_SECRET is unset this returns True and logs a warning: the
+    endpoint then behaves exactly as it does today, so shipping this cannot
+    break production. Setting the variable activates enforcement.
+    """
+    secret = current_app.config.get("META_APP_SECRET") or META_APP_SECRET
+    if not secret:
+        logger.warning(
+            "⚠️ Webhook signature verification DISABLED (META_APP_SECRET unset) "
+            "— inbound payloads are unauthenticated")
+        return True
+
+    header = request.headers.get("X-Hub-Signature-256", "")
+    if not header.startswith("sha256="):
+        logger.warning("⚠️ Webhook rejected: missing X-Hub-Signature-256")
+        return False
+
+    expected = hmac.new(secret.encode("utf-8"),
+                        request.get_data(), hashlib.sha256).hexdigest()
+    # compare_digest, not ==, so a mismatch cannot be found by timing.
+    if not hmac.compare_digest(expected, header[len("sha256="):]):
+        logger.warning("⚠️ Webhook rejected: invalid signature")
+        return False
+    return True
+
+
 @webhook_bp.route("/webhook", methods=["POST"])
 def receive_message():
+    # Phase 14C: authenticate BEFORE parsing or touching the database.
+    if not verify_meta_signature():
+        return jsonify({"status": "forbidden"}), 403
+
     data = request.get_json(silent=True) or {}
     from app import perf
     try:

@@ -321,10 +321,15 @@ class TestSuccessfulLaunch:
         assert "updated_at" in body
 
     def test_mark_running_called_with_correct_tenant(self):
+        """ADR-025 8.2E.9-C: mark_running now also accepts audience_segment /
+        acknowledged, read from the request body (both default to falsy when
+        absent)."""
         campaign = _make_campaign()
         svc = _make_svc(campaign=campaign)
         _call(svc, campaign_id=3, tenant="T_RUN")
-        svc.mark_running.assert_called_once_with("T_RUN", 3)
+        args, kwargs = svc.mark_running.call_args
+        assert args == ("T_RUN", 3)
+        assert set(kwargs) == {"audience_segment", "acknowledged"}
 
     def test_mark_running_called_once(self):
         campaign = _make_campaign()

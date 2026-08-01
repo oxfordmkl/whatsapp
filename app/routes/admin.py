@@ -78,49 +78,97 @@ def tenant_query(model, tenant_id=None):
     Phase 13-B3D: Returns a safely tenant-scoped query object.
     - If tenant_id is explicitly provided, filters by that tenant.
     - If SUPER_ADMIN, checks for session['impersonate_tenant_id'] and filters if present.
-      If not impersonating, returns unfiltered query.
+      If not impersonating, returns unfiltered query (deliberate — see below).
     - Otherwise, falls back to current_user.tenant_id.
+
+    Phase 14B.3 (C2) — FAILS CLOSED.
+    ---------------------------------
+    This previously ended in `return model.query`, unfiltered, whenever a
+    tenant could not be resolved. The primitive the entire codebase trusts for
+    isolation therefore DEFAULTED TO EXPOSING EVERY TENANT'S ROWS, and did so
+    silently: a caller that forgot to pass a tenant, or ran outside a request,
+    got a working query returning other customers' data rather than an error.
+
+    It now returns an empty query instead. A missing tenant context yields no
+    rows, so the failure mode is a visibly empty screen — annoying, reported in
+    minutes, and harmless — rather than a cross-customer data leak nobody sees.
+    The query object is still a real Query, so every existing call site can
+    keep chaining .filter()/.order_by()/.count()/.first() unchanged.
+
+    The SUPER_ADMIN branch is deliberately NOT changed. A non-impersonating
+    SUPER_ADMIN is the platform operator and its unfiltered view is a feature,
+    not the C2 defect: it is reached only for an authenticated user holding
+    that role, never by an unresolved context. Middleware already confines such
+    a session to /crm/super/ routes.
     """
+    from sqlalchemy import false
+
     try:
         from flask_login import current_user as _cu
         from flask import session
-        
+
         if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
             impersonate_id = session.get('impersonate_tenant_id')
             if impersonate_id:
                 return model.query.filter_by(tenant_id=impersonate_id)
             return model.query
-            
+
         tid = tenant_id or getattr(_cu, 'tenant_id', None)
     except Exception:
         tid = tenant_id
-        
+
     if tid:
         return model.query.filter_by(tenant_id=tid)
-    return model.query
+
+    # Unresolvable tenant — return NOTHING, and say so. This is unreachable
+    # from any authenticated route (every caller either passes a tenant or has
+    # current_user.tenant_id set), so a log line here means a genuine bug.
+    logging.warning(
+        "tenant_query(%s) could not resolve a tenant — returning an empty "
+        "query (Phase 14B.3 fail-closed). This indicates a missing tenant "
+        "scope at the call site.", getattr(model, "__name__", model))
+    return model.query.filter(false())
 
 
 def tenant_filter(query_obj, model, tenant_id=None):
     """
     Phase 13-B3D: Appends tenant scoping to a db.session.query(...) chain.
+
+    Phase 14B.4 (C2 twin) — FAILS CLOSED, exactly as tenant_query() does.
+    This carried the identical defect: it ended in `return query_obj`,
+    unscoped, whenever a tenant could not be resolved. Leaving one of the two
+    helpers fail-open while the other failed closed would be worse than either
+    state on its own, because two similarly-named primitives would behave
+    oppositely under the same failure and no call site could tell which it had.
+
+    The SUPER_ADMIN branch is deliberately unchanged, for the reason given in
+    tenant_query(): a non-impersonating platform operator's unfiltered view is
+    a feature, and is reached only for an authenticated holder of that role.
     """
+    from sqlalchemy import false
+
     try:
         from flask_login import current_user as _cu
         from flask import session
-        
+
         if getattr(_cu, 'role', None) == 'SUPER_ADMIN':
             impersonate_id = session.get('impersonate_tenant_id')
             if impersonate_id:
                 return query_obj.filter(model.tenant_id == impersonate_id)
             return query_obj
-            
+
         tid = tenant_id or getattr(_cu, 'tenant_id', None)
     except Exception:
         tid = tenant_id
-        
+
     if tid:
         return query_obj.filter(model.tenant_id == tid)
-    return query_obj
+
+    logging.warning(
+        "tenant_filter(%s) could not resolve a tenant — returning an empty "
+        "query (Phase 14B.4 fail-closed). This indicates a missing tenant "
+        "scope at the call site.", getattr(model, "__name__", model))
+    return query_obj.filter(false())
 
 
 EVENT_SCORE_MAP = {
@@ -506,11 +554,19 @@ def stats():
     if request.headers.get("X-Admin-Key") != ADMIN_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
+    # Phase 14C: "active_conversations" removed. get_all_states() returned
+    # EVERY lead in EVERY tenant with name, stage, course and last message
+    # text — a full cross-customer PII dump behind a single static header key.
+    # Aggregate counts are what a monitoring probe needs and carry no personal
+    # data, so the endpoint keeps its operational value without the exposure.
+    # A caller needing per-lead data must use the authenticated CRM, which is
+    # tenant-scoped.
     return jsonify({
         "total_leads":          count_states(),
         "pending_followups":    count_pending_followups(),
         "stage_breakdown":      get_stage_breakdown(),
-        "active_conversations": get_all_states(),
+        "active_conversations": None,
+        "note": "active_conversations removed in Phase 14C (PII); use the CRM",
     })
 
 
@@ -888,7 +944,11 @@ def crm_leads():
     from sqlalchemy.sql import func
     
     total_leads = tenant_query(ConversationState, _tid).count()
-    pending_fu = count_pending_followups()
+    # Phase 14B.4: scoped. count_pending_followups() counts FollowUpJob across
+    # EVERY tenant — correct for /health, which is a platform-level probe, but
+    # wrong here: this figure is rendered on a tenant's own leads page, so it
+    # disclosed a count derived from other institutes' follow-up queues.
+    pending_fu = tenant_query(FollowUpJob, _tid).filter_by(done=False).count()
     
     # 1. Fetch all states and events for intelligence caching
     all_states = tenant_filter(db.session.query(
@@ -4660,8 +4720,16 @@ def crm_unassigned_assign():
     from app.extensions import db
     from app.services.log_service import log_lead_event
     import json
-    
-    lead = ConversationState.query.filter_by(phone=phone).first()
+
+    # Phase 14B.2 (C1): scoped to the acting tenant. phone is NOT unique across
+    # tenants — the same person may be a lead at two institutes — so an
+    # unscoped filter_by(phone=...).first() returned whichever row the database
+    # yielded first and could reassign ANOTHER tenant's lead.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return redirect(url_for("admin.crm_unassigned_leads", key=key))
+
+    lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead and lead.assigned_staff != target_staff:
         old_staff = lead.assigned_staff
         lead.assigned_staff = target_staff
@@ -4687,11 +4755,19 @@ def crm_auto_assign_preview():
         
     from app.models import ConversationState
     from sqlalchemy import or_
-    
-    unassigned = ConversationState.query.filter(
+
+    # Phase 14B.2 (C1): scoped to the acting tenant. Unscoped, this returned
+    # EVERY tenant's unassigned leads and disclosed their names, phone numbers
+    # and scores to any tenant admin — a direct cross-customer data leak, not
+    # merely a wrong assignment target.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    unassigned = tenant_query(ConversationState, _tid).filter(
         or_(ConversationState.assigned_staff.is_(None), ConversationState.assigned_staff == '')
     ).order_by(ConversationState.lead_score.desc()).all()
-    
+
     if not unassigned:
         return jsonify({"error": "No unassigned leads found"}), 400
         
@@ -4735,14 +4811,21 @@ def crm_auto_assign_confirm():
     from app.extensions import db
     from app.services.log_service import log_lead_event
     import json
-    
+
+    # Phase 14B.2 (C1): scoped to the acting tenant. The phones arrive in the
+    # request body and are never trusted — an unscoped per-phone lookup let a
+    # crafted (or merely mistaken) payload reassign another tenant's leads.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return jsonify({"error": "Unauthorized"}), 401
+
     updated_count = 0
     for assign in assignments:
         phone = assign.get("phone")
         target_staff = assign.get("target_staff")
-        
+
         if phone and target_staff:
-            lead = ConversationState.query.filter_by(phone=phone).first()
+            lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
             if lead and lead.assigned_staff != target_staff:
                 old_staff = lead.assigned_staff
                 lead.assigned_staff = target_staff
@@ -4795,8 +4878,17 @@ def crm_reassignment_preview():
         return jsonify({"error": "Phones and Target Staff are required"}), 400
         
     from app.models import ConversationState
-    leads = ConversationState.query.filter(ConversationState.phone.in_(phones)).all()
-    
+
+    # Phase 14B.2 (C1): scoped to the acting tenant. The phone list is supplied
+    # by the caller, so an unscoped IN() returned any tenant's matching leads —
+    # this endpoint RENDERS name, staff and stage, so it disclosed them.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    leads = tenant_query(ConversationState, _tid).filter(
+        ConversationState.phone.in_(phones)).all()
+
     preview_data = []
     for lead in leads:
         preview_data.append({
@@ -4827,9 +4919,17 @@ def crm_reassignment_confirm():
     from app.extensions import db
     from app.services.log_service import log_lead_event
     import json
-    
-    leads = ConversationState.query.filter(ConversationState.phone.in_(phones)).all()
-    
+
+    # Phase 14B.2 (C1): scoped to the acting tenant — the write counterpart of
+    # the preview above. Unscoped, a caller could reassign another institute's
+    # leads simply by listing their phone numbers.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    leads = tenant_query(ConversationState, _tid).filter(
+        ConversationState.phone.in_(phones)).all()
+
     updated_count = 0
     for lead in leads:
         old_staff = lead.assigned_staff

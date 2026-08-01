@@ -59,6 +59,7 @@ class _Campaign(_Base):
     message_body = Column(Text)
     template_id = Column(Integer)
     audience_rule_id = Column(Integer)
+    audience_segment = Column(String(100))
     scheduled_at = Column(DateTime)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
@@ -66,6 +67,7 @@ class _Campaign(_Base):
     sent_count = Column(Integer, nullable=False, default=0)
     failed_count = Column(Integer, nullable=False, default=0)
     created_by = Column(String(120))
+    impersonated_by = Column(String(120))
     failure_reason = Column(Text)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow,
@@ -236,6 +238,75 @@ class TestAddRecipients:
         repo.add_recipients(T1, c2.id, ["+919000000001"])
         assert repo.count_recipients(T1, c1.id) == 1
         assert repo.count_recipients(T1, c2.id) == 1
+
+
+# ── cancel_queued_recipients (ADR-025 D9) ─────────────────────────────────────
+class TestCancelQueuedRecipients:
+    def test_queued_recipients_transition_to_cancelled(self, repo):
+        c = repo.create_campaign(T1, "C")
+        repo.add_recipients(T1, c.id, ["+919000000001", "+919000000002"])
+        n = repo.cancel_queued_recipients(T1, c.id)
+        assert n == 2
+        statuses = {r.status for r in repo.list_recipients(T1, c.id)}
+        assert statuses == {"cancelled"}
+
+    def test_sending_recipients_untouched(self, repo):
+        """R7: an in-flight (claimed) recipient is left as-is, not cancelled —
+        its outcome is unknown, not cancelled."""
+        c = repo.create_campaign(T1, "C")
+        repo.add_recipients(T1, c.id, ["+919000000001", "+919000000002"])
+        repo.claim_next_batch(T1, campaign_id=c.id, limit=1)  # claims one -> sending
+
+        n = repo.cancel_queued_recipients(T1, c.id)
+
+        assert n == 1  # only the still-queued one
+        rows = {r.phone: r.status for r in repo.list_recipients(T1, c.id)}
+        assert list(rows.values()).count("sending") == 1
+        assert list(rows.values()).count("cancelled") == 1
+
+    def test_cancelled_recipients_no_longer_claimable(self, repo):
+        """The whole point of D9: claim_next_batch() must not see them."""
+        c = repo.create_campaign(T1, "C")
+        repo.add_recipients(T1, c.id, ["+919000000001"])
+        repo.cancel_queued_recipients(T1, c.id)
+
+        claimed = repo.claim_next_batch(T1, campaign_id=c.id, limit=50)
+        assert claimed == []
+
+    def test_no_queued_recipients_is_noop(self, repo):
+        c = repo.create_campaign(T1, "C")
+        assert repo.cancel_queued_recipients(T1, c.id) == 0
+
+    def test_scoped_to_campaign(self, repo):
+        c1 = repo.create_campaign(T1, "C1")
+        c2 = repo.create_campaign(T1, "C2")
+        repo.add_recipients(T1, c1.id, ["+919000000001"])
+        repo.add_recipients(T1, c2.id, ["+919000000002"])
+
+        repo.cancel_queued_recipients(T1, c1.id)
+
+        assert repo.list_recipients(T1, c1.id)[0].status == "cancelled"
+        assert repo.list_recipients(T1, c2.id)[0].status == "queued"
+
+    def test_scoped_to_tenant(self, repo):
+        c1 = repo.create_campaign(T1, "C1")
+        c2 = repo.create_campaign(T2, "C2")
+        repo.add_recipients(T1, c1.id, ["+919000000001"])
+        repo.add_recipients(T2, c2.id, ["+919000000002"])
+
+        n = repo.cancel_queued_recipients(T1, c1.id)
+
+        assert n == 1
+        assert repo.list_recipients(T2, c2.id)[0].status == "queued"
+
+    def test_does_not_commit(self, repo, session):
+        """Repository purity contract: never commits — the caller does."""
+        c = repo.create_campaign(T1, "C")
+        repo.add_recipients(T1, c.id, ["+919000000001"])
+        session.commit()
+        repo.cancel_queued_recipients(T1, c.id)
+        session.rollback()
+        assert repo.list_recipients(T1, c.id)[0].status == "queued"
 
 
 # ── update_status / counters / mark_failed / archive ─────────────────────────

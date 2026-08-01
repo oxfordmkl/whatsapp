@@ -71,8 +71,18 @@ def register():
                 is_active=True
             )
             db.session.add(new_user)
+
+            # ── Phase 14D: provision the tenant IN THE SAME TRANSACTION ────
+            # Registration previously committed here, leaving a tenant with no
+            # sales pipeline and no settings row — signed up but unable to use
+            # the product. provision_tenant() never commits, so it joins this
+            # transaction: if it raises, the rollback below removes the Tenant
+            # and User too. A half-provisioned tenant cannot exist.
+            from app.services.tenant_provisioning_service import provision_tenant
+            provision_tenant(new_tenant.id)
+
             db.session.commit()
-            
+
             # Phase 15C.5-B: Dispatch verification email gracefully
             from app.services.email_service import email_service
             try:
@@ -89,6 +99,17 @@ def register():
             
         except IntegrityError:
             db.session.rollback()
+            flash("An unexpected error occurred during registration. Please try again.", "danger")
+            return redirect(url_for("public.register"))
+        except Exception:
+            # Phase 14D: provisioning joined this transaction, so a failure
+            # there must roll the WHOLE registration back. Previously only
+            # IntegrityError was caught; anything else escaped as a 500 with
+            # the session left dirty, which would have committed a partially
+            # provisioned tenant on the next write in the same request.
+            db.session.rollback()
+            import logging
+            logging.exception("Registration failed during tenant provisioning")
             flash("An unexpected error occurred during registration. Please try again.", "danger")
             return redirect(url_for("public.register"))
 

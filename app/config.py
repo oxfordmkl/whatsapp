@@ -2,6 +2,18 @@ import os
 
 VERIFY_TOKEN         = os.environ.get("VERIFY_TOKEN", "oxford2026")
 ACCESS_TOKEN         = os.environ.get("ACCESS_TOKEN", "")
+# Phase 14C: Meta App Secret, used to verify the X-Hub-Signature-256 HMAC on
+# inbound webhook POSTs. VERIFY_TOKEN guards only the GET subscription
+# handshake — it does NOT authenticate delivered messages, so without this the
+# webhook accepts any payload from anyone who knows the URL.
+#
+# Empty = verification DISABLED and the endpoint behaves exactly as before.
+# That default is deliberate: it lets this ship with zero production risk and
+# be activated by setting the variable. Set it in Railway to close the hole.
+META_APP_SECRET      = os.environ.get("META_APP_SECRET", "")
+# Phase 14C: billing provider webhook secrets. Empty = verification disabled.
+RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_SECRET   = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 PHONE_NUMBER_ID      = os.environ.get("PHONE_NUMBER_ID", "")
 # WhatsApp Business Account id — required to list approved message templates
 # (the message_templates edge lives on the WABA node, not the phone number).

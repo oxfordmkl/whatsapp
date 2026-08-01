@@ -58,5 +58,56 @@ jobs:
       - name: Regression — legacy completion authorization (16.5A7-D)
         run: python tests/test_legacy_completion_auth_16_5a7d.py
 
+      # Phase RC1.1 (B1): invoked via pytest, NOT `python tests/...`.
+      #
+      # Phase 14B.1 rewrote this file from a standalone script into a pytest
+      # suite. The old script ended in sys.exit(0 if passed else 1), which is
+      # where this step got its signal; the rewrite removed it, so
+      # `python tests/test_tenant_isolation.py` exited 0 having run ZERO
+      # assertions. The blocking security gate passed unconditionally.
+      #
+      # Verified before/after: as a script it exits 0 with no output; under
+      # pytest it runs 53 tests and returns a real status.
       - name: Tenant isolation suite (BLOCKING — Constitution I.1)
-        run: python tests/test_tenant_isolation.py
+        run: python -m pytest tests/test_tenant_isolation.py -q
+
+      # Phase RC1.1 (B3): these suites existed only on a developer machine and
+      # were invisible to CI until now.
+      - name: Platform security suite (BLOCKING — Phase 14C)
+        run: python -m pytest tests/test_platform_security_14c.py -q
+
+      - name: Tenant provisioning suite (BLOCKING — Phase 14D)
+        run: python -m pytest tests/test_tenant_provisioning_14d.py -q
+
+      # Runs FILE-BY-FILE, deliberately. tests/conftest.py installs shared
+      # sys.modules stubs at collection time, so batching directories causes
+      # cross-file contamination — proven in Phase 14B.1, where marketing +
+      # campaign suites batched together produced 24 failures that vanish
+      # entirely when the same files run individually.
+      #
+      # EXCLUDE is a DENY-list, not an allow-list, so a newly added test file
+      # is picked up automatically instead of being silently skipped.
+      - name: Regression suite (pytest, file-by-file)
+        run: |
+          EXCLUDE="
+            test_tenant_isolation.py
+            test_platform_security_14c.py
+            test_tenant_provisioning_14d.py
+            test_adapter_sync_16_5a6j.py
+            test_task_engine_16_5a7b.py
+            test_task_notification_16_5a7.py
+            test_legacy_completion_auth_16_5a7d.py
+            test_entry_points_and_transport.py
+            test_marketing_routes_create.py
+            test_router_navigation.py
+            test_routing_phase1.py
+            test_screens_builder.py
+          "
+          fail=0
+          for f in tests/test_*.py; do
+            base=$(basename "$f")
+            case " $(echo $EXCLUDE) " in *" $base "*) echo "skip  $base"; continue;; esac
+            echo "---- $base"
+            python -m pytest "$f" -q || fail=1
+          done
+          exit $fail

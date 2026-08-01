@@ -16,6 +16,31 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
+def _check_default_secrets(app):
+    """Phase 14C: log a loud warning for every secret left on the fallback
+    value committed to app/config.py.
+
+    Those fallbacks are public — anyone who can read the repository knows them.
+    A single line naming the variable is enough to act on, and the value itself
+    is never logged.
+    """
+    from app.config import (VERIFY_TOKEN as _vt, ADMIN_KEY as _ak,
+                            BROADCAST_API_KEY as _bk, SECRET_KEY as _sk)
+    committed = {
+        "SECRET_KEY":        (_sk, "oxford-crm-local-dev-key"),
+        "ADMIN_KEY":         (_ak, "oxford_admin_2026"),
+        "BROADCAST_API_KEY": (_bk, "oxford_broadcast_2026"),
+        "VERIFY_TOKEN":      (_vt, "oxford2026"),
+    }
+    log = logging.getLogger(__name__)
+    for name, (actual, default) in committed.items():
+        if actual == default:
+            log.warning(
+                "⚠️ SECURITY: %s is using the DEFAULT value committed to "
+                "app/config.py. It is public. Set a unique value in the "
+                "environment.", name)
+
+
 if SENTRY_DSN:
     import sentry_sdk
     sentry_sdk.init(
@@ -41,6 +66,17 @@ def create_app():
     app.config["SECRET_KEY"] = SECRET_KEY
     app.config["AUTH_MODE"] = AUTH_MODE
     logging.getLogger(__name__).info("AUTH_MODE resolved: %s", AUTH_MODE)
+
+    # ── Phase 14C: warn when a secret is still its committed default ──────
+    # app/config.py supplies fallback values so local dev works without a .env.
+    # Those fallbacks are IN THE REPOSITORY and therefore public. If one reaches
+    # production the "secret" is known to anyone who can read the source —
+    # catastrophic for SECRET_KEY, which signs session cookies.
+    #
+    # Deliberately a warning, not a hard failure: refusing to boot could take
+    # production down on deploy, which is a worse outcome than a loud log line
+    # for a risk that is not new. Alert on this message.
+    _check_default_secrets(app)
 
     # ── Phase 8.2E.5: Cookie security hardening (ADR-023 D2 minimum bar) ──
     # HTTPONLY prevents JS from reading the session cookie.
@@ -113,6 +149,47 @@ def create_app():
         return models.User.query.get(int(user_id))
 
     # ── Register CLI Commands ─────────────────────────────────────────────
+    import click as _click
+
+    @app.cli.command("provision-tenants")
+    @_click.option("--live", is_flag=True, default=False,
+                   help="Apply changes. Without this the command only reports.")
+    def provision_tenants(live):
+        """Phase 14D: provision existing tenants (pipeline, stages, settings).
+
+        DRY RUN BY DEFAULT — pass --live to write. Idempotent: a tenant that is
+        already provisioned is reported as reused and left untouched. Existing
+        tenant data is never modified; only missing resources are added.
+        """
+        import click
+        from app.services.tenant_provisioning_service import backfill_all_tenants
+
+        mode = "LIVE" if live else "DRY RUN"
+        click.echo(f"Tenant provisioning backfill — {mode}")
+
+        reports = backfill_all_tenants(dry_run=not live)
+
+        changed = 0
+        for r in reports:
+            d = r.as_dict()
+            if r.errors:
+                click.echo(f"  ERROR  {r.tenant_id}: {r.errors}")
+                continue
+            if r.changed:
+                changed += 1
+                click.echo(
+                    f"  {'PROVISIONED' if live else 'WOULD PROVISION'} "
+                    f"{r.tenant_id}: pipeline+{d['pipeline_created']} "
+                    f"stages+{d['stages_created']} settings+{d['settings_created']}")
+            else:
+                click.echo(f"  ok       {r.tenant_id} (already provisioned)")
+
+        click.echo(f"\n{len(reports)} tenants inspected, {changed} "
+                   f"{'provisioned' if live else 'need provisioning'}, "
+                   f"{sum(1 for r in reports if r.errors)} errors")
+        if not live and changed:
+            click.echo("Re-run with --live to apply.")
+
     @app.cli.command("seed-superadmin")
     def seed_superadmin():
         """Seed the initial Super Admin account securely."""
