@@ -190,6 +190,68 @@ def create_app():
         if not live and changed:
             click.echo("Re-run with --live to apply.")
 
+    @app.cli.command("backfill-staff-identity")
+    @_click.option("--live", is_flag=True, default=False,
+                   help="Apply changes. Without this the command only reports.")
+    def backfill_staff_identity(live):
+        """Phase RC2.3C: populate assigned_user_id from assigned_staff.
+
+        DRY RUN BY DEFAULT — pass --live to write. Writes ONLY
+        ConversationState.assigned_user_id and Task.assigned_user_id; the
+        legacy assigned_staff strings are never modified, so rollback is
+        clearing the FK and nothing else.
+
+        Idempotent: an already-populated row is reported and skipped, so a
+        second --live run performs zero writes. Unresolvable values are
+        reported and skipped, never guessed, and never fail their tenant.
+        """
+        import click
+        from app.services.staff_backfill_service import backfill_all_tenants
+
+        mode = "LIVE" if live else "DRY RUN"
+        click.echo(f"Staff identity backfill — {mode}")
+        click.echo("  writes: conversation_state.assigned_user_id, "
+                   "tasks.assigned_user_id  (assigned_staff untouched)\n")
+
+        reports = backfill_all_tenants(dry_run=not live)
+
+        t_res = t_skip = t_already = 0
+        for r in reports:
+            if r.errors:
+                click.echo(f"Tenant {r.tenant_id}")
+                click.echo(f"  ERROR: {r.errors}")
+                continue
+            if not (r.resolved or r.skipped or r.already):
+                continue                      # nothing to say about this tenant
+
+            click.echo(f"Tenant {r.tenant_id}")
+            for table in r.TABLES:
+                c = r.counts[table]
+                if not (c["resolved"] or c["skipped"] or c["already"]):
+                    continue
+                label = ("Resolved" if live else "Would resolve")
+                click.echo(f"  {table}")
+                click.echo(f"    {label:18} {c['resolved']}")
+                click.echo(f"    {'Skipped':18} {c['skipped']}")
+                click.echo(f"    {'Already populated':18} {c['already']}")
+            for table, row_id, value, reason in r.skipped_rows:
+                click.echo(f"    SKIP {table} id={row_id} "
+                           f"value={value!r} — {reason}")
+            click.echo("")
+            t_res += r.resolved
+            t_skip += r.skipped
+            t_already += r.already
+
+        click.echo("TOTAL")
+        click.echo(f"  {'resolved' if live else 'would resolve':18} {t_res}")
+        click.echo(f"  {'skipped':18} {t_skip}")
+        click.echo(f"  {'already populated':18} {t_already}")
+        errs = sum(1 for r in reports if r.errors)
+        click.echo(f"  {'tenants inspected':18} {len(reports)}")
+        click.echo(f"  {'tenant errors':18} {errs}")
+        if not live and t_res:
+            click.echo("\nRe-run with --live to apply.")
+
     @app.cli.command("seed-superadmin")
     def seed_superadmin():
         """Seed the initial Super Admin account securely."""

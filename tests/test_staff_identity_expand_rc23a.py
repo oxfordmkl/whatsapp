@@ -93,21 +93,38 @@ class TestNothingIsWired:
         assert hasattr(admin, "save_staff_registry")
 
     def test_no_module_imports_staff_service_yet(self):
-        """The abstraction exists; nothing consumes it."""
+        """The abstraction exists; nothing consumes it.
+
+        AST-based since Phase RC2.3C: the original scanned raw text, so
+        staff_backfill_service.py tripped it merely by explaining in its
+        docstring why it does NOT reuse staff_service.resolve(). Only a real
+        import counts — the same false-positive class this project has hit
+        repeatedly.
+        """
         offenders = []
         for dirpath, _d, files in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dirpath:
                 continue
             for name in files:
-                if not name.endswith(".py"):
+                if not name.endswith(".py") or name == "staff_service.py":
                     continue
                 full = os.path.join(dirpath, name)
-                if os.path.basename(full) == "staff_service.py":
-                    continue
                 with open(full, encoding="utf-8") as fh:
-                    if "staff_service" in fh.read():
-                        offenders.append(os.path.relpath(full, ROOT))
-        assert offenders == [], f"staff_service wired early: {offenders}"
+                    try:
+                        tree = ast.parse(fh.read())
+                    except SyntaxError:
+                        continue
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        if any("staff_service" in a.name for a in node.names):
+                            offenders.append(os.path.relpath(full, ROOT))
+                    elif isinstance(node, ast.ImportFrom):
+                        mod = node.module or ""
+                        if ("staff_service" in mod
+                                or any(a.name == "staff_service" for a in node.names)):
+                            offenders.append(os.path.relpath(full, ROOT))
+        assert sorted(set(offenders)) == [], \
+            f"staff_service imported early: {set(offenders)}"
 
     def test_admin_still_reads_the_global_registry(self):
         """AST, not string matching — docstrings mention the registry."""
@@ -139,13 +156,22 @@ class TestNothingIsWired:
         """AST, not string matching. flags.py mentions the column in a comment
         explaining what the flag gates — a textual scan flags that as a write,
         which is exactly the false positive that has bitten this project
-        before. Only a real assignment or kwarg counts."""
+        before. Only a real assignment or kwarg counts.
+
+        Updated in Phase RC2.3C, which is the approved boundary crossing: the
+        backfill utility populates assigned_user_id by design. It is the ONLY
+        writer, and that exclusivity is what this test now guards — a second
+        writer appearing means a reader/writer migration has begun without
+        approval. Runtime behaviour is still unchanged: the backfill is a CLI
+        utility, not a request path.
+        """
+        WRITERS = {"models.py", "staff_backfill_service.py"}
         offenders = []
         for dirpath, _d, files in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dirpath:
                 continue
             for name in files:
-                if not name.endswith(".py") or name == "models.py":
+                if not name.endswith(".py") or name in WRITERS:
                     continue
                 full = os.path.join(dirpath, name)
                 with open(full, encoding="utf-8") as fh:
