@@ -355,9 +355,37 @@ class TestScopeContainment:
             sts.TransitionVerdict(allowed=True, code="x", rule_id="y", reason="z"),
             "context")
 
-    def test_no_model_or_schema_change(self):
-        import subprocess
-        out = subprocess.run(
-            ["git", "status", "--short", "app/models.py", "migrations/"],
-            cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", f"models/migrations modified: {out}"
+    def test_no_transition_logic_in_the_model_layer(self):
+        """The warn-only contract: transition rules live at operator entry
+        points, never in the model.
+
+        Re-aimed in Phase RC2.3A. This previously shelled out to
+        `git status app/models.py migrations/` and asserted the working tree
+        was clean — which asserted "no schema change has EVER been made since
+        10.9B.2", not "10.9B.2 made none". Any later phase that legitimately
+        adds a column or migration failed it, which RC2.3A did.
+
+        The assertion is not weakened: it now checks the actual architectural
+        invariant (the model layer holds no transition logic) instead of a
+        working-tree state that was only ever a proxy for it, and one that
+        could never stay true.
+        """
+        import ast
+        with open(os.path.join(ROOT, "app", "models.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        offenders = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                offenders += [a.name for a in node.names
+                              if "sales_transition_service" in a.name]
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                if ("sales_transition_service" in mod
+                        or any(a.name in ("sales_transition_service",
+                                          "can_transition")
+                               for a in node.names)):
+                    offenders.append(mod or "can_transition")
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in ("can_transition", "transition_verdict"):
+                    offenders.append(node.func.id)
+        assert offenders == [], f"transition logic in the model layer: {offenders}"

@@ -97,6 +97,28 @@ class User(UserMixin, db.Model):
     # ── Phase 15C.5-B: Email Verification ──────
     email_verified_at = db.Column(db.DateTime, nullable=True, index=True)
 
+    # ── Phase RC2.3A: operator-facing name, separate from the login ────────
+    # username is a CREDENTIAL; display_name is what an operator reads. The
+    # absence of this column is why display names were forced into username —
+    # production already holds 'NIBU S S' and 'Bibin Thomas' as usernames, and
+    # the same value appears in four different tenants (uniqueness is
+    # per-tenant, not global).
+    #
+    # nullable=True and read through display_label() below, which falls back to
+    # username. Nothing writes it in the Expand phase, so every existing row
+    # keeps rendering exactly as it does today.
+    display_name = db.Column(db.String(120), nullable=True)
+
+    def display_label(self) -> str:
+        """What an operator should see. Falls back to username.
+
+        Read-only helper, not wired into any route in the Expand phase. It
+        exists so consumers migrate to ONE resolution rule later instead of
+        re-deriving it per call site — which is how normalize_staff_name()
+        ended up mutating identity with .title().
+        """
+        return (self.display_name or "").strip() or (self.username or "").strip()
+
     __table_args__ = (
         # Phase 13-A2B: Composite uniqueness — username is unique WITHIN a tenant,
         # not globally. Allows multiple tenants to each have a user named "admin", "kiran", etc.
@@ -210,6 +232,22 @@ class ConversationState(db.Model):
     _lead_status   = db.Column('lead_status', db.String(50), nullable=True,
                                default="Lead")
     assigned_staff = db.Column(db.String(100), nullable=True)
+    # ── Phase RC2.3A: canonical assignment identity (DORMANT) ──────────────
+    # assigned_staff holds a DISPLAY NAME, but ownership checks compare it to
+    # current_user.username and analytics compare it to
+    # normalize_staff_name() — three namespaces reconciled only by coincidence.
+    # Production has already drifted: 'kiran'/'anju' case variants plus
+    # 'Anju_display', which matches no user and no registry entry.
+    #
+    # A user_id resolves to exactly one user in exactly one tenant, so
+    # cross-tenant assignment becomes unrepresentable rather than merely
+    # filtered. NOTHING reads or writes this column in the Expand phase.
+    #
+    # NO db default — a column default is applied at flush and never passes
+    # through a setter (the Phase 10.8C defect that left bot-created leads with
+    # sales_stage_id NULL). This value must only ever be set explicitly.
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey('users.id'),
+                                 nullable=True, index=True)
     lead_score     = db.Column(db.Integer,     nullable=True, default=0)
 
     # is_admitted: INDEPENDENT business attribute — NOT derived from the pipeline.
@@ -1410,6 +1448,15 @@ class Task(db.Model):
 
     # ── Assignment / audit ─────────────────────────────────────────────────
     assigned_staff = db.Column(db.String(100), nullable=True, index=True)
+    # Phase RC2.3A: canonical assignment identity (DORMANT — nothing reads or
+    # writes it yet). See ConversationState.assigned_user_id for the rationale.
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey('users.id'),
+                                 nullable=True, index=True)
+    # created_by / completed_by are deliberately NOT migrated. They are AUDIT
+    # fields: production holds 'Admin' in created_by, and the sibling audit
+    # columns hold 'broadcast-api' (x1797) and 'whatsapp-inbound'. An audit
+    # trail that cannot record a non-user actor is a worse audit trail, so
+    # these stay free text permanently (RC2.2C ratification).
     created_by     = db.Column(db.String(100), nullable=True)
     completed_by   = db.Column(db.String(100), nullable=True)
     completed_at   = db.Column(db.DateTime, nullable=True)
@@ -1423,6 +1470,11 @@ class Task(db.Model):
         db.UniqueConstraint('tenant_id', 'task_uid', name='uq_task_tenant_uid'),
         db.Index('idx_task_tenant_status', 'tenant_id', 'status'),
         db.Index('idx_task_tenant_staff', 'tenant_id', 'assigned_staff'),
+        # Phase RC2.3A: mirrors idx_task_tenant_staff for the FK. Created in
+        # Expand, ahead of any reader, because adding it at the read-flip
+        # instead would mean the flip silently loses index coverage on one of
+        # the two highest-growth tables.
+        db.Index('idx_task_tenant_user', 'tenant_id', 'assigned_user_id'),
     )
 
     def to_dict(self) -> dict:

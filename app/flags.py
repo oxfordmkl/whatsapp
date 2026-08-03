@@ -37,6 +37,19 @@ WA_LIST_MESSAGES = "WA_LIST_MESSAGES"
 # which continue to serve production untouched while this is OFF.
 CAMPAIGN_ENGINE_V2 = "CAMPAIGN_ENGINE_V2"
 
+# Phase RC2.3A — staff identity migration (staff_master.json -> User.id).
+# Both default OFF and NOTHING reads them in the Expand phase; they are
+# declared here so the later phases are a toggle rather than a redeploy.
+#
+# STAFF_IDENTITY_DUAL_WRITE — write assigned_user_id alongside assigned_staff.
+#   The string stays authoritative, so this is safe to enable and disable
+#   freely; it only populates the FK.
+# STAFF_IDENTITY_READ_FK    — make assigned_user_id authoritative for reads and
+#   ownership. This is the only step that changes behaviour, which is why it is
+#   separate: DUAL_WRITE can bake in for weeks before READ_FK is attempted.
+STAFF_IDENTITY_DUAL_WRITE = "STAFF_IDENTITY_DUAL_WRITE"
+STAFF_IDENTITY_READ_FK = "STAFF_IDENTITY_READ_FK"
+
 
 def _enabled(name: str) -> bool:
     """Return True iff env var `name` is set to a truthy value (read live)."""
@@ -75,3 +88,24 @@ def campaign_engine_v2_enabled() -> bool:
     unchanged. No production code reads this flag yet.
     """
     return _enabled(CAMPAIGN_ENGINE_V2)
+
+
+def staff_identity_dual_write_enabled() -> bool:
+    """Phase RC2.3B gate — populate assigned_user_id on write. Default OFF.
+
+    Additive only: assigned_staff remains authoritative, so enabling this
+    cannot change what any reader sees. No production code reads this flag in
+    the Expand phase.
+    """
+    return _enabled(STAFF_IDENTITY_DUAL_WRITE)
+
+
+def staff_identity_read_fk_enabled() -> bool:
+    """Phase RC2.3C gate — assigned_user_id becomes authoritative. Default OFF.
+
+    The ONLY step in the migration that changes behaviour. Kept separate from
+    dual-write so the FK can be populated and verified in production for as
+    long as needed before anything depends on it. No production code reads this
+    flag in the Expand phase.
+    """
+    return _enabled(STAFF_IDENTITY_READ_FK)

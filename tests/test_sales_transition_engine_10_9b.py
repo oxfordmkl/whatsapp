@@ -557,12 +557,21 @@ class TestScopeContainment:
 
         Route integration is verified in test_transition_warn_only_10_9b2.py;
         here we only guard that no OTHER module picked it up.
+
+        Updated in Phase RC2.3A: now AST-based. The original scanned raw text,
+        so any module merely NAMING the engine in a docstring was reported as a
+        consumer — staff_service.py tripped it by citing it as the precedent
+        for framework independence. That is the same false-positive class this
+        suite already guards against elsewhere ("AST, not string matching — the
+        docstrings mention Flask on purpose"). Only a real import counts.
         """
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         allowed = {os.path.join("app", "routes", "admin.py"),
                    os.path.join("app", "services", "sales_transition_service.py")}
         offenders = []
         for dirpath, _dirs, files in os.walk(os.path.join(root, "app")):
+            if "__pycache__" in dirpath:
+                continue
             for name in files:
                 if not name.endswith(".py"):
                     continue
@@ -571,9 +580,23 @@ class TestScopeContainment:
                 if rel in allowed:
                     continue
                 with open(full, encoding="utf-8") as fh:
-                    if "sales_transition_service" in fh.read():
-                        offenders.append(rel)
-        assert offenders == [], f"engine used outside approved sites: {offenders}"
+                    try:
+                        tree = ast.parse(fh.read())
+                    except SyntaxError:
+                        continue
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        if any("sales_transition_service" in a.name
+                               for a in node.names):
+                            offenders.append(rel)
+                    elif isinstance(node, ast.ImportFrom):
+                        mod = node.module or ""
+                        if ("sales_transition_service" in mod
+                                or any(a.name == "sales_transition_service"
+                                       for a in node.names)):
+                            offenders.append(rel)
+        assert sorted(set(offenders)) == [], (
+            f"engine imported outside approved sites: {set(offenders)}")
 
     def test_no_enforcement_in_the_model_setter(self):
         """The lead_status setter is the single choke point every write passes
