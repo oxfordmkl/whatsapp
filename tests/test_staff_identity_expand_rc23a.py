@@ -137,7 +137,15 @@ class TestNothingIsWired:
         assert len(calls) >= 15, f"consumers changed: {len(calls)}"
 
     def test_no_code_reads_the_new_flags(self):
-        offenders = []
+        """Updated in Phase RC2.3D, the approved boundary crossing.
+
+        DUAL_WRITE is now read by staff_backfill_service, which owns the
+        mirror write — that is the point of RC2.3D. READ_FK must still be read
+        by NOTHING; it gates RC2.3E, which has not begun. Narrowing the
+        assertion this way keeps the guard meaningful instead of deleting it.
+        """
+        DUAL_WRITE_READERS = {"staff_backfill_service.py"}
+        offenders_dual, offenders_read = [], []
         for dirpath, _d, files in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dirpath:
                 continue
@@ -147,10 +155,14 @@ class TestNothingIsWired:
                 full = os.path.join(dirpath, name)
                 with open(full, encoding="utf-8") as fh:
                     body = fh.read()
+                rel = os.path.relpath(full, ROOT)
                 if ("staff_identity_dual_write_enabled" in body
-                        or "staff_identity_read_fk_enabled" in body):
-                    offenders.append(os.path.relpath(full, ROOT))
-        assert offenders == [], f"flags read early: {offenders}"
+                        and name not in DUAL_WRITE_READERS):
+                    offenders_dual.append(rel)
+                if "staff_identity_read_fk_enabled" in body:
+                    offenders_read.append(rel)
+        assert offenders_dual == [], f"DUAL_WRITE read outside the owner: {offenders_dual}"
+        assert offenders_read == [], f"READ_FK read before RC2.3E: {offenders_read}"
 
     def test_no_code_writes_assigned_user_id(self):
         """AST, not string matching. flags.py mentions the column in a comment

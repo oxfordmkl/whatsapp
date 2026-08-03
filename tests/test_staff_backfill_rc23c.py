@@ -547,12 +547,15 @@ class TestScopeContainment:
                         assigned.add(t.attr)
         assert assigned <= {"assigned_user_id"}, f"writes other attrs: {assigned}"
 
-    def test_no_flag_is_read(self):
+    def test_only_the_dual_write_flag_is_read(self):
+        """Updated in Phase RC2.3D: this module now owns the flag-gated mirror
+        write, so it reads DUAL_WRITE by design. READ_FK gates RC2.3E and must
+        still be read by nothing."""
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         path = os.path.join(root, "app", "services", "staff_backfill_service.py")
         body = open(path, encoding="utf-8").read()
-        assert "staff_identity_dual_write_enabled" not in body
-        assert "staff_identity_read_fk_enabled" not in body
+        assert "staff_identity_dual_write_enabled" in body,             "the dual-write gate disappeared"
+        assert "staff_identity_read_fk_enabled" not in body,             "READ_FK read before RC2.3E"
 
     def test_registry_still_authoritative(self):
         from app.routes import admin

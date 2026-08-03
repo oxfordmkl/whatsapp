@@ -111,6 +111,11 @@ def create_task(tenant_id, title, created_by, lead_phone=None, notes=None,
         assigned_staff=staff,
         created_by=created_by,
     )
+    # Phase RC2.3D: mirror the assignment into assigned_user_id. No-op while
+    # STAFF_IDENTITY_DUAL_WRITE is OFF. Set before the commit so both columns
+    # land in one INSERT.
+    from app.services.staff_backfill_service import sync_assigned_user
+    sync_assigned_user(task, tenant_id)
     db.session.add(task)
     db.session.commit()
 
@@ -169,6 +174,9 @@ def update_task(tenant_id, task_id, actor, title=None, notes=None,
             task.priority = p
     if assigned_staff is not None:
         task.assigned_staff = assigned_staff.strip() or None
+        # Phase RC2.3D dual-write — immediately after the legacy write.
+        from app.services.staff_backfill_service import sync_assigned_user
+        sync_assigned_user(task, tenant_id)
 
     db.session.commit()
 

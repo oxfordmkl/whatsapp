@@ -46,6 +46,9 @@ from app.services.whatsapp_service import send_text
 # Phase 10.9B.2: warn-only transition diagnostics. Safe to import at module
 # level — the engine imports no Flask and touches no database until called.
 from app.services import sales_transition_service as _sts_mod
+# Phase RC2.3D: dual-write helper. Reads STAFF_IDENTITY_DUAL_WRITE internally
+# and is a no-op while that flag is OFF, so importing it changes nothing.
+from app.services.staff_backfill_service import sync_assigned_user as _sync_assigned_user
 
 from functools import wraps
 from flask import abort
@@ -1120,6 +1123,10 @@ def crm_lead_new():
         lead_score=0,
         is_admitted=False,
     )
+    # Phase RC2.3D: mirror the assignment into assigned_user_id. No-op while
+    # STAFF_IDENTITY_DUAL_WRITE is OFF. Set on the instance BEFORE the commit
+    # so both columns land in one INSERT.
+    _sync_assigned_user(lead, _tid)
     db.session.add(lead)
     try:
         db.session.commit()
@@ -2163,6 +2170,10 @@ def crm_lead_update(phone):
 
         if not is_staff:
             lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
+            # Phase RC2.3D: mirror into assigned_user_id (no-op while the flag
+            # is OFF). Placed immediately after the legacy write so the two
+            # cannot diverge.
+            _sync_assigned_user(lead, _tid)
             score_raw = request.form.get("lead_score", "").strip()
             if score_raw.isdigit():
                 lead.lead_score = max(0, min(100, int(score_raw)))
@@ -4733,7 +4744,8 @@ def crm_unassigned_assign():
     if lead and lead.assigned_staff != target_staff:
         old_staff = lead.assigned_staff
         lead.assigned_staff = target_staff
-        
+        _sync_assigned_user(lead, _tid)          # Phase RC2.3D dual-write
+
         log_lead_event(tenant_id=_actor_tenant_id(),
             phone=lead.phone,
             event_type="LEAD_REASSIGNED",
@@ -4829,7 +4841,8 @@ def crm_auto_assign_confirm():
             if lead and lead.assigned_staff != target_staff:
                 old_staff = lead.assigned_staff
                 lead.assigned_staff = target_staff
-                
+                _sync_assigned_user(lead, _tid)  # Phase RC2.3D dual-write
+
                 log_lead_event(tenant_id=_actor_tenant_id(),
                     phone=lead.phone,
                     event_type="LEAD_REASSIGNED",
@@ -4935,6 +4948,7 @@ def crm_reassignment_confirm():
         old_staff = lead.assigned_staff
         if old_staff != target_staff:
             lead.assigned_staff = target_staff
+            _sync_assigned_user(lead, _tid)      # Phase RC2.3D dual-write
             updated_count += 1
             # Add LEAD_REASSIGNED event
             log_lead_event(tenant_id=_actor_tenant_id(),

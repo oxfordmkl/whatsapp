@@ -227,6 +227,56 @@ def backfill_tenant(tenant_id, dry_run=True):
     return report
 
 
+def sync_assigned_user(row, tenant_id):
+    """Phase RC2.3D — DUAL WRITE. Populate row.assigned_user_id from
+    row.assigned_staff. NO-OP unless STAFF_IDENTITY_DUAL_WRITE is ON.
+
+    Call AFTER assigned_staff has been set and BEFORE the commit. The legacy
+    string remains authoritative and is never modified here; this only mirrors
+    it into the FK so the two stay consistent from now on. Without it the
+    backfilled column would decay with every new assignment — exactly how
+    pipeline_stage_id froze at 29 rows before Phase 10.6.
+
+    Deliberately lives in this module so the one-off backfill and the runtime
+    dual-write share ONE resolution implementation. Two copies of that logic
+    would drift, and the whole point of the strict precedence rules is that
+    they cannot.
+
+    Clearing the assignment (assigned_staff set to None/blank) clears the FK
+    too — otherwise an unassigned lead would keep a stale owner.
+
+    Unknown values leave the FK NULL. Never guesses.
+
+    NEVER RAISES. A lead assignment must not fail because a mirror write did;
+    the legacy string is still the source of truth, so a failure here is a
+    consistency gap to be repaired by re-running the backfill, not an outage.
+    """
+    from app.flags import staff_identity_dual_write_enabled
+
+    if not staff_identity_dual_write_enabled():
+        return None                     # flag OFF -> exact existing behaviour
+
+    try:
+        raw = getattr(row, "assigned_staff", None)
+        if not (raw or "").strip():
+            # Unassigned: clear the mirror rather than leave a stale owner.
+            row.assigned_user_id = None
+            return None
+        user_id, rule = resolve_user_id(tenant_id, raw)
+        if user_id is None:
+            # Unknown value — leave NULL, exactly as the backfill does.
+            row.assigned_user_id = None
+            logger.info("dual-write unresolved: tenant=%s value=%r reason=%s",
+                        tenant_id, raw, rule)
+            return None
+        row.assigned_user_id = user_id
+        return user_id
+    except Exception:                                   # noqa: BLE001
+        logger.exception("dual-write failed for tenant=%s — legacy string "
+                         "remains authoritative", tenant_id)
+        return None
+
+
 def backfill_all_tenants(dry_run=True):
     """Backfill every tenant. Returns [TenantBackfillReport].
 
