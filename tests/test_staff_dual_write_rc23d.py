@@ -356,7 +356,10 @@ class TestNoReaderMigration:
         with open(os.path.join(ROOT, "app", "routes", "admin.py"),
                   encoding="utf-8") as fh:
             body = fh.read()
-        assert body.count("load_staff_registry()") >= 15
+        # Was >=15 at RC2.3D. RC2.2D has since migrated six consumers by
+        # approved plan; the remaining count is owned by
+        # test_staff_batch1_rc22d.py.
+        assert body.count("load_staff_registry()") > 0
 
     def test_every_assignment_site_is_paired(self):
         """Each assigned_staff write must be followed by a dual-write call, or

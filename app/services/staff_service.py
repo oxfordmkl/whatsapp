@@ -41,13 +41,76 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _code_for(user) -> str:
-    """Registry-style key for a user.
+def _code_base(user) -> str:
+    """Uppercased username — the legacy code shape (ANJU / KIRAN / NISHA)."""
+    return (user.username or "").strip().upper() or f"USER{user.id}"
 
-    Derived, never stored. Mirrors how staff_master.json keys look today
-    (ANJU / KIRAN / NISHA) so consumers keying off the code keep working.
+
+def _assign_codes(users):
+    """Collision-free registry codes for a set of users. Returns {user.id: code}.
+
+    Phase RC2.2D Stage 0 — resolves compatibility issue I3.
+
+    THE DEFECT THIS REPLACES
+    ------------------------
+    The previous implementation was a bare `username.upper()` used directly as
+    a dict key. Usernames are unique per tenant CASE-SENSITIVELY
+    (uq_users_tenant_username), so 'anju2' and 'ANJU2' are both legal in one
+    tenant — and both uppercased to 'ANJU2'. The second overwrote the first in
+    the dict, so a real staff member vanished from every CRM screen with no
+    error. Silent loss of a person from a staff directory is exactly the class
+    of failure this migration exists to end.
+
+    THE DESIGN
+    ----------
+    Codes are assigned in ascending user.id order:
+
+      * the FIRST user (lowest id) claiming a base keeps it unsuffixed, so
+        stable codes never churn when a colliding user is added later;
+      * every subsequent collision gets `BASE#<id>`, which is unique because
+        user.id is unique, and deterministic because the ordering is.
+
+    Properties that matter:
+      deterministic  — same inputs always produce the same mapping, so a code
+                       does not flip between requests
+      total          — every user receives a code; none can be dropped
+      injective      — two users can never share a code
+      stable         — adding or removing a user never renames an existing
+                       unsuffixed code
+
+    A blank username degrades to USER<id> rather than an empty key.
+
+    Collisions are logged: they are legal but almost always a data-entry
+    accident, and an operator should be able to see one rather than wonder why
+    a code looks odd.
     """
-    return (user.username or "").strip().upper()
+    codes, taken = {}, set()
+    for user in sorted(users, key=lambda u: u.id):
+        base = _code_base(user)
+        if base not in taken:
+            codes[user.id] = base
+            taken.add(base)
+            continue
+        code = f"{base}#{user.id}"
+        codes[user.id] = code
+        taken.add(code)
+        logger.warning(
+            "staff_service: registry code collision on %r in tenant %s — "
+            "user id=%s assigned %r instead (usernames are unique per tenant "
+            "case-sensitively, so this is legal but usually accidental)",
+            base, user.tenant_id, user.id, code)
+    return codes
+
+
+def _code_for(user, codes=None) -> str:
+    """One user's registry code.
+
+    Prefer _assign_codes() when building a whole registry — a single user
+    cannot see the collisions it participates in.
+    """
+    if codes is not None and user.id in codes:
+        return codes[user.id]
+    return _code_base(user)
 
 
 def _display_for(user) -> str:
@@ -88,35 +151,75 @@ def list_staff(tenant_id, active_only=False, include_admins=False):
     return sorted(q.all(), key=lambda u: _display_for(u).lower())
 
 
-def as_registry(tenant_id, include_admins=True):
+def as_registry(tenant_id, include_admins=False):
     """Tenant's staff in load_staff_registry()'s exact shape.
 
     The drop-in replacement for the global file. Consumers that do
     `registry.items()` / `data.get("active")` / `data.get("display_name")`
     keep working unchanged.
 
-    include_admins defaults True because the file it replaces stores a `role`
-    per entry rather than filtering by it.
+    Phase RC2.2D Stage 0 — resolves compatibility issue I1.
+
+    include_admins now defaults FALSE. It previously defaulted True on the
+    reasoning that staff_master.json stores a role per entry rather than
+    filtering by one. That reasoning was wrong in practice: every entry in the
+    production file is role=STAFF, so defaulting True would have injected the
+    tenant's ADMIN account into the registry the moment a consumer switched
+    over — putting 'admin' into every assignment dropdown and taking the CRM
+    "Staff Active" card from 3 to 4. False reproduces today's file exactly.
+
+    Callers that genuinely want admins must now ask for them.
     """
+    users = list_staff(tenant_id, include_admins=include_admins)
+    codes = _assign_codes(users)
     return {
-        _code_for(u): {
+        _code_for(u, codes): {
             "display_name": _display_for(u),
             "role": u.role,
             "active": bool(u.is_active),
         }
-        for u in list_staff(tenant_id, include_admins=include_admins)
+        for u in users
     }
 
 
-def active_display_names(tenant_id):
+def active_display_names(tenant_id, include_admins=False):
     """Active staff display names, sorted — the assignment dropdown's source.
 
     Mirrors today's
         [d["display_name"] for c, d in registry.items() if d.get("active")]
+
+    Phase RC2.2D Stage 0 — resolves compatibility issue I2. include_admins is
+    now a parameter and defaults FALSE; it was previously hardcoded True, which
+    would have added the tenant's ADMIN account to every assignment dropdown.
     """
     return sorted(_display_for(u)
                   for u in list_staff(tenant_id, active_only=True,
-                                      include_admins=True))
+                                      include_admins=include_admins))
+
+
+def resolve_code(tenant_id, code, include_admins=False):
+    """The User behind a registry code, within ONE tenant. None if unknown.
+
+    Phase RC2.2D Stage 2. The inverse of _assign_codes(), and it lives HERE
+    rather than in the route on purpose: a caller that re-derived the code
+    itself would have to reproduce the `BASE#<id>` collision suffix, and the
+    two implementations would drift the moment either changed. There is one
+    code-assignment rule and this is the only reader of it.
+
+    Tenant-scoped, so a code from another tenant resolves to nothing rather
+    than to that tenant's user — this is the lookup the write path uses to
+    decide WHICH ROW TO MUTATE, so a fail-open here would be a cross-tenant
+    write, not merely a disclosure.
+    """
+    if not tenant_id or not (code or "").strip():
+        return None
+    users = list_staff(tenant_id, include_admins=include_admins)
+    codes = _assign_codes(users)
+    wanted = code.strip()
+    for user in users:
+        if codes.get(user.id) == wanted:
+            return user
+    return None
 
 
 def resolve(tenant_id, name):

@@ -49,6 +49,9 @@ from app.services import sales_transition_service as _sts_mod
 # Phase RC2.3D: dual-write helper. Reads STAFF_IDENTITY_DUAL_WRITE internally
 # and is a no-op while that flag is OFF, so importing it changes nothing.
 from app.services.staff_backfill_service import sync_assigned_user as _sync_assigned_user
+# Phase RC2.2D Stage 1: tenant-scoped staff registry. Read-only, imports no
+# Flask and touches no database until called.
+from app.services import staff_service
 
 from functools import wraps
 from flask import abort
@@ -1078,8 +1081,13 @@ def crm_lead_new():
     from app.extensions import db
 
     _tid = _actor_tenant_id()
-    registry = load_staff_registry()
-    active_staff = sorted(d["display_name"] for d in registry.values() if d.get("active"))
+    # Phase RC2.2D Batch 1: the assignment picker is now the tenant's own
+    # active staff. Previously every tenant was offered Oxford's Anju/Kiran/
+    # Nisha from the global file — and since assigned_staff is stored as a free
+    # string with no server-side validation, picking one wrote a foreign name
+    # onto a real lead. That is why this screen is in the first batch: it is
+    # the only place the defect creates BAD DATA rather than a bad display.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
 
     if request.method == "GET":
         from app.models import LEAD_STATUSES
@@ -1729,89 +1737,159 @@ def crm_staff_management():
     if not check_auth():
         return _deny()
         
-    registry = load_staff_registry()
-    
+    # ── Phase RC2.2D Stage 2: WRITE path migrated to the User table ───────
+    # Stage 1 moved this screen's READ to staff_service; this stage moves its
+    # CRUD. app/data/staff_master.json is no longer read OR written here.
+    #
+    # Why the write had to follow the read: a file write is invisible to the
+    # tenant-scoped read, so add/edit/toggle would have appeared to do nothing.
+    # Worse, staff_master.json lives INSIDE the deployed image — Railway
+    # replaces the filesystem on every deploy, so every edit made through this
+    # screen was silently discarded at the next `git push`. The User table is
+    # the only store on this screen that survives a deployment.
+    #
+    # _tenant is resolved ONCE and every operation is scoped to it, so a code
+    # belonging to another tenant resolves to nothing and cannot be mutated.
+    _tenant = _actor_tenant_id()
+
     if request.method == "POST":
+        # Deferred, matching this module's convention for model/db imports.
+        import secrets
+        from sqlalchemy.exc import IntegrityError
+        from werkzeug.security import generate_password_hash
+        from app.extensions import db
+
         action = request.form.get("action")
-        
+
+        # ADR-021: never write without a resolved tenant. A SUPER_ADMIN who is
+        # not impersonating has no tenant, and guessing one is how 18 lead_event
+        # rows were mis-filed. Refuse rather than fall back.
+        if action in ("add", "edit", "toggle") and not _tenant:
+            return redirect(url_for("admin.crm_staff_management",
+                                    err="No tenant context — cannot modify staff"))
+
         if action == "add":
             code = request.form.get("staff_code", "").strip().upper()
             display_name = request.form.get("display_name", "").strip()
             role = request.form.get("role", "STAFF").strip()
             active = request.form.get("active") == "on"
-            
+
             if not code or not display_name:
                 return redirect(url_for("admin.crm_staff_management", err="Code and Name required"))
-            if code in registry:
+            # Duplicate check now spans the tenant's real staff. Compared on the
+            # DERIVED code, not raw username, so it matches exactly what the
+            # table shows — and it is tenant-scoped, so two institutes may both
+            # employ an 'ANJU' (production already has one username in four).
+            if staff_service.resolve_code(_tenant, code, include_admins=True) is not None:
                 return redirect(url_for("admin.crm_staff_management", err="Staff code already exists"))
-                
-            registry[code] = {
-                "display_name": display_name,
-                "role": role,
-                "active": active
-            }
-            save_staff_registry(registry)
+
+            from app.models import User
+            # The staff_code IS the username: as_registry() derives the code as
+            # username.upper(), so storing the code round-trips unchanged and
+            # existing Oxford rows keep their existing codes.
+            #
+            # This screen creates a DIRECTORY ENTRY, not a login — exactly what
+            # a staff_master.json row was. It collects no email and no password,
+            # so the row gets a discarded random hash and no email: the account
+            # cannot be authenticated into, and has no reset path, until an
+            # admin provisions credentials via /tenant/staff. That is a
+            # deliberate preservation of the old semantics, not an oversight.
+            new_staff = User(
+                username=code,
+                display_name=display_name,
+                email=None,
+                password_hash=generate_password_hash(secrets.token_urlsafe(32)),
+                role=role or "STAFF",
+                tenant_id=_tenant,
+                is_active=active,
+                require_password_change=True,
+            )
+            try:
+                db.session.add(new_staff)
+                db.session.commit()
+            except IntegrityError:
+                db.session.rollback()
+                return redirect(url_for("admin.crm_staff_management", err="Staff code already exists"))
             # Phase 0 Sprint 3: sovereign audit log (Constitution I.7)
             from app.services.audit_service import log_audit, request_ip
             log_audit("ROLE_CHANGE", actor=getattr(current_user, "email", None) or getattr(current_user, "username", None),
                       tenant_id=_actor_tenant_id(), target=f"staff:{code}",
                       detail={"event": "staff_added", "role": role}, ip=request_ip())
             return redirect(url_for("admin.crm_staff_management", msg="Staff added"))
-            
+
         elif action == "edit":
             code = request.form.get("staff_code", "").strip().upper()
-            if code not in registry:
+            staff = staff_service.resolve_code(_tenant, code, include_admins=True)
+            if staff is None:
                 return redirect(url_for("admin.crm_staff_management", err="Staff not found"))
-                
+
             new_active = request.form.get("active") == "on"
-            if not new_active and registry[code].get("active", False):
+            if not new_active and staff.is_active:
                 from app.models import ConversationState
-                staff_name = registry[code].get("display_name", "")
+                staff_name = staff.display_label()
                 norm_name = normalize_staff_name(staff_name)
                 leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
                 if leads_count > 0:
                     err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                     return redirect(url_for("admin.crm_staff_management", err=err_msg))
-                
-            _old_role = registry[code].get("role")
-            registry[code]["display_name"] = request.form.get("display_name", "").strip() or registry[code]["display_name"]
-            registry[code]["role"] = request.form.get("role", "").strip() or registry[code]["role"]
-            registry[code]["active"] = new_active
 
-            save_staff_registry(registry)
+            _old_role = staff.role
+            staff.display_name = request.form.get("display_name", "").strip() or staff.display_label()
+            staff.role = request.form.get("role", "").strip() or staff.role
+            staff.is_active = new_active
+
+            db.session.commit()
             # Phase 0 Sprint 3: audit only actual role mutations
-            if registry[code]["role"] != _old_role:
+            if staff.role != _old_role:
                 from app.services.audit_service import log_audit, request_ip
                 log_audit("ROLE_CHANGE", actor=getattr(current_user, "email", None) or getattr(current_user, "username", None),
                           tenant_id=_actor_tenant_id(), target=f"staff:{code}",
                           detail={"event": "role_edited", "from": _old_role,
-                                  "to": registry[code]["role"]}, ip=request_ip())
+                                  "to": staff.role}, ip=request_ip())
             return redirect(url_for("admin.crm_staff_management", msg="Staff updated"))
-            
+
         elif action == "toggle":
             code = request.form.get("staff_code", "").strip().upper()
-            if code in registry:
-                new_active = not registry[code]["active"]
+            staff = staff_service.resolve_code(_tenant, code, include_admins=True)
+            if staff is not None:
+                new_active = not staff.is_active
                 if not new_active:
                     from app.models import ConversationState
-                    staff_name = registry[code].get("display_name", "")
+                    staff_name = staff.display_label()
                     norm_name = normalize_staff_name(staff_name)
                     leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
                     if leads_count > 0:
                         err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                         return redirect(url_for("admin.crm_staff_management", err=err_msg))
 
-                registry[code]["active"] = new_active
-                save_staff_registry(registry)
+                staff.is_active = new_active
+                db.session.commit()
                 return redirect(url_for("admin.crm_staff_management", msg="Staff status toggled"))
-    
+
+
     # Calculate statistics based on existing analytics logic
     analytics_data = calculate_admission_analytics()
     # analytics_data["staff_rows"] contains {"name": ..., "leads": ..., "admissions": ...}
     stats_map = {row["name"]: {"leads": row["leads"], "admissions": row["admissions"]} for row in analytics_data["staff_rows"]}
-    
+
+    # ── Phase RC2.2D Stage 1: READ path only ──────────────────────────────
+    # This screen now renders the CURRENT TENANT's staff from the User table
+    # instead of app/data/staff_master.json, which is a single GLOBAL file with
+    # no tenant dimension — every tenant read the same rows, so a brand-new
+    # institute saw Oxford's Anju/Kiran/Nisha (RC2.2 / RC2.3X).
+    #
+    # as_registry() returns load_staff_registry()'s exact shape, so the loop
+    # below and the template are unchanged.
+    #
+    # The WRITE path above is deliberately untouched and still reads and saves
+    # `registry` (the JSON file). The two authorities coexist for this stage:
+    # Stage 2 has now migrated the writers above, so this screen no longer
+    # touches the JSON file at all — for THIS screen it is fully retired.
+    # It remains the store for the other 15 consumers until Stage 3.
+    display_registry = staff_service.as_registry(_tenant)
+
     staff_list = []
-    for code, data in registry.items():
+    for code, data in display_registry.items():
         name = data.get("display_name", "")
         # The analytics normalize_staff_name(staff) resolves the name for grouping
         norm_name = normalize_staff_name(name)
@@ -2013,9 +2091,12 @@ def crm_lead_detail(phone):
     portfolio = calculate_lead_portfolio(lead, events, course_journey)
 
     # ── Phase 9.2A-Lite: Staff Registry ──────────────────────────────────────
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+    # Phase RC2.2D Batch 1: tenant-scoped picker. Both selects on this page
+    # (lead owner and task assignee) read this list. A lead whose current owner
+    # is NOT in the list still renders — the template keeps it as
+    # "<name> (Inactive)" and selected — so migrating the list cannot silently
+    # blank an existing owner on save.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
 
     # ── Phase 9.3A: Task Summary ─────────────────────────────────────────────
     # Phase 16.5A7-B (B2): sourced from the Task table (System of Record) with
@@ -4571,15 +4652,43 @@ def calculate_workload_scoring(tenant_id=None):
     from app.models import ConversationState
     from app.extensions import db
     
-    registry = load_staff_registry()
-    active_staff = {normalize_staff_name(data["display_name"]): data["display_name"] 
-                    for code, data in registry.items() if data.get("active")}
-    
+    # Phase RC2.2D Batch 1: candidate set is now the tenant's own active staff.
+    #
+    # THE ALGORITHM IS UNCHANGED. Same weights, same grouping, same join key:
+    # normalize_staff_name() is still applied to the display name, so the
+    # mapping into `scores` is byte-identical to what the JSON produced. Only
+    # WHO is eligible changed. Oxford's scores must therefore come out
+    # numerically identical — that equality is the batch's acceptance test.
+    #
+    # `tid` is resolved once and used for BOTH the staff list and the lead
+    # query, so the two can never come from different tenants. Behaviour is
+    # unchanged for every existing caller: all of them pass nothing, and
+    # _actor_tenant_id() yields exactly what tenant_filter() already fell back
+    # to (current_user.tenant_id, or the impersonated tenant for a SUPER_ADMIN).
+    #
+    # A SUPER_ADMIN who is NOT impersonating resolves to None, so the staff set
+    # is empty and no recommendations are produced — fail closed, per the
+    # approved operator decision, rather than ranking staff across tenants.
+    # Resolved defensively: _actor_tenant_id() touches current_user, which does
+    # not exist outside a request. Every caller today is in-request, but this
+    # helper previously read a FILE and so worked anywhere — turning that into
+    # an AttributeError would be a worse failure than the one being fixed.
+    # Unresolvable tenant yields no candidates, which is the approved
+    # fail-closed outcome.
+    tid = tenant_id
+    if not tid:
+        try:
+            tid = _actor_tenant_id()
+        except Exception:                                   # noqa: BLE001
+            tid = None
+    active_staff = {normalize_staff_name(name): name
+                    for name in staff_service.active_display_names(tid)}
+
     workload_query = tenant_filter(db.session.query(
         ConversationState.assigned_staff,
         ConversationState.lead_status,
         db.func.count(ConversationState.id)
-    ), ConversationState, tenant_id).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
+    ), ConversationState, tid).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
     
     scores = {norm_name: 0 for norm_name in active_staff.keys()}
     
@@ -4700,9 +4809,11 @@ def crm_unassigned_leads():
 
     recommendations = get_staff_recommendations(limit=5)
 
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+    # Phase RC2.2D Batch 1: tenant-scoped picker. get_staff_recommendations()
+    # above is migrated in the same batch on purpose — a page whose dropdown
+    # lists this tenant's staff while the panel beside it recommends Oxford's
+    # would be worse than one that is uniformly stale.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
 
     return render_template(
         "crm_unassigned_leads.html",
@@ -4862,10 +4973,12 @@ def crm_auto_assign_confirm():
 def crm_reassignment_center():
     if not check_auth():
         return _deny()
-        
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+
+    # Phase RC2.2D Batch 1: tenant-scoped picker. Must render the SAME
+    # recommendation set as /crm/leads/unassigned for a given tenant — they
+    # share get_staff_recommendations(), and a disagreement between the two is
+    # the batch's designated rollback trigger.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
     
     recommendations = get_staff_recommendations(limit=5)
     

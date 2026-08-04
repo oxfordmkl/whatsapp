@@ -92,8 +92,13 @@ class TestNothingIsWired:
         assert hasattr(admin, "load_staff_registry")
         assert hasattr(admin, "save_staff_registry")
 
-    def test_no_module_imports_staff_service_yet(self):
-        """The abstraction exists; nothing consumes it.
+    def test_only_the_approved_consumer_imports_staff_service(self):
+        """RC2.3A asserted NOTHING consumed the abstraction.
+
+        RC2.2D Stage 1 migrated exactly one consumer — the read path of
+        crm_staff_management() in admin.py — so the guard becomes an
+        allowlist rather than a prohibition. It still catches the thing that
+        matters: a consumer migrating outside an approved stage.
 
         AST-based since Phase RC2.3C: the original scanned raw text, so
         staff_backfill_service.py tripped it merely by explaining in its
@@ -123,8 +128,9 @@ class TestNothingIsWired:
                         if ("staff_service" in mod
                                 or any(a.name == "staff_service" for a in node.names)):
                             offenders.append(os.path.relpath(full, ROOT))
-        assert sorted(set(offenders)) == [], \
-            f"staff_service imported early: {set(offenders)}"
+        allowed = [os.path.join("app", "routes", "admin.py")]
+        assert sorted(set(offenders)) == allowed, \
+            f"unapproved staff_service consumer: {set(offenders)}"
 
     def test_admin_still_reads_the_global_registry(self):
         """AST, not string matching — docstrings mention the registry."""
@@ -134,7 +140,12 @@ class TestNothingIsWired:
         calls = [n for n in ast.walk(tree)
                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
                  and n.func.id == "load_staff_registry"]
-        assert len(calls) >= 15, f"consumers changed: {len(calls)}"
+        # Was >=15 when RC2.3A asserted nothing had migrated. RC2.2D
+        # Stages 1-2 and Batch 1 have since migrated six consumers by
+        # approved plan; the exact remaining count is owned by
+        # test_staff_batch1_rc22d.py. Here it only needs to remain
+        # load-bearing for the consumers still on the file.
+        assert len(calls) > 0, "all consumers migrated — guard is obsolete"
 
     def test_no_code_reads_the_new_flags(self):
         """Updated in Phase RC2.3D, the approved boundary crossing.
@@ -404,9 +415,21 @@ class TestServiceIsFrameworkFree:
         with open(os.path.join(ROOT, "app", "services", "staff_service.py"),
                   encoding="utf-8") as fh:
             tree = ast.parse(fh.read())
-        calls = {n.func.attr for n in ast.walk(tree)
-                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
-        assert not calls & {"commit", "add", "delete", "flush", "merge"}
+        # Receiver-aware: a bare `.add` also matches set.add(), which
+        # _assign_codes() legitimately uses on a local set (RC2.2D Stage 0).
+        writes = {"commit", "add", "add_all", "delete", "flush", "merge",
+                  "update", "bulk_save_objects"}
+        offenders = set()
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+                continue
+            if n.func.attr not in writes:
+                continue
+            recv = n.func.value
+            name = getattr(recv, "attr", None) or getattr(recv, "id", None)
+            if name in ("session", "db", "query"):
+                offenders.add(ast.unparse(n.func))
+        assert offenders == set(), f"staff_service must be read-only: {offenders}"
 
 
 class TestBehaviourUnchanged:

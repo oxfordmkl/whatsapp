@@ -1014,11 +1014,23 @@
               <!-- Assigned Staff -->
               <div class="mb-3">
                 <label class="form-label-crm" for="task_staff">Assigned Staff</label>
-                <select class="crm-input" name="staff" id="task_staff" required>
+                {# Phase RC2.2D Batch 1: a tenant with no active staff must
+                   still be able to create tasks (approved operator decision).
+                   Before Batch 1 this select was always populated from the
+                   global file, so `required` could always be satisfied; now
+                   the list can legitimately be empty, and `required` with no
+                   options would have made task creation impossible. Falls back
+                   to Unassigned instead of blocking. #}
+                <select class="crm-input" name="staff" id="task_staff"
+                        {% if active_staff %}required{% endif %}>
+                  {% if active_staff %}
                   <option value="">-- Select Staff --</option>
                   {% for s in active_staff %}
                   <option value="{{ s }}" {% if lead.assigned_staff == s %}selected{% endif %}>{{ s }}</option>
                   {% endfor %}
+                  {% else %}
+                  <option value="" selected>-- Unassigned --</option>
+                  {% endif %}
                 </select>
               </div>
 
