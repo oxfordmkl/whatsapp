@@ -4234,8 +4234,29 @@ def calculate_intelligence(tenant_id=None):
     leads = tenant_query(ConversationState, tenant_id).all()
     lead_map = {l.phone: l for l in leads}
 
-    registry = load_staff_registry()
-    active_staff_names = [d["display_name"] for d in registry.values() if d.get("active")]
+    # Phase RC2.2D Batch 2: candidate set is now the tenant's own active staff.
+    #
+    # The five intelligence modules are UNCHANGED — same normalize_staff_name()
+    # applied per name, same aggregation, same downstream sorts. Only WHO is
+    # counted changed.
+    #
+    # Ordering note: the legacy list came out in staff_master.json insertion
+    # order (ANJU, KIRAN, NISHA); this one is alphabetical. Both leaderboard
+    # and workload_snapshot are re-sorted downstream by their own keys, and
+    # Python's sort is stable, so input order can only affect ties — and for
+    # Oxford the two orders are identical anyway.
+    #
+    # Resolved defensively: _actor_tenant_id() reads current_user, which does
+    # not exist outside a request. Every caller today is in-request, but this
+    # helper previously read a FILE and so worked anywhere; turning that into
+    # an AttributeError would be a worse failure than the one being fixed.
+    _tid_staff = tenant_id
+    if not _tid_staff:
+        try:
+            _tid_staff = _actor_tenant_id()
+        except Exception:                                   # noqa: BLE001
+            _tid_staff = None
+    active_staff_names = staff_service.active_display_names(_tid_staff)
 
     staff_admissions = {}
     staff_task_open = {}
@@ -4739,9 +4760,18 @@ def crm_staff_workload():
         db.func.count(ConversationState.id)
     ), ConversationState, _tid).group_by(ConversationState.assigned_staff, ConversationState.lead_status).all()
     
-    registry = load_staff_registry()
+    # Phase RC2.2D Batch 2: tenant-scoped roster.
+    #
+    # as_registry(), NOT active_display_names(): this screen deliberately
+    # iterates EVERY staff member and renders `active` as a column, so an
+    # inactive staff member's historical workload stays visible. Switching to
+    # the active-only helper would silently drop those rows.
+    #
+    # The grouping is untouched: still keyed by normalize_staff_name(), which
+    # is what joins these rows to ConversationState.assigned_staff above.
+    registry = staff_service.as_registry(_tid)
     staff_data = {}
-    
+
     for code, data in registry.items():
         name = data.get("display_name", "")
         norm_name = normalize_staff_name(name)
@@ -5750,9 +5780,9 @@ def crm_staff_dashboard():
         staff_name = normalize_staff_name(actor.get("username", ""))
     else:
         staff_name = normalize_staff_name(request.args.get("staff", ""))
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+    # Phase RC2.2D Batch 2: tenant-scoped staff picker. Same sorted list of
+    # active display names; only the source changed.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
     
     if not staff_name:
         if active_staff:
@@ -5831,9 +5861,9 @@ def crm_my_leads():
         staff_name = normalize_staff_name(actor.get("username", ""))
     else:
         staff_name = normalize_staff_name(request.args.get("staff", ""))
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+    # Phase RC2.2D Batch 2: tenant-scoped staff picker. Same sorted list of
+    # active display names; only the source changed.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
     
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     
@@ -5877,9 +5907,9 @@ def crm_staff_performance_detail():
         staff_name = normalize_staff_name(actor.get("username", ""))
     else:
         staff_name = normalize_staff_name(request.args.get("staff", ""))
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+    # Phase RC2.2D Batch 2: tenant-scoped staff picker. Same sorted list of
+    # active display names; only the source changed.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
     
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     
@@ -5970,7 +6000,14 @@ def crm_staff_allocation():
     
     total_crm_leads = sum(row.total_leads for row in lead_stats)
     
-    registry = load_staff_registry()
+    # Phase RC2.2D Batch 2: tenant-scoped roster.
+    #
+    # as_registry(), NOT active_display_names(): registry_map is a
+    # lowercase->canonical display-name lookup used to fold raw
+    # assigned_staff strings onto a canonical spelling. It must contain
+    # INACTIVE staff too, or leads owned by a deactivated staff member would
+    # stop folding and appear under a separate raw-cased heading.
+    registry = staff_service.as_registry(_actor_tenant_id())
     registry_map = {}
     for code, details in registry.items():
         disp = details.get("display_name", "").strip()
@@ -6116,9 +6153,9 @@ def crm_staff_allocation_detail(staff_name):
             func.lower(func.trim(ConversationState.assigned_staff)) == actual_name.lower()
         ).all()
         
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
+    # Phase RC2.2D Batch 2: tenant-scoped staff picker. Same sorted list of
+    # active display names; only the source changed.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
     
     return render_template(
         "crm_staff_allocation_detail.html",

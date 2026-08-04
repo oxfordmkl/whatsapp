@@ -434,13 +434,17 @@ class TestScopeContainment:
                           if isinstance(c, ast.Call)}
                 assert "load_staff_registry" not in called, fn.name
 
-    def test_exactly_ten_consumers_remain(self):
-        """15 - 5 = 10. Guards against migrating a Batch 2/3 consumer early."""
+    def test_unmigrated_consumers_remain(self):
+        """Was ==10 after Batch 1. Batch 2 migrated seven more by approved
+        plan, so the exact count is now owned by
+        test_staff_batch2_rc22d.py::test_batch3_consumers_are_untouched.
+        Here it only needs to stay non-zero — the file is still load-bearing
+        for Batch 3."""
         tree = _tree()
         n = sum(1 for c in ast.walk(tree)
                 if isinstance(c, ast.Call)
                 and ast.unparse(c.func) == "load_staff_registry")
-        assert n == 10, f"expected 10 unmigrated consumers, found {n}"
+        assert n > 0, "all consumers migrated — this guard is obsolete"
 
     def test_service_consumers_are_exactly_the_expected_set(self):
         tree = _tree()
@@ -452,15 +456,22 @@ class TestScopeContainment:
                 if isinstance(c, ast.Call) and \
                    ast.unparse(c.func).startswith("staff_service."):
                     users.add(fn.name)
-        assert users == self.BATCH1 | {"crm_staff_management"}, users
+        # Batch 2 added seven more by approved plan; the authoritative set
+        # lives in test_staff_batch2_rc22d.py. This suite guards only that
+        # its own five are still migrated.
+        assert self.BATCH1 <= users, f"a Batch 1 consumer regressed: {users}"
 
     def test_every_call_is_tenant_scoped(self):
         tree = _tree()
         for c in ast.walk(tree):
             if isinstance(c, ast.Call) and \
                ast.unparse(c.func).startswith("staff_service."):
+                # _tid / _tid_staff added by Batch 2: both are locals bound
+                # from _actor_tenant_id(). A literal tenant is what this
+                # guards against.
                 assert ast.unparse(c.args[0]) in \
-                    ("_tenant", "_actor_tenant_id()", "tid"), ast.unparse(c)
+                    ("_tenant", "_actor_tenant_id()", "tid", "_tid",
+                     "_tid_staff"), ast.unparse(c)
 
     def test_legacy_registry_functions_still_exist(self):
         from app.routes import admin
