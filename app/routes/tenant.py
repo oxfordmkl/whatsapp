@@ -167,8 +167,16 @@ def tenant_profile():
 @tenant_admin_required
 def tenant_staff():
     """
-    Phase 13-B3B: Staff Management via User table only.
-    Does NOT touch staff_master.json — legacy system left untouched.
+    Tenant-portal staff management, backed by the User table.
+
+    Phase 13-B3B introduced this alongside the legacy CRM registry, creating
+    two parallel staff authorities — the architectural split that RC2.2D was
+    later run to close. Since RC2.2D the CRM staff screens read the same User
+    rows this page writes, so staff created here appear throughout the CRM.
+
+    This page creates LOGIN accounts (username, email and password required).
+    The CRM's own Staff Management screen creates directory entries without
+    credentials. Both write User rows in the same tenant.
     """
     from app.models import User
     tenant = _get_current_tenant()

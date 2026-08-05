@@ -610,13 +610,39 @@ def calculate_home_kpis(tenant_id=None):
     from sqlalchemy.sql import func
     from datetime import datetime
 
+    # ── Phase RC2.2F (H1): ONE tenant context for the whole dashboard ──────
+    #
+    # This function scoped its lead and activity queries with the passed
+    # tenant_id but called get_all_tasks() with NO argument, so the task KPIs
+    # silently fell back to current_user while everything else honoured the
+    # parameter. Nothing hit that today — crm_home passes nothing, so both
+    # resolved to the same tenant — but any caller supplying an explicit
+    # tenant (a platform report, an impersonation path, a scheduled job) would
+    # have rendered ONE dashboard mixing two tenants' numbers.
+    #
+    # Resolving once and using _tid everywhere is behaviour-identical for
+    # every existing caller: tenant_query()/tenant_filter() return on their
+    # SUPER_ADMIN branch BEFORE consulting the argument, and for every other
+    # role `tenant_id or current_user.tenant_id` yields exactly what
+    # _actor_tenant_id() yields. The only case that changes is the one that
+    # was wrong.
+    #
+    # Resolved defensively: _actor_tenant_id() reads current_user, which does
+    # not exist outside a request context.
+    _tid = tenant_id
+    if not _tid:
+        try:
+            _tid = _actor_tenant_id()
+        except Exception:                                   # noqa: BLE001
+            _tid = None
+
     # Future Tenant Scope: total_leads = ConversationState.query.filter_by(tenant_id=tid).count()
-    total_leads = tenant_query(ConversationState, tenant_id).count()
-    admissions  = tenant_query(ConversationState, tenant_id).filter(ConversationState.is_admitted == True).count()
+    total_leads = tenant_query(ConversationState, _tid).count()
+    admissions  = tenant_query(ConversationState, _tid).filter(ConversationState.is_admitted == True).count()
 
     # HOT leads: consistent with EVENT_SCORE_MAP logic in calculate_lead_intelligence
     # Using lead_score column as lightweight proxy — full intelligence calc runs on leads page
-    hot_leads = tenant_query(ConversationState, tenant_id).filter(
+    hot_leads = tenant_query(ConversationState, _tid).filter(
         ConversationState.lead_score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"]
     ).count()
 
@@ -626,17 +652,19 @@ def calculate_home_kpis(tenant_id=None):
         ConversationMessage.phone,
         func.max(ConversationMessage.id).label('max_id')
     )
-    _subq_base = tenant_filter(_subq_base, ConversationMessage, tenant_id)
+    _subq_base = tenant_filter(_subq_base, ConversationMessage, _tid)
     subq = _subq_base.group_by(ConversationMessage.phone).subquery()
     needs_reply_count = tenant_filter(
-        db.session.query(ConversationMessage), ConversationMessage, tenant_id
+        db.session.query(ConversationMessage), ConversationMessage, _tid
     ).join(
         subq, ConversationMessage.id == subq.c.max_id
     ).filter(ConversationMessage.direction == 'incoming').count()
 
     # Task KPIs — reuse existing get_all_tasks() helper
     try:
-        open_tasks, _ = get_all_tasks()
+        # RC2.2F (H1): the tenant is now propagated. get_all_tasks() already
+        # accepted one; it simply was not being given it.
+        open_tasks, _ = get_all_tasks(_tid)
         now = datetime.utcnow()
         open_task_count = len(open_tasks)
         overdue_count = sum(
@@ -656,25 +684,19 @@ def calculate_home_kpis(tenant_id=None):
     # tenant with no staff. After this batch every staff-related screen derives
     # its directory from the same tenant-scoped User source.
     #
-    # Resolved defensively: _actor_tenant_id() reads current_user, which does
-    # not exist outside a request. This helper previously read a FILE and so
-    # worked anywhere; an unresolvable tenant now yields 0 rather than raising.
-    _tid_staff = tenant_id
-    if not _tid_staff:
-        try:
-            _tid_staff = _actor_tenant_id()
-        except Exception:                                   # noqa: BLE001
-            _tid_staff = None
-    staff_active = len(staff_service.active_display_names(_tid_staff))
+    # RC2.2F (H1): uses the same _tid resolved once at the top of this
+    # function. It previously resolved its own copy — identical logic, but two
+    # resolutions of the same thing is how they drift apart later.
+    staff_active = len(staff_service.active_display_names(_tid))
 
     # Recent leads (last 5 by created_at)
     # Future Tenant Scope: .filter_by(tenant_id=tid)
-    recent_leads = tenant_query(ConversationState, tenant_id).order_by(
+    recent_leads = tenant_query(ConversationState, _tid).order_by(
         ConversationState.created_at.desc()
     ).limit(5).all()
 
     # Recent events (last 10 LeadEvents for activity feed)
-    recent_events = tenant_query(LeadEvent, tenant_id).order_by(
+    recent_events = tenant_query(LeadEvent, _tid).order_by(
         LeadEvent.created_at.desc()
     ).limit(10).all()
 
@@ -4768,8 +4790,19 @@ def crm_staff_workload():
         
     from app.models import ConversationState
     from app.extensions import db
-    
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+
+    # ── Phase RC2.2F (H2): impersonation-aware tenant resolution ───────────
+    #
+    # This was `getattr(current_user, 'tenant_id', None)`, which is NULL for a
+    # SUPER_ADMIN. tenant_filter() has an explicit SUPER_ADMIN branch honouring
+    # session['impersonate_tenant_id'], so while impersonating this screen
+    # rendered the impersonated tenant's LEADS beside an EMPTY staff roster —
+    # the staff read fail-closed on a NULL tenant while the lead read did not.
+    #
+    # _actor_tenant_id() honours impersonation, so both halves of the page now
+    # resolve to the same tenant. For every other role it returns exactly what
+    # current_user.tenant_id returned, so no other behaviour changes.
+    _tid = _actor_tenant_id()
     workload_query = tenant_filter(db.session.query(
         ConversationState.assigned_staff,
         ConversationState.lead_status,

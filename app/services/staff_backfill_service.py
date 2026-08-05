@@ -1,9 +1,17 @@
 """Phase RC2.3C — staff identity backfill.
 
-A one-off migration utility. It populates the DORMANT assigned_user_id columns
-added by RC2.3A from the existing assigned_staff strings. It changes no runtime
-behaviour: nothing reads assigned_user_id, both feature flags remain OFF, and
-app/data/staff_master.json remains the production source of truth.
+A one-off migration utility. It populates the assigned_user_id columns added by
+RC2.3A from the existing assigned_staff strings.
+
+CURRENT STATE (production): the backfill has run, and RC2.3D's dual-write keeps
+the column current — STAFF_IDENTITY_DUAL_WRITE is ON. assigned_staff remains
+the authoritative value that every consumer READS; STAFF_IDENTITY_READ_FK is
+still OFF and nothing reads assigned_user_id yet. Flipping those reads is
+RC2.3E, which has not begun.
+
+The staff DIRECTORY is a separate concern and already migrated: the User table
+is the runtime source of truth, and app/data/staff_master.json has zero runtime
+readers and zero writers (RC2.2D).
 
 WRITES EXACTLY TWO COLUMNS
 --------------------------

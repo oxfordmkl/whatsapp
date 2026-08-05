@@ -1,25 +1,32 @@
-"""Phase RC2.3A — tenant-scoped staff directory, sourced from User.
+"""Tenant-scoped staff directory, sourced from the User table.
 
-DORMANT. Nothing in the application calls this module in the Expand phase.
-app/data/staff_master.json remains the source of truth and every one of its 16
-consumers is untouched. This exists so the later phases are a repointing
+THE RUNTIME SOURCE OF TRUTH for staff across the CRM. All 16 consumers read
+from here; app/data/staff_master.json has zero runtime readers and zero
+writers (RC2.2D Batches 1-3, deployed and production validated). The file and
+load_staff_registry() / save_staff_registry() / get_staff_json_path() are
+retained only as the rollback target until Stage 4C retires them.
+
+Introduced dormant in Phase RC2.3A so the migration could be a repointing
 exercise against a tested abstraction rather than 16 separate rewrites.
 
 Why this module exists
 ----------------------
-staff_master.json is a single global file with no tenant dimension: every
-tenant reads and writes the same staff, and the file ships Oxford's staff to
-every tenant on deploy (RC2.2). RC2.2C ratified User.id as the canonical staff
-identity — User already carries tenant_id, role and is_active, and the tenant
-portal (/tenant/staff) already creates staff as User rows.
+staff_master.json was a single global file with no tenant dimension: every
+tenant read and wrote the same staff, and the file shipped Oxford's staff to
+every tenant on deploy (RC2.2). It also lived inside the deployed image, so
+Railway discarded every staff edit on the next deploy. RC2.2C ratified User.id
+as the canonical staff identity — User already carries tenant_id, role and
+is_active, and the tenant portal (/tenant/staff) already created staff as User
+rows.
 
 Shape compatibility is deliberate
 ---------------------------------
-as_registry() returns EXACTLY the shape load_staff_registry() returns:
+as_registry() returns EXACTLY the shape the legacy load_staff_registry()
+returned:
 
     {STAFF_CODE: {"display_name": str, "role": str, "active": bool}}
 
-That is what lets a consumer migrate by changing one line rather than its
+That is what let each consumer migrate by changing one line rather than its
 logic. The dict key is derived from username, NOT stored: RC2.2C declined to
 promote staff_code to a real identity because production codes (ANJU, KIRAN,
 NISHA) are simply uppercased names carrying no information the name lacks.
@@ -152,23 +159,24 @@ def list_staff(tenant_id, active_only=False, include_admins=False):
 
 
 def as_registry(tenant_id, include_admins=False):
-    """Tenant's staff in load_staff_registry()'s exact shape.
+    """Tenant's staff in the legacy registry's exact shape.
 
-    The drop-in replacement for the global file. Consumers that do
-    `registry.items()` / `data.get("active")` / `data.get("display_name")`
-    keep working unchanged.
+    Kept as the shape the CRM consumes: consumers that do `registry.items()` /
+    `data.get("active")` / `data.get("display_name")` were migrated by
+    changing one line. Used today by the screens that must show INACTIVE staff
+    too — Staff Management, Workload and Allocation.
 
     Phase RC2.2D Stage 0 — resolves compatibility issue I1.
 
-    include_admins now defaults FALSE. It previously defaulted True on the
-    reasoning that staff_master.json stores a role per entry rather than
+    include_admins defaults FALSE. It originally defaulted True on the
+    reasoning that the legacy file stored a role per entry rather than
     filtering by one. That reasoning was wrong in practice: every entry in the
-    production file is role=STAFF, so defaulting True would have injected the
+    production file was role=STAFF, so defaulting True would have injected the
     tenant's ADMIN account into the registry the moment a consumer switched
     over — putting 'admin' into every assignment dropdown and taking the CRM
-    "Staff Active" card from 3 to 4. False reproduces today's file exactly.
+    "Staff Active" card from 3 to 4.
 
-    Callers that genuinely want admins must now ask for them.
+    Callers that genuinely want admins must ask for them.
     """
     users = list_staff(tenant_id, include_admins=include_admins)
     codes = _assign_codes(users)
