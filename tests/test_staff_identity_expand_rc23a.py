@@ -145,7 +145,12 @@ class TestNothingIsWired:
         # approved plan; the exact remaining count is owned by
         # test_staff_batch1_rc22d.py. Here it only needs to remain
         # load-bearing for the consumers still on the file.
-        assert len(calls) > 0, "all consumers migrated — guard is obsolete"
+        # RC2.2D Batch 3 completed the migration, so this is now 0. The
+        # RC2.3A dormancy contract is unaffected: what mattered here was that
+        # the registry API still EXISTS (asserted by
+        # test_registry_functions_are_untouched above) and that the identity
+        # flags stay dormant. Stage 4 owns the deletion.
+        assert len(calls) == 0, f"expected migration complete, found {len(calls)}"
 
     def test_no_code_reads_the_new_flags(self):
         """Updated in Phase RC2.3D, the approved boundary crossing.

@@ -444,7 +444,10 @@ class TestScopeContainment:
         n = sum(1 for c in ast.walk(tree)
                 if isinstance(c, ast.Call)
                 and ast.unparse(c.func) == "load_staff_registry")
-        assert n > 0, "all consumers migrated — this guard is obsolete"
+        # Batch 3 migrated the final three, so this is now legitimately 0.
+        # The authoritative assertion moved to
+        # test_staff_batch3_rc22d.py::test_zero_runtime_calls_to_load_staff_registry.
+        assert n == 0, f"expected the migration to be complete, found {n}"
 
     def test_service_consumers_are_exactly_the_expected_set(self):
         tree = _tree()

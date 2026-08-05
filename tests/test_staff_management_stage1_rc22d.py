@@ -337,7 +337,11 @@ class TestNoOtherConsumerMigrated:
                      and ast.unparse(n.func) == "load_staff_registry")
         # Was >=14 at Stage 1; Batch 1 migrated five. Still non-zero, so the
         # legacy file remains load-bearing for the unmigrated consumers.
-        assert n_load > 0, "all consumers migrated — this guard is obsolete"
+        # Batch 3 completed the migration, so this is now legitimately 0.
+        # The authoritative assertion lives in test_staff_batch3_rc22d.py.
+        # The FUNCTION and the file are still retained for Stage 4 — that is
+        # asserted by test_legacy_registry_functions_still_exist below.
+        assert n_load == 0, f"expected migration complete, found {n_load}"
 
     def test_staff_master_json_still_exists(self):
         assert os.path.exists(STAFF_JSON)

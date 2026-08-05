@@ -427,7 +427,11 @@ class TestScopeContainment:
                 if isinstance(c, ast.Call) and \
                    ast.unparse(c.func) == "load_staff_registry":
                     remaining.add(fn.name)
-        assert remaining == self.BATCH3, f"scope breach: {remaining}"
+        # Batch 3 has since migrated all three by approved plan, so this is
+        # now empty. What this test still protects is the reason it existed:
+        # crm_my_tasks shared the Batch 2 pickers' exact three-line idiom, and
+        # a blind text replace would have taken it a batch early.
+        assert remaining == set(), f"unexpected JSON consumer: {remaining}"
 
     def test_service_consumers_are_exactly_the_expected_set(self):
         tree = _tree()
@@ -439,7 +443,10 @@ class TestScopeContainment:
                 if isinstance(c, ast.Call) and \
                    ast.unparse(c.func).startswith("staff_service."):
                     users.add(fn.name)
-        assert users == self.BATCH2 | self.EARLIER, users
+        # Batch 3 added its three by approved plan; the full authoritative
+        # set lives in test_staff_batch3_rc22d.py. This suite guards only that
+        # its own seven are still migrated.
+        assert self.BATCH2 <= users, f"a Batch 2 consumer regressed: {users}"
 
     def test_the_two_roster_consumers_use_as_registry(self):
         """Pins the inactive-staff requirement at the call site."""

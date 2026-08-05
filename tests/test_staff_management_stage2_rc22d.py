@@ -490,7 +490,11 @@ class TestScopeContainment:
                      and ast.unparse(n.func) == "load_staff_registry")
         # Was >=14 at Stage 2; Batch 1 migrated five. Still non-zero, so the
         # legacy file remains load-bearing for the unmigrated consumers.
-        assert n_load > 0, "all consumers migrated — this guard is obsolete"
+        # Batch 3 completed the migration, so this is now legitimately 0.
+        # The authoritative assertion lives in test_staff_batch3_rc22d.py.
+        # The FUNCTION and the file are still retained for Stage 4 — that is
+        # asserted by test_legacy_registry_functions_still_exist below.
+        assert n_load == 0, f"expected migration complete, found {n_load}"
 
     def test_only_this_route_uses_the_service(self):
         tree, _fn = _route_ast()

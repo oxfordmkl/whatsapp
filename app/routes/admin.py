@@ -647,9 +647,25 @@ def calculate_home_kpis(tenant_id=None):
         open_task_count = 0
         overdue_count = 0
 
-    # Staff active count from registry JSON
-    registry = load_staff_registry()
-    staff_active = sum(1 for v in registry.values() if v.get("active"))
+    # Phase RC2.2D Batch 3: the "Staff Active" card now counts the TENANT's own
+    # active staff instead of the global file.
+    #
+    # This is the card that produced the production contradiction: it reported
+    # 3 for every tenant (Oxford's Anju/Kiran/Nisha) while the migrated
+    # Dashboard, Workload and Allocation screens correctly showed 0 for a
+    # tenant with no staff. After this batch every staff-related screen derives
+    # its directory from the same tenant-scoped User source.
+    #
+    # Resolved defensively: _actor_tenant_id() reads current_user, which does
+    # not exist outside a request. This helper previously read a FILE and so
+    # worked anywhere; an unresolvable tenant now yields 0 rather than raising.
+    _tid_staff = tenant_id
+    if not _tid_staff:
+        try:
+            _tid_staff = _actor_tenant_id()
+        except Exception:                                   # noqa: BLE001
+            _tid_staff = None
+    staff_active = len(staff_service.active_display_names(_tid_staff))
 
     # Recent leads (last 5 by created_at)
     # Future Tenant Scope: .filter_by(tenant_id=tid)
@@ -5699,10 +5715,12 @@ def crm_my_tasks():
     week_ago = datetime.now() - timedelta(days=7)
     recent_completed = [t for t in completed_tasks if t.get("completed_at") and t.get("completed_at") > week_ago]
     
-    registry = load_staff_registry()
-    active_staff = [data["display_name"] for code, data in registry.items() if data.get("active")]
-    active_staff.sort()
-    
+    # Phase RC2.2D Batch 3: tenant-scoped task picker. Same sorted list of
+    # active display names; only the source changed. This is the consumer that
+    # shares its three-line idiom with the Batch 2 pickers and was deliberately
+    # left behind then — it is in scope now.
+    active_staff = staff_service.active_display_names(_actor_tenant_id())
+
     return render_template(
         "crm_my_tasks.html",
         key=request.args.get("key", ""),
@@ -5722,11 +5740,16 @@ def crm_admin_tasks():
     open_tasks, completed_tasks = get_all_tasks()
     
     staff_summary = {}
-    registry = load_staff_registry()
-    for code, data in registry.items():
-        if data.get("active"):
-            staff_summary[data["display_name"]] = {"pending": 0, "overdue": 0, "completed": 0}
-            
+    # Phase RC2.2D Batch 3: seed the summary from the TENANT's active staff.
+    #
+    # active_display_names(), not as_registry(): this loop deliberately seeds
+    # ACTIVE staff only, and the loop immediately below re-adds anyone who
+    # still holds tasks but is no longer active. That two-step is what keeps a
+    # deactivated staff member's outstanding tasks visible, and it is
+    # preserved exactly — only the seed source changed.
+    for _name in staff_service.active_display_names(_actor_tenant_id()):
+        staff_summary[_name] = {"pending": 0, "overdue": 0, "completed": 0}
+
     # Add staff dynamically if they have tasks but are no longer active
     for t in open_tasks + completed_tasks:
         s = t.get("staff", "Unassigned")
