@@ -417,13 +417,27 @@ class TestWritesNothingElse:
         assert all(u.display_name is None for u in User.query.all())
 
     def test_staff_master_json_is_untouched(self, ctx):
+        """The backfill must not write the legacy file.
+
+        Stage 4B: tolerant of Stage 4C's deletion. A missing file is a
+        STRONGER guarantee than an unchanged one, so comparing snapshots
+        preserves the assertion across the retirement.
+        """
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         path = os.path.join(root, "app", "data", "staff_master.json")
-        before = open(path, "rb").read()
+
+        def snap():
+            try:
+                with open(path, "rb") as fh:
+                    return fh.read()
+            except FileNotFoundError:
+                return None
+
+        before = snap()
         _user(A, "Anju")
         _lead(A, "919000000001", staff="Anju")
         bf.backfill_tenant(A, dry_run=False)
-        assert open(path, "rb").read() == before
+        assert snap() == before
 
     def test_pipeline_fields_are_untouched(self, ctx):
         _user(A, "Anju")

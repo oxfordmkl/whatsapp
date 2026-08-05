@@ -57,8 +57,9 @@ from werkzeug.security import generate_password_hash                     # noqa:
 from app import create_app                                              # noqa: E402
 from app.extensions import db                                           # noqa: E402
 from app.models import Tenant, User, ConversationState                  # noqa: E402
-from app.routes.admin import (load_staff_registry, normalize_staff_name,  # noqa: E402
+from app.routes.admin import (normalize_staff_name,                      # noqa: E402
                               calculate_intelligence)
+from legacy_staff_registry import LEGACY_OXFORD_REGISTRY                  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OX = "t-ox"        # 3 active staff — production shape. MUST NOT CHANGE.
@@ -160,7 +161,7 @@ class TestIntelligence:
     def test_oxford_candidate_set_matches_the_legacy_file(self, seeded):
         with _APP.app_context():
             intel = calculate_intelligence(OX)
-        legacy = sorted(d["display_name"] for d in load_staff_registry().values()
+        legacy = sorted(d["display_name"] for d in LEGACY_OXFORD_REGISTRY.values()
                         if d.get("active"))
         assert sorted(r["name"] for r in intel["leaderboard"]) == legacy
 
@@ -356,7 +357,7 @@ class TestOxfordParity:
             "/crm/my-leads")
 
     def test_every_screen_shows_exactly_the_legacy_staff(self, seeded):
-        legacy = [d["display_name"] for d in load_staff_registry().values()
+        legacy = [d["display_name"] for d in LEGACY_OXFORD_REGISTRY.values()
                   if d.get("active")]
         for url in self.URLS:
             html = html_of(seeded[OX], url)

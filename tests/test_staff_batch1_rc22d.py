@@ -56,9 +56,10 @@ from werkzeug.security import generate_password_hash                    # noqa: 
 from app import create_app                                             # noqa: E402
 from app.extensions import db                                          # noqa: E402
 from app.models import Tenant, User, ConversationState                 # noqa: E402
-from app.routes.admin import (load_staff_registry, normalize_staff_name,  # noqa: E402
+from app.routes.admin import (normalize_staff_name,                     # noqa: E402
                               calculate_workload_scoring,
                               get_staff_recommendations)
+from legacy_staff_registry import LEGACY_OXFORD_REGISTRY                 # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OX = "t-ox"          # Oxford: the 3 production staff. MUST NOT CHANGE.
@@ -173,11 +174,11 @@ def staff_options(html, select_name):
 
 class TestWorkloadScoringUnchanged:
     def test_oxford_scores_are_identical(self, seeded):
-        """THE acceptance test. Recompute the legacy result from the REAL JSON
-        file and require the migrated helper to match it exactly."""
+        """THE acceptance test. Recompute the legacy result from the FROZEN production
+        registry and require the migrated helper to match it exactly."""
         with _APP.app_context():
             legacy_staff = {normalize_staff_name(d["display_name"]): d["display_name"]
-                            for d in load_staff_registry().values() if d.get("active")}
+                            for d in LEGACY_OXFORD_REGISTRY.values() if d.get("active")}
             scores, active = calculate_workload_scoring(OX)
         assert active == legacy_staff, "candidate set drifted for Oxford"
         # Anju: Lead(1) + Contacted(2) = 3; Kiran: Interested(3); Nisha: Enrolled(0)
@@ -251,7 +252,7 @@ class TestLeadCreate:
         assert opts == ["Anju", "Kiran", "Nisha"]
 
     def test_matches_the_legacy_file_for_oxford(self, seeded):
-        legacy = sorted(d["display_name"] for d in load_staff_registry().values()
+        legacy = sorted(d["display_name"] for d in LEGACY_OXFORD_REGISTRY.values()
                         if d.get("active"))
         assert staff_options(html_of(seeded[OX], "/crm/lead/new"),
                              "assigned_staff") == legacy
@@ -382,7 +383,7 @@ class TestReassignmentCentre:
 class TestTenantScenarios:
     def test_oxford_is_a_no_op(self, seeded):
         """Any visible change for Oxford is a rollback trigger."""
-        legacy = sorted(d["display_name"] for d in load_staff_registry().values()
+        legacy = sorted(d["display_name"] for d in LEGACY_OXFORD_REGISTRY.values()
                         if d.get("active"))
         for url, sel in (("/crm/lead/new", "assigned_staff"),
                          ("/crm/reassignment-center", "targetStaff")):

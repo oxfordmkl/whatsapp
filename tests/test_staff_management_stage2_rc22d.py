@@ -131,6 +131,20 @@ def rendered_codes(html):
     return set(re.findall(r'name="staff_code" value="([^"]*)"', html))
 
 
+def json_snapshot():
+    """Bytes of the legacy file, or None once Stage 4C has deleted it.
+
+    The "no write reached the shared file" assertions must keep working after
+    the file is gone. A missing file is a STRONGER guarantee than an unchanged
+    one, so comparing snapshots covers both eras without weakening the check.
+    """
+    try:
+        with open(STAFF_JSON, "rb") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return None
+
+
 def staff_of(tenant):
     with _APP.app_context():
         return {u.username: u for u in
@@ -370,13 +384,13 @@ class TestCrossTenantWrite:
 
     def test_no_global_mutation(self, seeded):
         """No write on this screen may reach the shared file."""
-        before = open(STAFF_JSON, "rb").read()
+        before = json_snapshot()
         post(seeded[OX], action="add", staff_code="RAVI", display_name="Ravi",
              role="STAFF", active="on")
         post(seeded[OX], action="edit", staff_code="ANJU",
              display_name="Anju M", role="STAFF", active="on")
         post(seeded[OX], action="toggle", staff_code="NISHA")
-        assert open(STAFF_JSON, "rb").read() == before
+        assert json_snapshot() == before
 
 
 # ═══ Requirement 6 — persistence ═════════════════════════════════════════════
@@ -396,7 +410,8 @@ class TestPersistence:
         not survive one. A row can."""
         post(seeded[OX], action="add", staff_code="RAVI",
              display_name="Ravi", role="STAFF", active="on")
-        assert "RAVI" not in open(STAFF_JSON, encoding="utf-8").read()
+        snap = json_snapshot()
+        assert snap is None or b"RAVI" not in snap
         assert "RAVI" in staff_of(OX)
 
     def test_toggle_persists(self, seeded):

@@ -16,8 +16,10 @@ tenant rather than a clean fixture:
       the second silently overwrote the first — a real person disappearing
       from every CRM screen with no error.
 
-The parity tests compare against the REAL staff_master.json, not a
-hand-written expectation, so the two cannot drift apart unnoticed.
+The parity tests compare against the FROZEN snapshot of the production
+staff_master.json (tests/legacy_staff_registry.py), not a hand-written
+expectation. Stage 4B repointed them off the live file; the snapshot's fidelity
+to that file is proven by test_legacy_fixture_fidelity_rc22g.py.
 
 Import isolation follows test_pipeline_foundation_10_6.py.
 """
@@ -48,7 +50,8 @@ from app import create_app                                              # noqa: 
 from app.extensions import db                                           # noqa: E402
 from app.models import Tenant, User                                     # noqa: E402
 from app.services import staff_service                                  # noqa: E402
-from app.routes.admin import load_staff_registry                        # noqa: E402
+from legacy_staff_registry import (                                     # noqa: E402
+    LEGACY_OXFORD_REGISTRY, legacy_registry_dict)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OX = "t-ox"
@@ -86,7 +89,7 @@ def mk(tenant, username, role="STAFF", display=None, active=True):
 
 
 def oxford_staff():
-    """The three users mirroring production's staff_master.json."""
+    """The three users mirroring the frozen production registry."""
     return [mk(OX, "Anju"), mk(OX, "Kiran"), mk(OX, "Nisha")]
 
 
@@ -101,10 +104,11 @@ class TestAdminExclusion:
         assert sorted(reg) == ["ANJU", "KIRAN", "NISHA"]
 
     def test_default_matches_the_real_json_file(self, ctx):
-        """Parity against the actual file, not a hand-written expectation."""
+        """Parity against the frozen production registry, not a hand-written
+        expectation."""
         oxford_staff()
         mk(OX, "admin", role="ADMIN")
-        assert sorted(staff_service.as_registry(OX)) == sorted(load_staff_registry())
+        assert sorted(staff_service.as_registry(OX)) == sorted(LEGACY_OXFORD_REGISTRY)
 
     def test_admin_would_have_leaked_before_the_fix(self, ctx):
         """Pins I1: asking for admins explicitly still includes them, which is
@@ -156,7 +160,7 @@ class TestActiveDisplayNames:
         oxford_staff()
         mk(OX, "admin", role="ADMIN")
         legacy = sorted(d["display_name"]
-                        for d in load_staff_registry().values() if d["active"])
+                        for d in LEGACY_OXFORD_REGISTRY.values() if d["active"])
         assert staff_service.active_display_names(OX) == legacy
 
     def test_admins_can_still_be_requested(self, ctx):
@@ -297,19 +301,19 @@ class TestRegistryParity:
         """The decisive test: identical serialisation, so a consumer cannot
         tell the two apart."""
         oxford_staff()
-        legacy = json.dumps(load_staff_registry(), sort_keys=True)
+        legacy = json.dumps(legacy_registry_dict(), sort_keys=True)
         new = json.dumps(staff_service.as_registry(OX), sort_keys=True)
         assert new == legacy
 
     def test_field_names_match_exactly(self, ctx):
         oxford_staff()
-        lf = {k for v in load_staff_registry().values() for k in v}
+        lf = {k for v in LEGACY_OXFORD_REGISTRY.values() for k in v}
         nf = {k for v in staff_service.as_registry(OX).values() for k in v}
         assert nf == lf == {"display_name", "role", "active"}
 
     def test_field_types_match(self, ctx):
         oxford_staff()
-        legacy = next(iter(load_staff_registry().values()))
+        legacy = next(iter(LEGACY_OXFORD_REGISTRY.values()))
         new = next(iter(staff_service.as_registry(OX).values()))
         for f in legacy:
             assert type(new[f]) is type(legacy[f]), f

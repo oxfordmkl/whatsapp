@@ -59,8 +59,9 @@ from werkzeug.security import generate_password_hash                     # noqa:
 from app import create_app                                              # noqa: E402
 from app.extensions import db                                           # noqa: E402
 from app.models import Tenant, User, ConversationState, Task            # noqa: E402
-from app.routes.admin import (load_staff_registry, normalize_staff_name,  # noqa: E402
+from app.routes.admin import (normalize_staff_name,                      # noqa: E402
                               calculate_home_kpis)
+from legacy_staff_registry import LEGACY_OXFORD_REGISTRY                  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OX = "t-ox"        # 3 active staff — production shape. MUST NOT CHANGE.
@@ -155,8 +156,9 @@ class TestHomeKpiStaffActive:
             assert calculate_home_kpis(OX)["staff_active"] == 3
 
     def test_oxford_matches_the_legacy_file(self, seeded):
-        """Parity against the real JSON, not a hand-written number."""
-        legacy = sum(1 for v in load_staff_registry().values() if v.get("active"))
+        """Parity against the frozen production registry, not a
+        hand-written number."""
+        legacy = sum(1 for v in LEGACY_OXFORD_REGISTRY.values() if v.get("active"))
         with _APP.app_context():
             assert calculate_home_kpis(OX)["staff_active"] == legacy
 
@@ -208,7 +210,7 @@ class TestMyTasks:
         assert options_of(html, "staff") == ["Anju", "Kiran", "Nisha"]
 
     def test_matches_the_legacy_file(self, seeded):
-        legacy = sorted(d["display_name"] for d in load_staff_registry().values()
+        legacy = sorted(d["display_name"] for d in LEGACY_OXFORD_REGISTRY.values()
                         if d.get("active"))
         assert options_of(html_of(seeded[OX], self.URL), "staff") == legacy
 
@@ -370,9 +372,18 @@ class TestRetirementCodeIsRetained:
         assert os.path.exists(path)
 
     def test_the_file_still_holds_the_legacy_rows(self):
-        """It is the rollback target; its contents must be intact."""
-        reg = load_staff_registry()
-        assert sorted(reg) == ["ANJU", "KIRAN", "NISHA"]
+        """It is the rollback target; its contents must be intact.
+
+        Stage 4B: reads the file DIRECTLY rather than through
+        load_staff_registry(), so this tripwire depends only on the file — and
+        compares against the frozen snapshot rather than a literal, so the two
+        records of the retired registry cannot disagree.
+        """
+        import json
+        path = os.path.join(ROOT, "app", "data", "staff_master.json")
+        with open(path, encoding="utf-8") as fh:
+            live = json.load(fh)
+        assert sorted(live) == sorted(LEGACY_OXFORD_REGISTRY)
 
 
 class TestScopeContainment:

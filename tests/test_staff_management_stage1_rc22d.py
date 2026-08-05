@@ -49,7 +49,8 @@ from werkzeug.security import generate_password_hash                    # noqa: 
 from app import create_app                                              # noqa: E402
 from app.extensions import db                                           # noqa: E402
 from app.models import Tenant, User                                     # noqa: E402
-from app.routes.admin import load_staff_registry                        # noqa: E402
+from legacy_staff_registry import (                                     # noqa: E402
+    LEGACY_OXFORD_REGISTRY, legacy_registry_dict)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STAFF_JSON = os.path.join(ROOT, "app", "data", "staff_master.json")
@@ -117,6 +118,20 @@ def page(client, admin_id):
     return r.get_data(as_text=True)
 
 
+def json_snapshot():
+    """Bytes of the legacy file, or None once Stage 4C has deleted it.
+
+    The "no write reached the shared file" assertions must keep working after
+    the file is gone. A missing file is a STRONGER guarantee than an unchanged
+    one, so comparing snapshots covers both eras without weakening the check.
+    """
+    try:
+        with open(STAFF_JSON, "rb") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return None
+
+
 def rendered_codes(html):
     """Staff codes actually rendered in the TABLE.
 
@@ -137,11 +152,11 @@ class TestOxfordTenant:
 
     def test_oxford_output_matches_the_legacy_file(self, seeded, client):
         """The no-regression test that matters: Oxford's rendered rows are
-        exactly the set the global JSON produced — compared against the real
-        file, so the two cannot drift apart unnoticed."""
+        exactly the set the global JSON produced — compared against the frozen
+        production snapshot of that file."""
         html = page(client, seeded[OX])
-        assert rendered_codes(html) == set(load_staff_registry())
-        for data in load_staff_registry().values():
+        assert rendered_codes(html) == set(LEGACY_OXFORD_REGISTRY)
+        for data in LEGACY_OXFORD_REGISTRY.values():
             assert data["display_name"] in html
 
     def test_admin_account_is_not_listed_as_staff(self, seeded, client):
@@ -238,7 +253,10 @@ class TestRegistryShapeCompatibility:
         from app.services import staff_service
         with _APP.app_context():
             new = staff_service.as_registry(OX)
-        legacy = load_staff_registry()
+        # legacy_registry_dict(): the frozen fixture is a mappingproxy and
+        # json.dumps() cannot serialise one — by design, so a test cannot
+        # mutate the shared snapshot.
+        legacy = legacy_registry_dict()
         assert json.dumps(new, sort_keys=True) == json.dumps(legacy, sort_keys=True)
 
     def test_route_consumes_the_service_not_the_file(self):
@@ -293,10 +311,10 @@ class TestWritePathUnchanged:
         assert not hasattr(staff_service, "as_registry_save")
 
     def test_json_file_is_untouched_by_rendering(self, seeded, client):
-        before = open(STAFF_JSON, "rb").read()
+        before = json_snapshot()
         page(client, seeded[OX])
         page(client, seeded[NEW])
-        assert open(STAFF_JSON, "rb").read() == before
+        assert json_snapshot() == before
 
     def test_deactivation_guard_still_present(self):
         """The BLOCK_DEACTIVATION check protects leads; it lives in the write

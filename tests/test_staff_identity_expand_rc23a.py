@@ -337,15 +337,16 @@ class TestRegistryShapeCompatibility:
         assert reg["ANJU"]["display_name"] == "Anju"
         assert reg["ANJU"]["active"] is True
 
-    def test_shape_is_identical_to_the_real_file(self, ctx):
-        """Compare against the actual staff_master.json structure."""
-        import json
-        with open(os.path.join(ROOT, "app", "data", "staff_master.json"),
-                  encoding="utf-8") as fh:
-            live = json.load(fh)
+    def test_shape_is_identical_to_the_legacy_registry(self, ctx):
+        """Compare against the FROZEN production staff_master.json structure.
+
+        Stage 4B repointed this off the live file; the snapshot's fidelity is
+        proven by test_legacy_fixture_fidelity_rc22g.py while the file lasts.
+        """
+        from legacy_staff_registry import LEGACY_OXFORD_REGISTRY
         _user(A, "anju")
         mine = staff_service.as_registry(A)
-        assert set(next(iter(live.values()))) == set(next(iter(mine.values())))
+        assert set(next(iter(LEGACY_OXFORD_REGISTRY.values()))) ==             set(next(iter(mine.values())))
 
     def test_code_is_derived_not_stored(self, ctx):
         _user(A, "kiran")
