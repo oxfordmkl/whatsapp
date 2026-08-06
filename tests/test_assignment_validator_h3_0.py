@@ -310,15 +310,18 @@ class TestDormancy:
                         offenders.append(os.path.relpath(full, ROOT))
         assert offenders == [], f"write path migrated early: {offenders}"
 
-    def test_the_csv_import_dual_write_gap_is_still_open(self):
+    def test_the_csv_import_dual_write_gap_is_closed(self):
         """H3 discovery found crm_leads_import writes assigned_staff through a
-        dynamic setattr loop over LEAD_IMPORT_WRITABLE and never calls
+        dynamic setattr loop over LEAD_IMPORT_WRITABLE and never called
         sync_assigned_user — the 8th write path, uncovered since before
         RC2.3D, which every earlier AST audit missed because the write is not
         a static attribute assignment.
 
-        H3-1a closes it. Recording it here means closing it is a deliberate,
-        visible change rather than something that quietly stops being true.
+        H3-1A closed it. This assertion was INVERTED rather than deleted: it
+        recorded the gap so that closing it would be a visible, deliberate
+        change, and it now records that the gap is shut so a regression would
+        be equally visible. Full coverage lives in
+        test_csv_import_dual_write_h3_1a.py.
         """
         with open(os.path.join(ROOT, "app", "routes", "admin.py"),
                   encoding="utf-8") as fh:
@@ -328,8 +331,8 @@ class TestDormancy:
                   and n.name == "crm_leads_import")
         calls = {ast.unparse(c.func) for c in ast.walk(fn)
                  if isinstance(c, ast.Call)}
-        assert "_sync_assigned_user" not in calls, \
-            "H3-1a has landed — flip this test to assert the gap is CLOSED"
+        assert "_sync_assigned_user" in calls, \
+            "the CSV import dual-write gap has REOPENED"
         assert "assigned_staff" in ast.unparse(
             next(n for n in ast.walk(tree)
                  if isinstance(n, ast.Assign)

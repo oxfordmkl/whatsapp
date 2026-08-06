@@ -1468,6 +1468,31 @@ def crm_leads_import():
                 if getattr(lead, field, None) != val:
                     setattr(lead, field, val); changed.append(field)
 
+            # ── Phase H3-1A: dual-write the imported owner ─────────────────
+            #
+            # THE GAP THIS CLOSES. assigned_staff is in LEAD_IMPORT_WRITABLE,
+            # so this loop writes it — but via setattr() rather than a static
+            # attribute assignment, which is why every AST audit from RC2.3D
+            # onward missed it. This was the EIGHTH assigned_staff write path
+            # and the only one that never mirrored into assigned_user_id: an
+            # imported owner left the FK NULL whether or not the name was
+            # valid.
+            #
+            # Harmless today (nothing reads the FK) but not after RC2.3E flips
+            # reads: a NULL FK means the lead vanishes from every per-staff
+            # view and reappears only under Unassigned. One import of a few
+            # hundred assigned rows would have produced a few hundred
+            # invisible leads.
+            #
+            # Gated on `changed` so an import that touches only name/course
+            # does not re-sync rows this file never assigned — the fix stays
+            # inside "the import wrote an owner".
+            #
+            # No blank case to handle: the loop skips falsy values ("blank ==
+            # no opinion, never clear it"), so an import cannot unassign.
+            if "assigned_staff" in changed:
+                _sync_assigned_user(lead, _tid)
+
             db.session.commit()
             if created:
                 summary["created"] += 1
