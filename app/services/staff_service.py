@@ -1,10 +1,12 @@
 """Tenant-scoped staff directory, sourced from the User table.
 
-THE RUNTIME SOURCE OF TRUTH for staff across the CRM. All 16 consumers read
-from here; app/data/staff_master.json has zero runtime readers and zero
-writers (RC2.2D Batches 1-3, deployed and production validated). The file and
-load_staff_registry() / save_staff_registry() / get_staff_json_path() are
-retained only as the rollback target until Stage 4C retires them.
+THE SOURCE OF TRUTH for staff across the CRM. All 16 consumers read from here.
+
+The legacy app/data/staff_master.json and its helpers (load_staff_registry,
+save_staff_registry, get_staff_json_path) were retired by RC2.2G Stage 4C
+after RC2.2D Batches 1-3 migrated every consumer and each deploy was validated
+in production. tests/legacy_staff_registry.py holds a frozen snapshot of what
+that file contained at retirement.
 
 Introduced dormant in Phase RC2.3A so the migration could be a repointing
 exercise against a tested abstraction rather than 16 separate rewrites.

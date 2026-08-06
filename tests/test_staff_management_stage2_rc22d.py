@@ -490,13 +490,14 @@ class TestScopeContainment:
         assert "save_staff_registry" not in called
         assert "load_staff_registry" not in called
 
-    def test_legacy_registry_functions_still_exist(self):
-        """Explicitly required: 15 consumers still depend on them."""
+    def test_legacy_registry_is_retired(self):
+        """Was "15 consumers still depend on them". They no longer do —
+        RC2.2D migrated all 16 and Stage 4C deleted the API and the file."""
         from app.routes import admin
         for fn_name in ("load_staff_registry", "save_staff_registry",
                         "get_staff_json_path"):
-            assert callable(getattr(admin, fn_name)), fn_name
-        assert os.path.exists(STAFF_JSON)
+            assert not hasattr(admin, fn_name), fn_name
+        assert not os.path.exists(STAFF_JSON)
 
     def test_other_consumers_still_read_the_file(self):
         tree, _fn = _route_ast()

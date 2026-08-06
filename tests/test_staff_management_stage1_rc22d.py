@@ -361,8 +361,11 @@ class TestNoOtherConsumerMigrated:
         # asserted by test_legacy_registry_functions_still_exist below.
         assert n_load == 0, f"expected migration complete, found {n_load}"
 
-    def test_staff_master_json_still_exists(self):
-        assert os.path.exists(STAFF_JSON)
+    def test_staff_master_json_is_retired(self):
+        """Inverted by Stage 4C. Stage 1 needed the file retained as the
+        rollback target while only ONE read had migrated; every consumer has
+        since moved and 4C deleted it."""
+        assert not os.path.exists(STAFF_JSON)
 
     def test_no_module_outside_admin_imports_the_service(self):
         offenders = []

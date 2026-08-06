@@ -384,17 +384,24 @@ class TestStage0IsNotWired:
         assert sorted(set(offenders)) == allowed, \
             f"unapproved consumer: {set(offenders)}"
 
-    def test_registry_still_authoritative(self):
-        """Stage 1 migrated ONE read. The file is still the write authority and
-        still backs every other consumer."""
+    def test_registry_is_retired(self):
+        """Stage 4C RETIRED the legacy registry.
+
+        This asserted the JSON file was still load-bearing. RC2.2D migrated
+        all 16 consumers to the tenant-scoped User table, and Stage 4C deleted
+        the file together with load_staff_registry(), save_staff_registry()
+        and get_staff_json_path(). The assertion is inverted: the registry API
+        must now be GONE, and staff_service must be what admin.py consumes.
+        """
         with open(os.path.join(ROOT, "app", "routes", "admin.py"),
                   encoding="utf-8") as fh:
             body = fh.read()
-        # Stage 1 migrated one read, Stage 2 the writes, Batch 1 five more.
-        # The exact remaining count is owned by test_staff_batch1_rc22d.py;
-        # here it only needs to still be load-bearing.
-        assert body.count("load_staff_registry()") > 0
-        assert os.path.exists(os.path.join(ROOT, "app", "data", "staff_master.json"))
+        assert "def load_staff_registry" not in body
+        assert "def save_staff_registry" not in body
+        assert "def get_staff_json_path" not in body
+        assert "staff_service.as_registry" in body
+        assert not os.path.exists(
+            os.path.join(ROOT, "app", "data", "staff_master.json"))
 
     def test_service_never_writes(self):
         with open(os.path.join(ROOT, "app", "services", "staff_service.py"),

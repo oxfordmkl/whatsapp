@@ -352,14 +352,16 @@ class TestNoReaderMigration:
                         offenders.append(f)
         assert offenders == [], f"RC2.3E flag read early: {offenders}"
 
-    def test_registry_still_authoritative(self):
+    def test_registry_is_retired(self):
+        """Was "the JSON registry is still authoritative" at RC2.3D. RC2.2D
+        migrated every consumer and Stage 4C deleted the registry. What still
+        matters for RC2.3D is that the DUAL-WRITE contract is untouched by
+        that retirement, which the rest of this suite covers."""
         with open(os.path.join(ROOT, "app", "routes", "admin.py"),
                   encoding="utf-8") as fh:
             body = fh.read()
-        # Was >=15 at RC2.3D. RC2.2D has since migrated six consumers by
-        # approved plan; the remaining count is owned by
-        # test_staff_batch1_rc22d.py.
-        assert body.count("load_staff_registry()") > 0
+        assert "def load_staff_registry" not in body
+        assert "staff_service." in body
 
     def test_every_assignment_site_is_paired(self):
         """Each assigned_staff write must be followed by a dual-write call, or

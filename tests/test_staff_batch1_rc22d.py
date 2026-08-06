@@ -477,13 +477,18 @@ class TestScopeContainment:
                     ("_tenant", "_actor_tenant_id()", "tid", "_tid",
                      "_tid_staff"), ast.unparse(c)
 
-    def test_legacy_registry_functions_still_exist(self):
+    def test_legacy_registry_is_retired(self):
+        """Stage 4C removed the registry API and the file it wrapped.
+
+        Inverted from "they must still exist": Batch 1 needed them retained as
+        the rollback target, and Stage 4C is the approved retirement.
+        """
         from app.routes import admin
         for name in ("load_staff_registry", "save_staff_registry",
                      "get_staff_json_path"):
-            assert callable(getattr(admin, name))
-        assert os.path.exists(os.path.join(ROOT, "app", "data",
-                                           "staff_master.json"))
+            assert not hasattr(admin, name), name
+        assert not os.path.exists(os.path.join(ROOT, "app", "data",
+                                               "staff_master.json"))
 
     def test_no_schema_or_migration_change(self):
         versions = os.path.join(ROOT, "migrations", "versions")

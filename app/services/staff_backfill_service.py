@@ -10,8 +10,8 @@ still OFF and nothing reads assigned_user_id yet. Flipping those reads is
 RC2.3E, which has not begun.
 
 The staff DIRECTORY is a separate concern and already migrated: the User table
-is the runtime source of truth, and app/data/staff_master.json has zero runtime
-readers and zero writers (RC2.2D).
+is the source of truth, and the legacy app/data/staff_master.json was retired
+entirely by RC2.2G Stage 4C.
 
 WRITES EXACTLY TWO COLUMNS
 --------------------------

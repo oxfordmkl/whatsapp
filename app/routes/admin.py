@@ -3,30 +3,27 @@ from sqlalchemy import or_
 from flask import Blueprint, request, jsonify, render_template, redirect, flash, url_for, current_app, session
 from app.config import ADMIN_KEY
 
-import os
 import json
 
-def get_staff_json_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "staff_master.json")
-
-def load_staff_registry():
-    path = get_staff_json_path()
-    try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        logging.error(f"Error loading staff_master.json: {e}")
-    return {}
-
-def save_staff_registry(data):
-    path = get_staff_json_path()
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        logging.error(f"Error saving staff_master.json: {e}")
+# ── Phase RC2.2G Stage 4C: the legacy staff registry is RETIRED ──────────────
+#
+# get_staff_json_path(), load_staff_registry() and save_staff_registry() lived
+# here, backed by app/data/staff_master.json. All three and the file are now
+# deleted.
+#
+# The registry was a single GLOBAL file with no tenant dimension: every tenant
+# read the same rows, so a newly provisioned institute saw Oxford's staff. It
+# also shipped inside the deployed image, so Railway discarded every staff edit
+# on the next deploy. RC2.2D migrated all 16 consumers to the tenant-scoped
+# User table (Stages 1-2 and Batches 1-3, each deployed and production
+# validated); by Batch 3 the file had zero runtime readers and zero writers.
+#
+# staff_service.as_registry() / active_display_names() are the replacements and
+# return the same shape. tests/legacy_staff_registry.py holds a frozen snapshot
+# of what the file contained at retirement, so the Oxford-parity assertions
+# written during the migration still compare against the original values.
+#
+# `import os` went with them — nothing else in this module used it.
 
 
 def normalize_staff_name(name):

@@ -84,13 +84,19 @@ def ctx():
 class TestNothingIsWired:
     """These are the tests that make Expand safe."""
 
-    def test_staff_master_json_still_exists(self):
-        assert os.path.exists(os.path.join(ROOT, "app", "data", "staff_master.json"))
+    def test_staff_master_json_is_retired(self):
+        """RC2.3A asserted the file was still the source of truth. RC2.2D
+        migrated every consumer off it and Stage 4C deleted it. What RC2.3A
+        actually protects — that the identity COLUMNS stay dormant until
+        RC2.3E — is unaffected and still asserted below."""
+        assert not os.path.exists(
+            os.path.join(ROOT, "app", "data", "staff_master.json"))
 
-    def test_registry_functions_are_untouched(self):
+    def test_registry_functions_are_retired(self):
         from app.routes import admin
-        assert hasattr(admin, "load_staff_registry")
-        assert hasattr(admin, "save_staff_registry")
+        assert not hasattr(admin, "load_staff_registry")
+        assert not hasattr(admin, "save_staff_registry")
+        assert not hasattr(admin, "get_staff_json_path")
 
     def test_only_the_approved_consumer_imports_staff_service(self):
         """RC2.3A asserted NOTHING consumed the abstraction.

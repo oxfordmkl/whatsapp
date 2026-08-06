@@ -388,14 +388,14 @@ class TestScopeContainment:
         for token in ("assigned_user_id", "STAFF_IDENTITY", "sync_assigned_user"):
             assert token not in src
 
-    def test_legacy_registry_api_still_intact(self):
-        """Stage 4 is still deferred."""
+    def test_legacy_registry_is_retired(self):
+        """Stage 4 is no longer deferred — 4C retired the registry."""
         from app.routes import admin
         for name in ("load_staff_registry", "save_staff_registry",
                      "get_staff_json_path"):
-            assert callable(getattr(admin, name))
-        assert os.path.exists(os.path.join(ROOT, "app", "data",
-                                           "staff_master.json"))
+            assert not hasattr(admin, name), name
+        assert not os.path.exists(os.path.join(ROOT, "app", "data",
+                                               "staff_master.json"))
 
     def test_workload_algorithm_untouched(self):
         tree = _tree()

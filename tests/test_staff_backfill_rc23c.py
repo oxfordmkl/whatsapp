@@ -571,9 +571,14 @@ class TestScopeContainment:
         assert "staff_identity_dual_write_enabled" in body,             "the dual-write gate disappeared"
         assert "staff_identity_read_fk_enabled" not in body,             "READ_FK read before RC2.3E"
 
-    def test_registry_still_authoritative(self):
+    def test_registry_is_retired(self):
+        """Was "load_staff_registry still exists". Stage 4C removed it along
+        with the file. The backfill never depended on either — it resolves
+        against the User table — so its contract is unaffected."""
         from app.routes import admin
-        assert hasattr(admin, "load_staff_registry")
+        assert not hasattr(admin, "load_staff_registry")
+        assert not hasattr(admin, "save_staff_registry")
+        assert not hasattr(admin, "get_staff_json_path")
 
     def test_no_consumer_reads_assigned_user_id(self):
         """RC2.3C is a migration utility; reader migration is RC2.3D."""

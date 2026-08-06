@@ -19,12 +19,12 @@ Verified live in production after Batch 2: 10 of 12 tenants had zero staff and
 every one of them reported 3. After this batch every staff-related screen
 derives its directory from the same tenant-scoped User source.
 
-WHAT STAYS
-----------
-staff_master.json, load_staff_registry(), save_staff_registry() and
-get_staff_json_path() all remain. Retirement is Stage 4, a separate approval.
-This suite asserts they are still present AND that nothing calls them at
-runtime any more — the precondition Stage 4 needs.
+WHAT HAPPENED NEXT
+------------------
+This batch left staff_master.json and the registry helpers in place as the
+rollback target; Stage 4C then retired all of them. The assertions here were
+inverted rather than deleted, so the suite still states what is true about the
+legacy registry (see TestRetirementIsComplete) instead of going silent.
 
 crm_admin_tasks keeps its two-step build: seed ACTIVE staff, then re-add
 anyone who still holds tasks but is no longer active. That is what keeps a
@@ -358,32 +358,33 @@ class TestNoJsonConsumersRemain:
         assert offenders == [], offenders
 
 
-class TestRetirementCodeIsRetained:
-    """Stage 4 is a SEPARATE approval. Nothing may be deleted here."""
+class TestRetirementIsComplete:
+    """Was TestRetirementCodeIsRetained — the tripwire guarding Stage 4.
 
-    def test_the_three_functions_still_exist(self):
+    Stage 4C ran. Batch 3 required the registry retained as the rollback
+    target; these assertions are inverted rather than deleted, so the suite
+    still states what is true about the legacy registry instead of going
+    silent about it.
+    """
+
+    def test_the_three_functions_are_gone(self):
         from app.routes import admin
         for name in ("load_staff_registry", "save_staff_registry",
                      "get_staff_json_path"):
-            assert callable(getattr(admin, name)), name
+            assert not hasattr(admin, name), name
 
-    def test_the_json_file_still_exists(self):
+    def test_the_json_file_is_gone(self):
         path = os.path.join(ROOT, "app", "data", "staff_master.json")
-        assert os.path.exists(path)
+        assert not os.path.exists(path)
 
-    def test_the_file_still_holds_the_legacy_rows(self):
-        """It is the rollback target; its contents must be intact.
-
-        Stage 4B: reads the file DIRECTLY rather than through
-        load_staff_registry(), so this tripwire depends only on the file — and
-        compares against the frozen snapshot rather than a literal, so the two
-        records of the retired registry cannot disagree.
-        """
-        import json
-        path = os.path.join(ROOT, "app", "data", "staff_master.json")
-        with open(path, encoding="utf-8") as fh:
-            live = json.load(fh)
-        assert sorted(live) == sorted(LEGACY_OXFORD_REGISTRY)
+    def test_the_frozen_snapshot_preserves_the_legacy_rows(self):
+        """The file was the rollback target and the parity anchor. Stage 4B
+        froze its contents into tests/legacy_staff_registry.py precisely so
+        this record would survive 4C — the values are still asserted, just no
+        longer read from a file that exists."""
+        assert sorted(LEGACY_OXFORD_REGISTRY) == ["ANJU", "KIRAN", "NISHA"]
+        assert all(d["role"] == "STAFF" and d["active"] is True
+                   for d in LEGACY_OXFORD_REGISTRY.values())
 
 
 class TestScopeContainment:
