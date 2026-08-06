@@ -134,7 +134,13 @@ class TestNothingIsWired:
                         if ("staff_service" in mod
                                 or any(a.name == "staff_service" for a in node.names)):
                             offenders.append(os.path.relpath(full, ROOT))
-        allowed = [os.path.join("app", "routes", "admin.py")]
+        # RC2.3E-0 added staff_identity_service, the dual-read helper. It
+        # sits BELOW the routes layer and legitimately consumes
+        # staff_service; it is named explicitly so an unexpected consumer
+        # still fails.
+        allowed = sorted([os.path.join("app", "routes", "admin.py"),
+                          os.path.join("app", "services",
+                                       "staff_identity_service.py")])
         assert sorted(set(offenders)) == allowed, \
             f"unapproved staff_service consumer: {set(offenders)}"
 
@@ -167,6 +173,10 @@ class TestNothingIsWired:
         assertion this way keeps the guard meaningful instead of deleting it.
         """
         DUAL_WRITE_READERS = {"staff_backfill_service.py"}
+        # RC2.3E-0: the dual-read helper is now the SINGLE reader of
+        # READ_FK — that is what makes the flag a working rollback switch.
+        # Named explicitly so any other reader still fails.
+        READ_FK_READERS = {"staff_identity_service.py"}
         offenders_dual, offenders_read = [], []
         for dirpath, _d, files in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dirpath:
@@ -181,10 +191,12 @@ class TestNothingIsWired:
                 if ("staff_identity_dual_write_enabled" in body
                         and name not in DUAL_WRITE_READERS):
                     offenders_dual.append(rel)
-                if "staff_identity_read_fk_enabled" in body:
+                if ("staff_identity_read_fk_enabled" in body
+                        and name not in READ_FK_READERS):
                     offenders_read.append(rel)
         assert offenders_dual == [], f"DUAL_WRITE read outside the owner: {offenders_dual}"
-        assert offenders_read == [], f"READ_FK read before RC2.3E: {offenders_read}"
+        assert offenders_read == [], \
+            f"READ_FK read outside the dual-read helper: {offenders_read}"
 
     def test_no_code_writes_assigned_user_id(self):
         """AST, not string matching. flags.py mentions the column in a comment

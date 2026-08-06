@@ -380,7 +380,13 @@ class TestStage0IsNotWired:
                         if ("staff_service" in mod and "backfill" not in mod) or \
                            any(a.name == "staff_service" for a in n.names):
                             offenders.append(os.path.relpath(full, ROOT))
-        allowed = [os.path.join("app", "routes", "admin.py")]
+        # RC2.3E-0 added staff_identity_service, the dual-read helper. It
+        # sits BELOW the routes layer and legitimately consumes
+        # staff_service; it is named explicitly so an unexpected consumer
+        # still fails.
+        allowed = sorted([os.path.join("app", "routes", "admin.py"),
+                          os.path.join("app", "services",
+                                       "staff_identity_service.py")])
         assert sorted(set(offenders)) == allowed, \
             f"unapproved consumer: {set(offenders)}"
 

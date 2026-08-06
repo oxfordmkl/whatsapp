@@ -581,11 +581,18 @@ class TestScopeContainment:
         assert not hasattr(admin, "get_staff_json_path")
 
     def test_no_consumer_reads_assigned_user_id(self):
-        """RC2.3C is a migration utility; reader migration is RC2.3D."""
+        """RC2.3C is a migration utility; reader migration is RC2.3D.
+
+        RC2.3E-0 added staff_identity_service — the dual-read helper that will
+        own every FK read once consumers migrate. It is allowlisted BY NAME so
+        the guard still catches a consumer reading the FK directly, which is
+        the thing that would break the flag's rollback property.
+        """
         import ast
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         offenders = []
-        allowed = {"models.py", "staff_backfill_service.py"}
+        allowed = {"models.py", "staff_backfill_service.py",
+                   "staff_identity_service.py"}
         for dp, _d, fs in os.walk(os.path.join(root, "app")):
             if "__pycache__" in dp:
                 continue

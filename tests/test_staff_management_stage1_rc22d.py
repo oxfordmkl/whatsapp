@@ -391,7 +391,13 @@ class TestNoOtherConsumerMigrated:
                             or any(a.name == "staff_service" for a in n.names)
                     if hit:
                         offenders.append(os.path.relpath(full, ROOT))
-        assert sorted(set(offenders)) == [os.path.join("app", "routes", "admin.py")], \
+        # RC2.3E-0 added staff_identity_service, the dual-read helper, which
+        # legitimately consumes staff_service. Named explicitly so an
+        # unexpected consumer still fails.
+        allowed = sorted([os.path.join("app", "routes", "admin.py"),
+                          os.path.join("app", "services",
+                                       "staff_identity_service.py")])
+        assert sorted(set(offenders)) == allowed, \
             f"unapproved consumer: {set(offenders)}"
 
 

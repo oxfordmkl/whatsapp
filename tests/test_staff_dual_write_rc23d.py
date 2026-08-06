@@ -318,7 +318,11 @@ class TestTenantIsolation:
 # ═══ Readers unchanged ═══════════════════════════════════════════════════════
 
 class TestNoReaderMigration:
-    ALLOWED = {"models.py", "staff_backfill_service.py", "staff_service.py"}
+    # RC2.3E-0 added staff_identity_service, the dual-read helper that will
+    # own every FK read once consumers migrate. Allowlisted BY NAME so the
+    # guard still catches a consumer reading the FK directly.
+    ALLOWED = {"models.py", "staff_backfill_service.py", "staff_service.py",
+               "staff_identity_service.py"}
 
     def test_no_module_reads_assigned_user_id(self):
         """RC2.3D writes only. Reader migration is RC2.3E."""
@@ -339,18 +343,27 @@ class TestNoReaderMigration:
                         offenders.append(os.path.relpath(full, ROOT))
         assert sorted(set(offenders)) == [], f"readers appeared: {set(offenders)}"
 
-    def test_read_fk_flag_is_unread(self):
+    def test_read_fk_flag_is_read_only_by_the_dual_read_helper(self):
+        """Was "RC2.3E flag read early" — nothing may read READ_FK.
+
+        RC2.3E-0 introduced staff_identity_service as the SINGLE reader of it.
+        That single point is what makes the flag a working rollback switch: a
+        toggle reverts every migrated consumer at once only while no consumer
+        reads the flag itself. Allowlisted BY NAME so a second reader still
+        fails.
+        """
+        allowed = {"flags.py", "staff_identity_service.py"}
         offenders = []
         for dp, _d, fs in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dp:
                 continue
             for f in fs:
-                if not f.endswith(".py") or f == "flags.py":
+                if not f.endswith(".py") or f in allowed:
                     continue
                 with open(os.path.join(dp, f), encoding="utf-8") as fh:
                     if "staff_identity_read_fk_enabled" in fh.read():
                         offenders.append(f)
-        assert offenders == [], f"RC2.3E flag read early: {offenders}"
+        assert offenders == [], f"READ_FK read outside the helper: {offenders}"
 
     def test_registry_is_retired(self):
         """Was "the JSON registry is still authoritative" at RC2.3D. RC2.2D
