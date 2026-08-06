@@ -205,6 +205,107 @@ def display_for_key(tenant_id, key):
     return staff_keys(tenant_id, active_only=False).get(key, key)
 
 
+class AssignmentResolution:
+    """The outcome of validating one assigned_staff value. See
+    resolve_assignment()."""
+
+    __slots__ = ("value", "user", "user_id", "ok", "reason", "canonical")
+
+    def __init__(self, value, user, ok, reason, canonical):
+        self.value = value          #: input, trimmed; None when blank
+        self.user = user            #: resolved User, or None
+        self.user_id = user.id if user is not None else None
+        self.ok = ok               #: True when blank OR resolved
+        self.reason = reason        #: why it failed, or None
+        self.canonical = canonical  #: the tenant's stored spelling, or None
+
+    @property
+    def is_unassignment(self) -> bool:
+        """A blank value means "clear the owner" — legal, not a failure."""
+        return self.ok and self.user is None
+
+    def __repr__(self):
+        return (f"<AssignmentResolution value={self.value!r} ok={self.ok} "
+                f"user_id={self.user_id} reason={self.reason!r}>")
+
+
+def resolve_assignment(tenant_id, value):
+    """Validate an assigned_staff value against the tenant's real staff.
+
+    Phase H3-0 — DORMANT. No write path calls this yet.
+
+    THE DEFECT THIS EXISTS TO CLOSE
+    -------------------------------
+    All eight assigned_staff write paths accept a free string. The ROW is
+    tenant-scoped everywhere (Phase 14B.2 C1), but the VALUE is not checked
+    against anything: an admin can store a colleague's name from another
+    tenant, a deleted staff member, or 'asdf'. Production already carries one
+    such row ('Anju_display').
+
+    Today that is cosmetic — the lead shows under a bucket matching no real
+    person. After RC2.3E flips reads to the FK it becomes INVISIBLE: the FK is
+    NULL, so the lead vanishes from every per-staff view and reappears only
+    under Unassigned. A lead someone believes is assigned stops being shown to
+    its owner.
+
+    WHY IT DELEGATES RATHER THAN RE-IMPLEMENTS
+    ------------------------------------------
+    It calls staff_backfill_service.resolve_user_id() — the SAME function
+    sync_assigned_user() uses to populate the FK. That is not convenience, it
+    is the correctness property: if this validator accepted a value the
+    dual-write could not resolve, validation would pass and the FK would still
+    land NULL, which is strictly worse than no validation at all. One resolver
+    means the two cannot disagree. test_agrees_with_sync_assigned_user pins it.
+
+    INACTIVE STAFF RESOLVE
+    ----------------------
+    resolve_user_id()'s candidate pool is every User in the tenant, including
+    inactive ones and admins. That is deliberate and matches dual-write: an
+    inactive member is a REAL person whose FK populates correctly, and
+    inactive-but-assigned is already an established state — crm_staff_management
+    blocks deactivating someone who still holds leads (BLOCK_DEACTIVATION), so
+    the reverse pairing must remain expressible. Refusing them here would
+    diverge from the FK the dual-write then writes.
+
+    BLANK IS NOT A FAILURE
+    ----------------------
+    Clearing an assignment is legal on every path. A blank value returns
+    ok=True with user=None (is_unassignment), so a caller can distinguish
+    "unassign this lead" from "I could not resolve this name".
+
+    RETURNS AN AssignmentResolution — IT DOES NOT DECIDE POLICY
+    -----------------------------------------------------------
+    Whether an unresolvable value is REJECTED (400 / skipped CSV row) or
+    accepted with a warning is a per-path decision for H3-1, and the paths
+    differ: a crafted JSON POST should probably be refused, while failing a
+    whole CSV row over one bad cell may not be what an operator wants. This
+    function reports; the caller decides.
+
+    `canonical` carries the tenant's stored spelling (so 'anju' resolves to
+    'Anju') for a caller that wants to normalise on write. Using it CHANGES
+    stored values, so it is offered, never applied here.
+    """
+    from app.services.staff_backfill_service import resolve_user_id
+    from app.models import User
+
+    trimmed = (value or "").strip() or None
+    if trimmed is None:
+        return AssignmentResolution(None, None, True, None, None)
+    if not tenant_id:
+        return AssignmentResolution(trimmed, None, False,
+                                    "no tenant context", None)
+
+    user_id, reason = resolve_user_id(tenant_id, trimmed)
+    if user_id is None:
+        logger.info("assignment rejected: tenant=%s value=%r reason=%s",
+                    tenant_id, trimmed, reason)
+        return AssignmentResolution(trimmed, None, False, reason, None)
+
+    user = User.query.get(user_id)
+    return AssignmentResolution(trimmed, user, True, None,
+                                user.display_label() if user else None)
+
+
 def owner_filter(model, user):
     """Predicate selecting the rows owned by ONE user.
 
