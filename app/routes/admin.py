@@ -1954,9 +1954,31 @@ def crm_staff_management():
             new_active = request.form.get("active") == "on"
             if not new_active and staff.is_active:
                 from app.models import ConversationState
-                staff_name = staff.display_label()
-                norm_name = normalize_staff_name(staff_name)
-                leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
+                # Phase RC2.3E-1 Batch 3: the deactivation guard now resolves
+                # ownership through the dual-read helper — the FIRST consumer
+                # of owner_filter(). Under the flag it is an indexed FK
+                # comparison; without it, lower(trim(col)) == label.
+                #
+                # This FIXES a live defect. The predicate here was
+                # `assigned_staff == normalize_staff_name(...)`, which is
+                # case-SENSITIVE against a title-cased name, so leads spelled
+                # in another case were invisible to the guard. Production
+                # currently holds both 'Kiran' and 'kiran' (and 'Anju'/'anju'):
+                # the count read 24 where the true figure is 27. A staff member
+                # whose leads were ALL lowercase would have counted 0 and been
+                # deactivable while still owning live leads — precisely what
+                # BLOCK_DEACTIVATION exists to prevent.
+                #
+                # _tenant is passed explicitly for consistency with
+                # resolve_code() above and with the RC2.2F convention, NOT as a
+                # correctness fix: tenant_query()'s SUPER_ADMIN branch returns
+                # before it consults the argument, and for a normal admin
+                # `tenant_id or current_user.tenant_id` resolves to the same
+                # value. The two forms are equivalent in every reachable case.
+                norm_name = normalize_staff_name(staff.display_label())
+                leads_count = tenant_query(ConversationState, _tenant).filter(
+                    staff_identity_service.owner_filter(
+                        ConversationState, staff)).count()
                 if leads_count > 0:
                     err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                     return redirect(url_for("admin.crm_staff_management", err=err_msg))
@@ -1983,9 +2005,14 @@ def crm_staff_management():
                 new_active = not staff.is_active
                 if not new_active:
                     from app.models import ConversationState
-                    staff_name = staff.display_label()
-                    norm_name = normalize_staff_name(staff_name)
-                    leads_count = tenant_query(ConversationState).filter(ConversationState.assigned_staff == norm_name).count()
+                    # Phase RC2.3E-1 Batch 3: the toggle path reaches the same
+                    # guard as the edit path above and must not diverge from
+                    # it — the two were already an exact duplicate, and a fix
+                    # applied to only one of them would be worse than neither.
+                    norm_name = normalize_staff_name(staff.display_label())
+                    leads_count = tenant_query(ConversationState, _tenant).filter(
+                        staff_identity_service.owner_filter(
+                            ConversationState, staff)).count()
                     if leads_count > 0:
                         err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                         return redirect(url_for("admin.crm_staff_management", err=err_msg))
