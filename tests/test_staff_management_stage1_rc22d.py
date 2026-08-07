@@ -318,11 +318,19 @@ class TestWritePathUnchanged:
 
     def test_deactivation_guard_still_present(self):
         """The BLOCK_DEACTIVATION check protects leads; it lives in the write
-        path and must survive the read migration."""
+        path and must survive the read migration.
+
+        Counts the two ERROR CONSTRUCTIONS, not raw occurrences of the token.
+        The original counted the bare string and broke in H3-1B-a when a
+        rationale comment merely mentioned BLOCK_DEACTIVATION — the same
+        string-matching false positive this project has hit repeatedly. The
+        guard is the f-string that builds the redirect payload; a comment
+        about it is not a third guard.
+        """
         with open(os.path.join(ROOT, "app", "routes", "admin.py"),
                   encoding="utf-8") as fh:
             body = fh.read()
-        assert body.count("BLOCK_DEACTIVATION") == 2
+        assert body.count('f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"') == 2
 
 
 # ═══ Requirement 1 & 5 — no other consumer changed ═══════════════════════════

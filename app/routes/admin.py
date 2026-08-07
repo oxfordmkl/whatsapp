@@ -49,6 +49,9 @@ from app.services.staff_backfill_service import sync_assigned_user as _sync_assi
 # Phase RC2.2D Stage 1: tenant-scoped staff registry. Read-only, imports no
 # Flask and touches no database until called.
 from app.services import staff_service
+# Phase H3-1B-a: assigned_staff write validation. Read-only, imports no Flask,
+# and touches no database until called.
+from app.services import staff_identity_service
 
 from functools import wraps
 from flask import abort
@@ -1150,6 +1153,33 @@ def crm_lead_new():
         return redirect(url_for("admin.crm_lead_detail", phone=phone,
                                 msg="This+lead+already+exists+-+opened+the+existing+record."))
 
+    # ── Phase H3-1B-a: reject an owner who is not this tenant's staff ──────
+    #
+    # assigned_staff was a free string on every write path. The ROW was
+    # tenant-scoped (14B.2 C1) but the VALUE was not, so a crafted POST — or a
+    # stale page — could store another tenant's staff name, a deleted member,
+    # or anything at all. Production carries one such row: lead id=4, whose
+    # owner was overwritten with 'Anju_display' on 2026-07-14 while Anju kept
+    # completing its follow-ups.
+    #
+    # Rejected rather than warned because this field is a dropdown listing
+    # only valid options: an invalid value here is a crafted request or a
+    # stale page, not an honest typo. CSV import warns instead (H3-1B-c) —
+    # different input, different UX.
+    #
+    # resolve_assignment() delegates to the SAME resolver the dual-write uses,
+    # so a value this accepts is one whose FK will populate. Blank stays legal
+    # (is_unassignment) and inactive staff still resolve — they are real users
+    # whose FK lands correctly, and BLOCK_DEACTIVATION already makes
+    # inactive-but-assigned a supported state.
+    _owner = staff_identity_service.resolve_assignment(
+        _tid, request.form.get("assigned_staff", ""))
+    if not _owner.ok:
+        return redirect(url_for(
+            "admin.crm_lead_new",
+            err=f"'{_owner.value}' is not a current staff member of this "
+                f"institute — choose from the Assign To list."))
+
     lead = ConversationState(
         phone=phone,
         name=name,
@@ -1161,7 +1191,9 @@ def crm_lead_new():
         # unrecognised submission falls back to the entry status "Lead", so a
         # new lead can never be created with a status outside the vocabulary.
         lead_status=canonical_lead_status(request.form.get("lead_status"), default="Lead"),
-        assigned_staff=(request.form.get("assigned_staff", "") or "").strip() or None,
+        # Validated above. `.value` is the operator's own spelling, trimmed —
+        # NOT `.canonical`, so this write stores exactly what it stored before.
+        assigned_staff=_owner.value,
         notes=(request.form.get("notes", "") or "").strip() or None,
         lead_score=0,
         is_admitted=False,
@@ -2310,7 +2342,23 @@ def crm_lead_update(phone):
         lead.notes          = request.form.get("notes",          "").strip() or None
 
         if not is_staff:
-            lead.assigned_staff = request.form.get("assigned_staff", "").strip() or None
+            # ── Phase H3-1B-a: reject an owner who is not this tenant's staff
+            #
+            # Rolled back before returning: lead_status and notes were already
+            # assigned above, so returning without this would leave the session
+            # holding a partial edit — the same reason the admission hard-block
+            # below rolls back. Rejecting must change nothing.
+            _owner = staff_identity_service.resolve_assignment(
+                _tid, request.form.get("assigned_staff", ""))
+            if not _owner.ok:
+                db.session.rollback()
+                return redirect(url_for(
+                    "admin.crm_lead_detail", phone=phone,
+                    err=f"'{_owner.value}' is not a current staff member of "
+                        f"this institute — choose from the Assigned Staff list."))
+            # `.value`, not `.canonical` — store the operator's own spelling,
+            # exactly as before.
+            lead.assigned_staff = _owner.value
             # Phase RC2.3D: mirror into assigned_user_id (no-op while the flag
             # is OFF). Placed immediately after the legacy write so the two
             # cannot diverge.
@@ -5043,6 +5091,30 @@ def crm_auto_assign_confirm():
     if not _tid:
         return jsonify({"error": "Unauthorized"}), 401
 
+    # ── Phase H3-1B-a: validate EVERY owner before writing ANY of them ────
+    #
+    # This endpoint takes target_staff from the request body — the client's
+    # echo of the preview, not the server's computation — so it is the easiest
+    # of the eight write paths to abuse, and the only one carrying a distinct
+    # owner per row.
+    #
+    # Validated as a batch, up front: a per-row reject mid-loop would leave
+    # some leads reassigned and others not, with a 400 telling the caller
+    # nothing about which. All-or-nothing is the only honest contract for a
+    # bulk write.
+    _rejects = []
+    for _a in assignments:
+        _v = staff_identity_service.resolve_assignment(_tid, _a.get("target_staff"))
+        if not _v.ok:
+            _rejects.append({"phone": _a.get("phone"), "target_staff": _v.value,
+                             "reason": _v.reason})
+    if _rejects:
+        return jsonify({
+            "error": "One or more target staff are not current staff members "
+                     "of this institute — nothing was assigned.",
+            "rejected": _rejects,
+        }), 400
+
     updated_count = 0
     for assign in assignments:
         phone = assign.get("phone")
@@ -5153,6 +5225,19 @@ def crm_reassignment_confirm():
     _tid = _actor_tenant_id()
     if not _tid:
         return jsonify({"error": "Unauthorized"}), 401
+
+    # ── Phase H3-1B-a: reject an owner who is not this tenant's staff ──────
+    #
+    # One target for the whole batch, so one check before the loop. Nothing is
+    # written when it fails, which is what makes the 400 truthful.
+    _owner = staff_identity_service.resolve_assignment(_tid, target_staff)
+    if not _owner.ok:
+        return jsonify({
+            "error": f"'{_owner.value}' is not a current staff member of this "
+                     f"institute — nothing was reassigned.",
+            "target_staff": _owner.value,
+            "reason": _owner.reason,
+        }), 400
 
     leads = tenant_query(ConversationState, _tid).filter(
         ConversationState.phone.in_(phones)).all()

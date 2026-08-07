@@ -212,7 +212,12 @@ class TestDormancy:
                                 or any(a.name == "staff_identity_service"
                                        for a in n.names)):
                             offenders.append(os.path.relpath(full, ROOT))
-        assert sorted(set(offenders)) == [], f"consumer migrated early: {offenders}"
+        # H3-1B-a imports staff_identity_service into admin.py for the write
+        # validator. The READ helpers (owner_key/owner_column/staff_keys) are
+        # still consumed by nothing — that is RC2.3E-1 — and
+        # test_no_consumer_reads_the_flag_directly still guards the flag.
+        allowed = [os.path.join("app", "routes", "admin.py")]
+        assert sorted(set(offenders)) == allowed,             f"unapproved consumer: {set(offenders)}"
 
     def test_helper_never_writes(self):
         with open(os.path.join(ROOT, "app", "services",

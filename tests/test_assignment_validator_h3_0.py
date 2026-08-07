@@ -308,7 +308,12 @@ class TestDormancy:
                     if isinstance(n, ast.Call) and \
                             ast.unparse(n.func).endswith("resolve_assignment"):
                         offenders.append(os.path.relpath(full, ROOT))
-        assert offenders == [], f"write path migrated early: {offenders}"
+        # H3-1B-a wired the four form/JSON lead paths, all in admin.py.
+        # Allowlisted BY FILE so a write path in any OTHER module still fails;
+        # the per-function scope is asserted in
+        # test_assignment_reject_h3_1b_a.py::test_exactly_the_approved_paths_are_wired.
+        allowed = {os.path.join("app", "routes", "admin.py")}
+        assert set(offenders) <= allowed,             f"validator wired outside the approved paths: {set(offenders)-allowed}"
 
     def test_the_csv_import_dual_write_gap_is_closed(self):
         """H3 discovery found crm_leads_import writes assigned_staff through a
