@@ -308,20 +308,21 @@ class TestScopeContainment:
         assert "TaskError" not in window
         assert "400" not in window
 
-    def test_seven_of_eight_write_paths_validate(self):
-        """SEVEN of the eight. crm_unassigned_assign is still open.
+    def test_eight_of_eight_write_paths_validate(self):
+        """EIGHT of eight — INVERTED by H3-1B-d, which closed the gap.
 
-        Recorded honestly rather than asserted away: the H3-1B discovery
-        report listed crm_unassigned_assign in its write-path INVENTORY but
-        omitted it from the reject/warn recommendation table, so H3-1B-a was
-        scoped and approved against an incomplete list and wired four paths
-        instead of five. H3-1B-c does not silently widen its own scope to
-        cover it; the gap needs its own approval.
+        This test asserted 7/8 when H3-1B-c shipped, recording a mistake of
+        mine rather than asserting it away: the H3-1B discovery report listed
+        crm_unassigned_assign in its write-path INVENTORY but omitted it from
+        the reject/warn recommendation table, so H3-1B-a was scoped and
+        approved against an incomplete list and wired four paths instead of
+        five. H3-1B-c declined to widen its own scope to cover it.
 
-        Flip this to eight when that lands.
+        H3-1B-d wired it under its own approval. The history stays in this
+        docstring; the assertion now holds the finished state.
         """
         tree = self._tree()
-        for name in ("crm_lead_new", "crm_lead_update",
+        for name in ("crm_lead_new", "crm_lead_update", "crm_unassigned_assign",
                      "crm_auto_assign_confirm", "crm_reassignment_confirm",
                      "crm_leads_import"):
             fn = next(n for n in ast.walk(tree)
@@ -331,12 +332,6 @@ class TestScopeContainment:
                    encoding="utf-8").read()
         assert src.count("resolve_assignment") >= 2
 
-        fn = next(n for n in ast.walk(tree)
-                  if isinstance(n, ast.FunctionDef)
-                  and n.name == "crm_unassigned_assign")
-        assert "resolve_assignment" not in ast.unparse(fn), \
-            "crm_unassigned_assign is now wired — update this test to assert 8/8"
-
     def test_dual_write_still_gated_and_present(self):
         fn = next(n for n in ast.walk(self._tree())
                   if isinstance(n, ast.FunctionDef)
@@ -345,13 +340,20 @@ class TestScopeContainment:
         assert "_sync_assigned_user" in src
         assert "if 'assigned_staff' in changed:" in src.replace('"', "'")
 
-    def test_unassigned_assign_route_untouched(self):
-        """crm_unassigned_assign was never in H3-1B scope — its target comes
-        from the same dropdown, but wiring it was not approved here."""
+    def test_unassigned_assign_rejects_rather_than_warns(self):
+        """INVERTED by H3-1B-d. This asserted the route was untouched.
+
+        Now that it is wired, the contract worth holding is that it took the
+        REJECT policy of the other form paths, not this phase's warn-and-drop
+        — CSV remains the only path that warns.
+        """
         fn = next(n for n in ast.walk(self._tree())
                   if isinstance(n, ast.FunctionDef)
                   and n.name == "crm_unassigned_assign")
-        assert "resolve_assignment" not in ast.unparse(fn)
+        src = ast.unparse(fn)
+        assert "resolve_assignment" in src
+        assert "err=" in src.replace('"', "'") or "err=" in src
+        assert "summary['errors']" not in src.replace('"', "'")
 
     def test_no_schema_or_migration_change(self):
         versions = os.path.join(ROOT, "migrations", "versions")

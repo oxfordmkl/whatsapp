@@ -356,9 +356,12 @@ class TestScopeContainment:
     def test_the_approved_paths_are_still_wired(self):
         """H3-1B-c later wired crm_leads_import (warn-and-drop), so this is an
         inclusion check rather than equality. What it still guards is that
-        none of H3-1B-a's four paths lost their validation — and that
-        crm_unassigned_assign stays unwired, since it was omitted from the
-        H3-1B discovery recommendation table and never approved."""
+        none of H3-1B-a's four paths lost their validation.
+
+        The trailing clause here used to assert crm_unassigned_assign stayed
+        unwired — it was omitted from the H3-1B discovery recommendation table
+        and so never approved in this phase. H3-1B-d approved and wired it,
+        so that assertion is INVERTED below rather than dropped."""
         tree = self._tree()
         users = set()
         for fn in ast.walk(tree):
@@ -370,7 +373,8 @@ class TestScopeContainment:
                     users.add(fn.name)
         assert self.WIRED <= users, \
             f"a Batch-a path lost validation: {self.WIRED - users}"
-        assert "crm_unassigned_assign" not in users
+        assert "crm_unassigned_assign" in users, \
+            "H3-1B-d wired crm_unassigned_assign; it must not regress"
 
     def test_csv_uses_warn_not_reject(self):
         """Was "later phases are untouched". H3-1B-b wired the task paths and

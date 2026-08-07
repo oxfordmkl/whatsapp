@@ -34,7 +34,16 @@
 {% include 'crm_sidebar.html' %}
 <div class="crm-main">
 <div class="container-fluid py-4 max-w-1200">
-  
+
+  {# Phase H3-1B-d: a rejected assignment. Bootstrap's own alert-danger, not
+     the alert-crm-error class used on the lead-detail page — that class is
+     defined inline in crm_lead_detail.html and would render unstyled here. #}
+  {% if err %}
+  <div class="alert alert-danger d-flex align-items-center gap-2 mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i>{{ err | replace('+', ' ') }}
+  </div>
+  {% endif %}
+
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
       <h2 class="mb-1" style="font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
@@ -151,7 +160,7 @@
         </tbody>
       </table>
     </div>
-    
+
     <div class="d-flex justify-content-end gap-2 mt-2">
       <button class="btn btn-outline-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="btnConfirmAuto" onclick="confirmAutoAssign()">Confirm & Execute</button>

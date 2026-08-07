@@ -5007,6 +5007,11 @@ def crm_unassigned_leads():
         pagination=pagination,
         recommendations=recommendations,
         active_staff=active_staff,
+        # Phase H3-1B-d: surfaces a rejected assignment. This screen had no
+        # error channel at all — it is standalone (no base template) and does
+        # not render flashed messages, so the err= querystring convention used
+        # by crm_lead_new / crm_lead_detail is the one that works here.
+        err=request.args.get("err", ""),
         total=pagination.total
     )
 
@@ -5036,10 +5041,33 @@ def crm_unassigned_assign():
     if not _tid:
         return redirect(url_for("admin.crm_unassigned_leads", key=key))
 
+    # Phase H3-1B-d: the eighth and last assigned_staff write path to be
+    # validated. REJECT, matching the other form paths (H3-1B-a) — the target
+    # comes from a <select> built from active_display_names(), so a value that
+    # does not resolve means a stale page or a tampered POST, not a typo. CSV
+    # import warns instead (H3-1B-c); different input, different UX.
+    #
+    # Validated BEFORE the lookup, so no mutation can precede a rejection.
+    # crm_lead_update needs a rollback here because it assigns other fields
+    # first; this route touches nothing beforehand, so there is no dirty state
+    # to unwind and adding one would be cargo-cult.
+    #
+    # This path was missed by H3-1B-a: the H3-1B discovery report listed it in
+    # the write-path inventory but omitted it from the reject/warn table, so
+    # the approved scope covered four form/JSON paths instead of five.
+    _owner = staff_identity_service.resolve_assignment(_tid, target_staff)
+    if not _owner.ok:
+        return redirect(url_for(
+            "admin.crm_unassigned_leads", key=key,
+            err=f"'{_owner.value}' is not a current staff member of this "
+                f"institute — choose from the list."))
+
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
-    if lead and lead.assigned_staff != target_staff:
+    # `.value`, not `.canonical` — store the operator's own spelling, exactly
+    # as before. Canonicalisation is the read layer's job (RC2.3E).
+    if lead and lead.assigned_staff != _owner.value:
         old_staff = lead.assigned_staff
-        lead.assigned_staff = target_staff
+        lead.assigned_staff = _owner.value
         _sync_assigned_user(lead, _tid)          # Phase RC2.3D dual-write
 
         log_lead_event(tenant_id=_actor_tenant_id(),
@@ -5047,7 +5075,7 @@ def crm_unassigned_assign():
             event_type="LEAD_REASSIGNED",
             event_data=json.dumps({
                 "from": old_staff or "Unassigned",
-                "to": target_staff,
+                "to": _owner.value,
                 "by": "Admin UX Assignment"
             })
         )
