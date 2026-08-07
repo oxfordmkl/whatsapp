@@ -189,20 +189,33 @@ class TestUnchangedBehaviour:
         assert row.assigned_staff == "Anju", "import must not clear an owner"
         assert row.assigned_user_id == seeded["anju"]
 
-    def test_invalid_owner_imports_with_a_null_fk(self, seeded):
-        """UNCHANGED BEHAVIOUR, asserted deliberately. H3-1A only closes the
-        dual-write gap; whether an unresolvable name is rejected is H3-1B's
-        policy decision. Today it imports and the FK stays NULL."""
+    def test_invalid_owner_is_dropped_and_the_row_still_imports(self, seeded):
+        """SUPERSEDED BY H3-1B-c.
+
+        H3-1A asserted an unresolvable name imported as-is with a NULL FK,
+        because at that point whether to refuse it was still H3-1B's open
+        policy decision. That decision was made: CSV WARNS and drops the
+        field. The row still imports — which is the part H3-1A cared about —
+        but the bad owner is no longer written, so an import can no longer
+        create a lead that becomes invisible under RC2.3E's FK reads.
+        Full coverage lives in test_csv_import_warn_h3_1b_c.py.
+        """
         upload(seeded["admin"], ["919000000012,Phantom,Anju_display"])
         row = lead("919000000012")
-        assert row.assigned_staff == "Anju_display"
+        assert row is not None, "the row must still import"
+        assert row.name == "Phantom"
+        assert row.assigned_staff is None
         assert row.assigned_user_id is None
 
-    def test_foreign_tenant_owner_gets_a_null_fk_not_a_cross_tenant_link(self, seeded):
-        """Naming another tenant's staff must never link to that user."""
+    def test_foreign_tenant_owner_is_never_linked(self, seeded):
+        """Naming another tenant's staff must never link to that user.
+
+        H3-1B-c strengthened this: the name is now DROPPED rather than stored
+        with a NULL FK, so the lead does not even carry a misleading owner.
+        """
         upload(seeded["admin"], ["919000000013,Foreign,Ravi"])
         row = lead("919000000013")
-        assert row.assigned_staff == "Ravi"
+        assert row.assigned_staff is None
         assert row.assigned_user_id is None
         assert row.tenant_id == OX
 
@@ -322,14 +335,21 @@ class TestScopeContainment:
         assert min(syncs) < min(c for c in commits if c > min(syncs) - 50), \
             "dual-write must precede the commit it belongs to"
 
-    def test_no_validator_wiring(self):
-        """H3-1B decides reject-vs-warn. This phase must not pre-empt it."""
+    def test_validator_is_now_wired_by_h3_1b_c(self):
+        """INVERTED by H3-1B-c.
+
+        H3-1A asserted the validator was NOT wired here, so that wiring it
+        would be a deliberate, visible change rather than something that
+        quietly happened. It has now been wired — as WARN-and-drop, not
+        reject. Inverted rather than deleted so the suite still states what
+        is true about this path.
+        """
         fn = next(n for n in ast.walk(_tree())
                   if isinstance(n, ast.FunctionDef)
                   and n.name == "crm_leads_import")
         src = ast.unparse(fn)
-        assert "resolve_assignment" not in src
-        assert "staff_identity_service" not in src
+        assert "resolve_assignment" in src
+        assert "summary['errors'].append" in src.replace('"', "'")
 
     def test_no_schema_or_migration_change(self):
         versions = os.path.join(ROOT, "migrations", "versions")

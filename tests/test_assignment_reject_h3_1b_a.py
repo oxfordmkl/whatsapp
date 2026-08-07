@@ -353,7 +353,12 @@ class TestScopeContainment:
                   encoding="utf-8") as fh:
             return ast.parse(fh.read())
 
-    def test_exactly_the_approved_paths_are_wired(self):
+    def test_the_approved_paths_are_still_wired(self):
+        """H3-1B-c later wired crm_leads_import (warn-and-drop), so this is an
+        inclusion check rather than equality. What it still guards is that
+        none of H3-1B-a's four paths lost their validation — and that
+        crm_unassigned_assign stays unwired, since it was omitted from the
+        H3-1B discovery recommendation table and never approved."""
         tree = self._tree()
         users = set()
         for fn in ast.walk(tree):
@@ -363,16 +368,24 @@ class TestScopeContainment:
                 if isinstance(c, ast.Call) and \
                         ast.unparse(c.func).endswith("resolve_assignment"):
                     users.add(fn.name)
-        assert users == self.WIRED, users
+        assert self.WIRED <= users, \
+            f"a Batch-a path lost validation: {self.WIRED - users}"
+        assert "crm_unassigned_assign" not in users
 
-    def test_later_phases_are_untouched(self):
-        """CSV (H3-1B-c) and tasks (H3-1B-b) must not be wired here — CSV in
-        particular gets warn-and-drop, not reject."""
+    def test_csv_uses_warn_not_reject(self):
+        """Was "later phases are untouched". H3-1B-b wired the task paths and
+        H3-1B-c wired CSV, so what still matters is that CSV kept the WARN
+        policy rather than adopting this phase's reject policy — the
+        distinction the whole H3-1B split exists to preserve."""
         tree = self._tree()
-        for name in ("crm_leads_import", "crm_tasks_create", "crm_tasks_edit"):
-            fn = next(n for n in ast.walk(tree)
-                      if isinstance(n, ast.FunctionDef) and n.name == name)
-            assert "resolve_assignment" not in ast.unparse(fn), name
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef)
+                  and n.name == "crm_leads_import")
+        src = ast.unparse(fn)
+        assert "resolve_assignment" in src
+        assert "summary['errors'].append" in src.replace('"', "'")
+        i = src.index("resolve_assignment")
+        assert "400" not in src[i:i + 600]
 
     def test_dual_write_still_on_every_path(self):
         tree = self._tree()

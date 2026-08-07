@@ -1497,6 +1497,42 @@ def crm_leads_import():
                                 _v.code, _v.rule_id, idx, _v.reason)
                         lead.lead_status = status_value; changed.append(field)
                     continue
+                if field == "assigned_staff":
+                    # ── Phase H3-1B-c: WARN and drop the field ─────────────
+                    #
+                    # CSV is the one write path that warns instead of
+                    # rejecting. The four form/JSON lead paths (H3-1B-a) and
+                    # the task paths (H3-1B-b) take their owner from a
+                    # dropdown listing only valid options, so an invalid value
+                    # there is a crafted request or a stale page. A spreadsheet
+                    # is different: a typo in one cell is an honest mistake,
+                    # and failing a 500-row import over it — or silently
+                    # dropping the whole row — would cost the operator far more
+                    # than the bad cell is worth.
+                    #
+                    # So this follows the two precedents already in THIS loop:
+                    # lead_score ("not a number — ignored") and lead_status
+                    # ("not a recognised status — ignored"). The row imports,
+                    # the bad field is not written, and the reason lands in
+                    # summary["errors"], which the template already renders as
+                    # "Rows needing attention".
+                    #
+                    # Dropping rather than writing is what matters for RC2.3E:
+                    # an unresolvable owner would leave assigned_user_id NULL,
+                    # and under FK reads that lead becomes invisible. Not
+                    # writing it keeps whatever valid owner the lead already
+                    # had.
+                    _owner = staff_identity_service.resolve_assignment(_tid, val)
+                    if not _owner.ok:
+                        summary["errors"].append(
+                            f"Row {idx}: assigned_staff {val!r} is not a "
+                            f"current staff member — ignored"
+                        )
+                        continue
+                    if lead.assigned_staff != _owner.value:
+                        lead.assigned_staff = _owner.value
+                        changed.append(field)
+                    continue
                 if getattr(lead, field, None) != val:
                     setattr(lead, field, val); changed.append(field)
 

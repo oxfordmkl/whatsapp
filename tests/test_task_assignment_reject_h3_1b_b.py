@@ -327,13 +327,18 @@ class TestScopeContainment:
         assert validate_at < first_write, \
             "validation must precede every field write"
 
-    def test_csv_import_still_unwired(self):
-        """H3-1B-c owns CSV, and it gets warn-and-drop, not reject."""
+    def test_csv_import_warns_rather_than_raising(self):
+        """Was "CSV still unwired". H3-1B-c wired it — as WARN-and-drop, not
+        the TaskError-style refusal used here. Inverted rather than deleted so
+        the policy distinction stays asserted."""
         tree = self._tree("app/routes/admin.py")
         fn = next(n for n in ast.walk(tree)
                   if isinstance(n, ast.FunctionDef)
                   and n.name == "crm_leads_import")
-        assert "resolve_assignment" not in ast.unparse(fn)
+        src = ast.unparse(fn)
+        assert "resolve_assignment" in src
+        assert "summary['errors'].append" in src.replace('"', "'")
+        assert "TaskError" not in src
 
     def test_dual_write_still_on_both_task_paths(self):
         src = open(os.path.join(ROOT, "app/services/task_service.py"),
