@@ -74,6 +74,17 @@ def main():
                             Tenant(id=T2, name="Two", slug="two")])
         db.session.add(ConversationState(phone="911", tenant_id=T1, name="Asha",
                                          stage="new", course="PGDCA"))
+        # Phase H3-1B-b: task assignees must now be real Users of the tenant.
+        # This suite previously assigned to bare strings because assigned_staff
+        # was unvalidated free text — the assumption H3 removed. Seeded per
+        # tenant so the cross-tenant assertions below still mean something.
+        from app.models import User as _U
+        from werkzeug.security import generate_password_hash as _pw
+        for _t, _n in ((T1, KIRAN), (T1, BIBIN), (T2, KIRAN), (T2, BIBIN)):
+            db.session.add(_U(username=_n, email=f"{_n}.{_t}@x.test".replace(" ", "_"),
+                              password_hash=_pw("pw"), role="STAFF",
+                              tenant_id=_t, is_active=True,
+                              require_password_change=False))
         db.session.commit()
 
         def ui(tenant=T1):

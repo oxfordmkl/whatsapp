@@ -134,10 +134,18 @@ def _seed():
     SalesPipelineSeeder(dry_run=False).run()
 
     from werkzeug.security import generate_password_hash
-    for tid, uname in ((A_ID, "admin-a"), (B_ID, "admin-b")):
+    # Phase H3-1B-b: 'staff-a'/'staff-b' must exist as real Users now.
+    # task_service refuses an assignee who is not staff of the acting tenant,
+    # so these fixtures create them rather than relying on assigned_staff
+    # being free text — which is exactly the assumption H3 removed. Note they
+    # are created PER TENANT: 'staff-a' in A only, 'staff-b' in B only, which
+    # keeps the cross-tenant assertions meaningful.
+    for tid, uname in ((A_ID, "admin-a"), (B_ID, "admin-b"),
+                       (A_ID, "staff-a"), (B_ID, "staff-b")):
         db.session.add(User(username=uname, email=f"{uname}@x.test",
                             password_hash=generate_password_hash("pw"),
-                            role="ADMIN", tenant_id=tid, is_active=True,
+                            role="ADMIN" if uname.startswith("admin") else "STAFF",
+                            tenant_id=tid, is_active=True,
                             require_password_change=False))
     db.session.commit()
 
@@ -414,9 +422,18 @@ class TestCampaignIsolation:
 
 class TestStaffIsolation:
     def test_users_are_scoped_by_tenant(self, iso_db):
-        assert User.query.filter_by(tenant_id=A_ID).count() == 1
-        assert all(u.tenant_id == A_ID
-                   for u in User.query.filter_by(tenant_id=A_ID).all())
+        """Asserts the SCOPING, not a head-count.
+
+        This previously pinned `count() == 1`, which broke in H3-1B-b when the
+        fixture gained a 'staff-a' User — needed because task_service now
+        refuses an assignee who is not real staff. The cardinality was
+        incidental; what the test is about is that tenant A sees only tenant
+        A's users, and that B's staff never appear here.
+        """
+        a_users = User.query.filter_by(tenant_id=A_ID).all()
+        assert {u.username for u in a_users} == {"admin-a", "staff-a"}
+        assert all(u.tenant_id == A_ID for u in a_users)
+        assert "staff-b" not in {u.username for u in a_users}
 
     def test_username_may_repeat_across_tenants(self, iso_db):
         """Uniqueness is per-tenant by constraint — two institutes may both

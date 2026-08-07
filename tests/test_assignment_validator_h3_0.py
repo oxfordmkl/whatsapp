@@ -312,7 +312,10 @@ class TestDormancy:
         # Allowlisted BY FILE so a write path in any OTHER module still fails;
         # the per-function scope is asserted in
         # test_assignment_reject_h3_1b_a.py::test_exactly_the_approved_paths_are_wired.
-        allowed = {os.path.join("app", "routes", "admin.py")}
+        # H3-1B-b wired the two task paths, which live in task_service —
+        # the choke point both task routes share. Allowlisted BY FILE.
+        allowed = {os.path.join("app", "routes", "admin.py"),
+                   os.path.join("app", "services", "task_service.py")}
         assert set(offenders) <= allowed,             f"validator wired outside the approved paths: {set(offenders)-allowed}"
 
     def test_the_csv_import_dual_write_gap_is_closed(self):

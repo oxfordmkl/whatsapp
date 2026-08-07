@@ -27,6 +27,9 @@ from datetime import datetime
 from app.extensions import db
 from app.models import Notification, Task
 from app.services import notification_service
+# Phase H3-1B-b: assigned_staff validation. Service->service, matching the
+# existing staff_backfill_service dependency; imports no Flask.
+from app.services import staff_identity_service
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +98,23 @@ def create_task(tenant_id, title, created_by, lead_phone=None, notes=None,
     if priority not in VALID_PRIORITIES:
         priority = "NORMAL"
 
-    staff = (assigned_staff or "").strip() or None
+    # ── Phase H3-1B-b: the assignee must be real staff of THIS tenant ──────
+    #
+    # Validated here rather than in the two routes because this service is the
+    # choke point both go through, it already owns every other field's
+    # validation (tenant, title, priority), and it already signals refusal the
+    # same way — TaskError, at eight existing sites.
+    #
+    # resolve_assignment() delegates to the SAME resolver sync_assigned_user()
+    # uses below, so a value accepted here is one whose FK will populate.
+    # Blank stays legal (an unassigned task is normal); inactive staff resolve,
+    # because they are real users whose FK lands correctly.
+    _owner = staff_identity_service.resolve_assignment(tenant_id, assigned_staff)
+    if not _owner.ok:
+        raise TaskError(
+            f"{_owner.value!r} is not a current staff member of this "
+            f"institute — cannot assign the task to them")
+    staff = _owner.value
 
     task = Task(
         tenant_id=tenant_id,
@@ -156,6 +175,21 @@ def update_task(tenant_id, task_id, actor, title=None, notes=None,
 
     previous_staff = task.assigned_staff
 
+    # ── Phase H3-1B-b: validate the assignee BEFORE any field is written ───
+    #
+    # Hoisted above the mutations deliberately. Raising after title/notes had
+    # already been assigned would leave a partial edit on the instance, which
+    # survives only because the caller does not commit — the same fragility
+    # mutation testing exposed in crm_lead_update's rejection. Validating
+    # first means a rejected edit cannot have touched the task at all.
+    _owner = None
+    if assigned_staff is not None:
+        _owner = staff_identity_service.resolve_assignment(tenant_id, assigned_staff)
+        if not _owner.ok:
+            raise TaskError(
+                f"{_owner.value!r} is not a current staff member of this "
+                f"institute — cannot assign the task to them")
+
     if title is not None:
         t = title.strip()
         if not t:
@@ -173,7 +207,10 @@ def update_task(tenant_id, task_id, actor, title=None, notes=None,
         if p in VALID_PRIORITIES:
             task.priority = p
     if assigned_staff is not None:
-        task.assigned_staff = assigned_staff.strip() or None
+        # Validated at the top of this function. `.value` — the caller's own
+        # spelling, trimmed — not `.canonical`, so the stored form is
+        # unchanged from before this phase.
+        task.assigned_staff = _owner.value
         # Phase RC2.3D dual-write — immediately after the legacy write.
         from app.services.staff_backfill_service import sync_assigned_user
         sync_assigned_user(task, tenant_id)

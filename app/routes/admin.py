@@ -5508,7 +5508,27 @@ def crm_tasks_create():
             assigned_staff=normalize_staff_name(staff) if staff else None,
         )
     except task_service.TaskError as e:
+        # Phase H3-1B-b: SURFACE the refusal instead of only logging it.
+        #
+        # This handler previously logged and fell through to the same redirect
+        # as success, so a rejected create looked to the operator like a task
+        # that simply never appeared — no message, nothing to act on. Harmless
+        # while the only refusals were "title required" (which the form's own
+        # `required` attribute already prevents), but H3-1B-b adds a refusal a
+        # real operator can trigger: assigning to someone who is no longer
+        # staff. A silent failure there is worse than the bug being fixed.
+        #
+        # crm_lead_detail renders `err`, and its task form is the ONLY template
+        # posting to this route — every UI-reachable create carries a phone, so
+        # the operator sees the message. The no-phone branch is reachable only
+        # by a crafted POST; it still carries err= (and the log line), but
+        # crm_admin_tasks does not render it, and adding that rendering for an
+        # unreachable path would be scope this phase has not earned.
         logging.warning("task create rejected tenant=%s: %s", tenant_id, e)
+        if phone:
+            return redirect(url_for("admin.crm_lead_detail", phone=phone,
+                                    err=str(e)))
+        return redirect(url_for("admin.crm_admin_tasks", err=str(e)))
 
     if phone:
         return redirect(url_for("admin.crm_lead_detail", phone=phone))

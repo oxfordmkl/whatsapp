@@ -72,6 +72,19 @@ def main():
                                          name="Asha", stage="new", course="PGDCA"))
         db.session.add(ConversationState(phone="922", tenant_id=T2,
                                          name="Other", stage="new", course="PGDCA"))
+        # Phase H3-1B-b: task assignees must now be real Users of the tenant.
+        # STAFF/OTHER were bare strings because assigned_staff was unvalidated
+        # free text — the assumption H3 removed. Seeded in BOTH tenants so the
+        # cross-tenant notification assertions still exercise a real name that
+        # exists on each side.
+        from app.models import User as _U
+        from werkzeug.security import generate_password_hash as _pw
+        for _t in (T1, T2):
+            for _n in (STAFF, OTHER):
+                db.session.add(_U(username=_n, email=f"{_n}.{_t}@x.test",
+                                  password_hash=_pw("pw"), role="STAFF",
+                                  tenant_id=_t, is_active=True,
+                                  require_password_change=False))
         db.session.commit()
 
         print("=" * 72)

@@ -216,7 +216,12 @@ class TestDormancy:
         # validator. The READ helpers (owner_key/owner_column/staff_keys) are
         # still consumed by nothing — that is RC2.3E-1 — and
         # test_no_consumer_reads_the_flag_directly still guards the flag.
-        allowed = [os.path.join("app", "routes", "admin.py")]
+        # H3-1B-a imported it into admin.py (write validator); H3-1B-b into
+        # task_service.py (same validator, task paths). The READ helpers are
+        # still consumed by nothing — that is RC2.3E-1 — and
+        # test_no_consumer_reads_the_flag_directly still guards the flag.
+        allowed = sorted([os.path.join("app", "routes", "admin.py"),
+                          os.path.join("app", "services", "task_service.py")])
         assert sorted(set(offenders)) == allowed,             f"unapproved consumer: {set(offenders)}"
 
     def test_helper_never_writes(self):

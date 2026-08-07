@@ -484,7 +484,16 @@ class TestBehaviourUnchanged:
         assert lead.pipeline_stage_id is None
 
     def test_task_assignment_flow_is_unaffected(self, ctx):
+        """H3-1B-b: the assignee must now exist as a User in this tenant.
+
+        This previously assigned to a name no User carried, which RC2.3A
+        allowed because assigned_staff was an unvalidated free string. That is
+        exactly the hole H3 closed. The user is created first so the test
+        still asserts what it is actually about: the FK stays NULL while
+        DUAL_WRITE is OFF, and created_by remains free text.
+        """
         from app.services.task_service import create_task
+        _user(A, "Anju")
         create_task(tenant_id=A, title="T", created_by="Admin",
                     assigned_staff="Anju")
         t = Task.query.filter_by(tenant_id=A).first()
