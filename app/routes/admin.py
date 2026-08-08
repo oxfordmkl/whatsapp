@@ -6087,27 +6087,58 @@ def crm_staff_dashboard():
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     from sqlalchemy.sql import func
 
-    # Phase RC2.3E-1 H4: honours impersonation. The ownership KEY on this
-    # screen is still the name string — this route reads it in five places
-    # (the two queries below, the leaderboard match, the productivity dict and
-    # the task match), so migrating one of them alone would leave the KPI card
-    # counting FK-owned leads beside a leaderboard counting name-owned ones.
-    # That migration is Batch 1b; only the tenant idiom changes here.
     _tid = _actor_tenant_id()
-    staff_name_normalized = staff_name.strip().lower()
+
+    # Phase RC2.3E-1 Batch 1b. This screen reads ownership in FIVE places and
+    # they must agree, so they are all derived from ONE resolved identity.
+    #
+    # A STAFF actor is current_user itself; an admin is browsing someone else
+    # via ?staff=, so that name is resolved. Unresolvable fails CLOSED —
+    # owner_filter(model, None) is false().
+    _owner_user = (current_user if is_staff
+                   else staff_service.resolve(_tid, staff_name))
+
+    # WHY NOT KEY EVERYTHING BY FK
+    # ----------------------------
+    # Only the two lead queries below CAN be FK-keyed. The other three read
+    # dicts built elsewhere from data that has no FK to key on:
+    #   * automation["productivity"] is keyed off LeadEvent JSON payloads
+    #     (completed_by / staff) — LeadEvent has no assigned_user_id column
+    #     at all, so this can never be FK-keyed without migrating the event
+    #     log, which is far outside this batch.
+    #   * intel["leaderboard"] entries are keyed by
+    #     normalize_staff_name(assigned_staff), a Batch 4 producer.
+    #   * get_all_tasks() returns the raw assigned_staff string.
+    #
+    # So this route BRIDGES the two key-spaces instead of pretending one
+    # exists: owner_filter() for the queries, and a canonical display key —
+    # derived from the SAME user — for the name-keyed lookups. Both sides then
+    # agree whether the flag is on or off, which is what makes this screen
+    # safe to flip. Deriving the key from the user rather than from the
+    # ?staff= string is also what makes it correct for a staff member whose
+    # display_name differs from their username: the producers key on the
+    # display label, and until now this route looked itself up by username.
+    _display_key = (normalize_staff_name(_owner_user.display_label())
+                    if _owner_user is not None else staff_name)
+    staff_name_normalized = _display_key.strip().lower()
+    # The heading and the picker must show the same person the KPIs describe.
+    staff_name = _display_key
+
+    _owned = staff_identity_service.owner_filter(ConversationState, _owner_user)
+
     leads = tenant_query(ConversationState, _tid).filter(
-        func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
+        _owned,
         ConversationState.lead_status.notin_(tuple(LEAD_TERMINAL_STATUSES))
     ).all()
-    
+
     my_leads_count = len(leads)
     hot_leads_count = sum(1 for lead in leads if (lead.lead_score or 0) >= 80)
-    
+
     admissions_count = tenant_query(ConversationState, _tid).filter(
-        func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
+        _owned,
         ConversationState.is_admitted == True
     ).count()
-    
+
     open_tasks, _ = get_all_tasks(_tid)
     active_tasks_count = sum(1 for t in open_tasks if (t.get("staff") or "").strip().lower() == staff_name_normalized)
 
@@ -6117,7 +6148,13 @@ def crm_staff_dashboard():
     staff_rank = None
     staff_lb = None
     for i, entry in enumerate(intel["leaderboard"]):
-        if entry["name"] == staff_name:
+        # _display_key, not the raw ?staff= string: leaderboard rows describe
+        # display labels, so a username would never match for a renamed staff
+        # member. Both sides are normalized because calculate_intelligence()
+        # stores the RAW active_staff string in "name" while keying its own
+        # tallies on normalize_staff_name() — so an all-caps display label
+        # would fail a bare == against the normalized key.
+        if normalize_staff_name(entry["name"]) == _display_key:
             staff_rank = i + 1
             staff_lb = entry
             break
@@ -6135,7 +6172,9 @@ def crm_staff_dashboard():
     auto_events = tenant_query(LeadEvent, _tid).filter(LeadEvent.event_type.in_(intel_event_types)).all()
     leads = tenant_query(ConversationState, _tid).all()
     automation = calculate_automation_intelligence(leads, auto_events)
-    my_productivity = automation["productivity"].get(staff_name, {"created": 0, "completed": 0, "open": 0, "overdue": 0, "completion_rate": 0.0})
+    # Same key-space as the leaderboard above: LeadEvent payload names,
+    # normalized. See the note by _display_key for why this cannot be a FK.
+    my_productivity = automation["productivity"].get(_display_key, {"created": 0, "completed": 0, "open": 0, "overdue": 0, "completion_rate": 0.0})
 
 
     return render_template(
