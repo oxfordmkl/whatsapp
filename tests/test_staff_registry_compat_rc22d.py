@@ -384,9 +384,14 @@ class TestStage0IsNotWired:
         # sits BELOW the routes layer and legitimately consumes
         # staff_service; it is named explicitly so an unexpected consumer
         # still fails.
+        # RC2.3E-1 Batch 1a adds sales_pipeline_service, which resolves the
+        # actor to a User so its ownership clause can use the dual-read
+        # helper. Extended, not relaxed.
         allowed = sorted([os.path.join("app", "routes", "admin.py"),
                           os.path.join("app", "services",
-                                       "staff_identity_service.py")])
+                                       "staff_identity_service.py"),
+                          os.path.join("app", "services",
+                                       "sales_pipeline_service.py")])
         assert sorted(set(offenders)) == allowed, \
             f"unapproved consumer: {set(offenders)}"
 

@@ -400,11 +400,15 @@ class TestNoOtherConsumerMigrated:
                     if hit:
                         offenders.append(os.path.relpath(full, ROOT))
         # RC2.3E-0 added staff_identity_service, the dual-read helper, which
-        # legitimately consumes staff_service. Named explicitly so an
-        # unexpected consumer still fails.
+        # legitimately consumes staff_service. RC2.3E-1 Batch 1a adds
+        # sales_pipeline_service, which resolves the actor to a User so its
+        # ownership clause can go through that helper. Both named explicitly
+        # so an unexpected consumer still fails.
         allowed = sorted([os.path.join("app", "routes", "admin.py"),
                           os.path.join("app", "services",
-                                       "staff_identity_service.py")])
+                                       "staff_identity_service.py"),
+                          os.path.join("app", "services",
+                                       "sales_pipeline_service.py")])
         assert sorted(set(offenders)) == allowed, \
             f"unapproved consumer: {set(offenders)}"
 

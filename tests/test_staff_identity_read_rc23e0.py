@@ -217,11 +217,19 @@ class TestDormancy:
         # still consumed by nothing — that is RC2.3E-1 — and
         # test_no_consumer_reads_the_flag_directly still guards the flag.
         # H3-1B-a imported it into admin.py (write validator); H3-1B-b into
-        # task_service.py (same validator, task paths). The READ helpers are
-        # still consumed by nothing — that is RC2.3E-1 — and
-        # test_no_consumer_reads_the_flag_directly still guards the flag.
+        # task_service.py (same validator, task paths).
+        #
+        # RC2.3E-1 ends the READ dormancy this test used to describe. Batch 3
+        # wired owner_filter() into the deactivation guard and Batch 1a wired
+        # it into the three ownership filters, which is what adds
+        # sales_pipeline_service.py here. The allowlist is EXTENDED rather
+        # than relaxed, so an unexpected consumer still fails, and
+        # test_no_consumer_reads_the_flag_directly still guards the flag —
+        # that invariant is the one that must never move.
         allowed = sorted([os.path.join("app", "routes", "admin.py"),
-                          os.path.join("app", "services", "task_service.py")])
+                          os.path.join("app", "services", "task_service.py"),
+                          os.path.join("app", "services",
+                                       "sales_pipeline_service.py")])
         assert sorted(set(offenders)) == allowed,             f"unapproved consumer: {set(offenders)}"
 
     def test_helper_never_writes(self):

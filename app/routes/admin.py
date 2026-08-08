@@ -914,10 +914,26 @@ def _build_leads_query(tenant_id, actor, search="", stage_filter="", admitted_fi
 
     is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
     if is_staff:
-        actor_username_normalized = (actor.get("username") or "").strip().lower()
-        q = q.filter(
-            func.lower(func.trim(ConversationState.assigned_staff)) == actor_username_normalized
-        )
+        # Phase RC2.3E-1 Batch 1a: ownership resolves through the dual-read
+        # helper instead of a hand-rolled name comparison.
+        #
+        # source == "SESSION" means get_current_actor() built this dict FROM
+        # current_user, so current_user IS the actor — no name lookup, and
+        # therefore no ambiguity to resolve.
+        #
+        # This FIXES a latent defect. The old predicate compared
+        # assigned_staff to the actor's USERNAME, but assigned_staff holds
+        # DISPLAY LABELS: the assignment dropdown is active_display_names(),
+        # which is display_label() per user. The two agree only while
+        # display_name is unset. Staff Management writes display_name on both
+        # create (admin.py:1927) and edit, so a staff member added as code
+        # RAVI with display name "Ravi Kumar" owns leads reading
+        # "Ravi Kumar" while this filter looked for "ravi" — and saw NOTHING.
+        # owner_filter() keys off display_label(), and off the FK once the
+        # flag is on. Production has no display_name set today, so no row
+        # changes hands on this deploy.
+        q = q.filter(staff_identity_service.owner_filter(
+            ConversationState, current_user))
 
     if search:
         q = q.filter(or_(
@@ -977,7 +993,12 @@ def crm_leads():
     # drift, and an export that is broader than the list an operator can see is
     # a data-leak, not a cosmetic bug.
     actor = get_current_actor()
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase RC2.3E-1 H4: _actor_tenant_id() honours impersonation; the getattr
+    # form returns NULL for a SUPER_ADMIN. crm_leads_export already used
+    # _actor_tenant_id(), so the list and its export were resolving the tenant
+    # by different rules — precisely the list/export drift the comment above
+    # calls a data-leak risk rather than a cosmetic bug.
+    _tid = _actor_tenant_id()
     q = _build_leads_query(_tid, actor, search, stage_filter, admitted_filter)
     is_staff = (actor.get("source") == "SESSION" and actor.get("role") == "STAFF")
 
@@ -6066,7 +6087,13 @@ def crm_staff_dashboard():
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     from sqlalchemy.sql import func
 
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase RC2.3E-1 H4: honours impersonation. The ownership KEY on this
+    # screen is still the name string — this route reads it in five places
+    # (the two queries below, the leaderboard match, the productivity dict and
+    # the task match), so migrating one of them alone would leave the KPI card
+    # counting FK-owned leads beside a leaderboard counting name-owned ones.
+    # That migration is Batch 1b; only the tenant idiom changes here.
+    _tid = _actor_tenant_id()
     staff_name_normalized = staff_name.strip().lower()
     leads = tenant_query(ConversationState, _tid).filter(
         func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
@@ -6149,11 +6176,25 @@ def crm_my_leads():
     page = max(1, request.args.get("page", 1, type=int))
     pagination = None
     if staff_name:
-        from sqlalchemy.sql import func
-        staff_name_normalized = staff_name.strip().lower()
-        _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+        # Phase RC2.3E-1 Batch 1a + H4.
+        #
+        # H4: _actor_tenant_id() replaces getattr(current_user,'tenant_id'),
+        # which is NULL for a SUPER_ADMIN and does NOT honour
+        # session['impersonate_tenant_id'] — so an impersonating SUPER_ADMIN
+        # resolved None, tenant_query() failed closed, and the screen came up
+        # empty. Unlike the Batch 3 case, this one is a real fix.
+        _tid = _actor_tenant_id()
+        # A STAFF actor is current_user itself (source == "SESSION"). An admin
+        # is browsing someone else via ?staff=, so that name is resolved —
+        # against BOTH username and display_name, and refusing to guess when
+        # ambiguous.
+        _owner_user = (current_user if is_staff
+                       else staff_service.resolve(_tid, staff_name))
+        # Fail closed, per the approved policy: an unresolvable ?staff= shows
+        # nothing rather than falling back to a name match that would ignore
+        # the FK regime entirely. owner_filter(model, None) is false().
         pagination = tenant_query(ConversationState, _tid).filter(
-            func.lower(func.trim(ConversationState.assigned_staff)) == staff_name_normalized,
+            staff_identity_service.owner_filter(ConversationState, _owner_user),
             ConversationState.lead_status.notin_(tuple(LEAD_TERMINAL_STATUSES))
         ).order_by(ConversationState.updated_at.desc()).paginate(
             page=page, per_page=PAGE_SIZE, error_out=False)

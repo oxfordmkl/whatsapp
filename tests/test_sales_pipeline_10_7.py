@@ -59,6 +59,26 @@ def ctx():
         for tid, name in ((TENANT, "A"), (OTHER, "B"), (EMPTY, "C")):
             db.session.add(Tenant(id=tid, name=name, slug=tid))
         db.session.commit()
+        # Phase RC2.3E-1 Batch 1a: staff must exist as User rows.
+        #
+        # This fixture modelled a PRE-RC2.2 world in which staff existed only
+        # as strings on the lead. Since RC2.2 the staff directory IS the User
+        # table, and a session STAFF actor has a User row by definition —
+        # they authenticated as one. _staff_ownership_clause now resolves the
+        # actor to that row and fails CLOSED when it cannot, so string-only
+        # staff correctly resolve to nothing.
+        #
+        # STAFF_NOBODY below deliberately keeps no User row: that is the
+        # unresolvable case, and it must still see zero leads.
+        from werkzeug.security import generate_password_hash
+        from app.models import User
+        for uname in ("Anju", "Ravi"):
+            db.session.add(User(
+                username=uname, email=f"{uname}@pipeline.test",
+                password_hash=generate_password_hash("pw"), role="STAFF",
+                tenant_id=TENANT, is_active=True,
+                require_password_change=False))
+        db.session.commit()
         yield
         db.session.remove()
 

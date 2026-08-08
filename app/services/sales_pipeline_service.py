@@ -31,18 +31,30 @@ def _is_staff(actor) -> bool:
     return bool(actor) and actor.get("source") == "SESSION" and actor.get("role") == "STAFF"
 
 
-def _staff_ownership_clause(actor):
-    """The `assigned_staff == me` predicate, or None when it does not apply.
+def _staff_ownership_clause(actor, tenant_id):
+    """The "owned by me" predicate, or None when it does not apply.
 
-    Mirrors the normalisation used by _build_leads_query and crm_my_leads
-    (lower+trim on both sides) so ownership resolves identically everywhere.
+    Phase RC2.3E-1 Batch 1a: resolves through staff_identity_service rather
+    than comparing names by hand, so ownership follows the same rule as
+    _build_leads_query and crm_my_leads under BOTH regimes.
+
+    tenant_id is now required. staff_service.resolve() is tenant-scoped by
+    design — a name is only meaningful inside one institute, and production
+    already has one username in four tenants. Both callers had tenant_id in
+    scope already.
+
+    Returns None (no restriction) for a non-staff actor, exactly as before.
+    Returns a false() predicate — via owner_filter — when the actor cannot be
+    resolved to a user, which fails CLOSED: a staff member whose identity we
+    cannot establish sees nothing rather than everything.
     """
     if not _is_staff(actor):
         return None
     from app.models import ConversationState
-    from sqlalchemy import func
-    username = (actor.get("username") or "").strip().lower()
-    return func.lower(func.trim(ConversationState.assigned_staff)) == username
+    from app.services import staff_identity_service, staff_service
+
+    user = staff_service.resolve(tenant_id, actor.get("username") or "")
+    return staff_identity_service.owner_filter(ConversationState, user)
 
 
 def get_pipeline_summary(tenant_id, actor=None):
@@ -73,7 +85,7 @@ def get_pipeline_summary(tenant_id, actor=None):
         ConversationState.sales_stage_id == PipelineStage.id,
         ConversationState.tenant_id == tenant_id,
     ]
-    ownership = _staff_ownership_clause(actor)
+    ownership = _staff_ownership_clause(actor, tenant_id)
     if ownership is not None:
         join_on.append(ownership)
 
@@ -342,7 +354,7 @@ def get_stage_leads(tenant_id, stage_id, actor=None, page=1, per_page=25):
         ConversationState.tenant_id == tenant_id,
         ConversationState.sales_stage_id == stage_id,
     )
-    ownership = _staff_ownership_clause(actor)
+    ownership = _staff_ownership_clause(actor, tenant_id)
     if ownership is not None:
         q = q.filter(ownership)
 
