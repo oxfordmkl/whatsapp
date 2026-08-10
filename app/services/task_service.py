@@ -244,7 +244,7 @@ def update_task(tenant_id, task_id, actor, title=None, notes=None,
 
 
 def staff_update(tenant_id, task_id, actor, status=None, staff_notes=None,
-                 is_admin=False):
+                 is_admin=False, actor_user_id=None):
     """Staff updates progress: status and/or notes. Cannot reassign or retitle.
 
     Completing via this path routes to complete_task() so the legacy event and
@@ -253,11 +253,15 @@ def staff_update(tenant_id, task_id, actor, status=None, staff_notes=None,
     Phase 16.5A7-B (B1): a non-admin actor must be the task's assignee.
     """
     task = _get(tenant_id, task_id)
-    _authorize_mutation(task, actor, is_admin)
+    _authorize_mutation(task, actor, is_admin, actor_user_id)
 
     if status is not None and status.upper() == "COMPLETED":
+        # actor_user_id must travel with the delegation: complete_task()
+        # authorizes again, and without it that second check silently falls
+        # back to the name comparison this batch exists to replace.
         return complete_task(tenant_id, task_id, actor,
-                             staff_notes=staff_notes, is_admin=is_admin)
+                             staff_notes=staff_notes, is_admin=is_admin,
+                             actor_user_id=actor_user_id)
 
     if task.status == "COMPLETED":
         raise TaskError("cannot update a completed task")
@@ -288,7 +292,7 @@ def staff_update(tenant_id, task_id, actor, status=None, staff_notes=None,
     return task
 
 
-def complete_task(tenant_id, task_id, actor, staff_notes=None, is_admin=False):
+def complete_task(tenant_id, task_id, actor, staff_notes=None, is_admin=False, actor_user_id=None):
     """Complete a task. Idempotent: completing twice is a no-op.
 
     Side effects: legacy FOLLOW_UP_COMPLETED event + TASK_COMPLETED notification
@@ -299,7 +303,7 @@ def complete_task(tenant_id, task_id, actor, staff_notes=None, is_admin=False):
     let one staff member claim another's work and skewed staff_productivity.
     """
     task = _get(tenant_id, task_id)
-    _authorize_mutation(task, actor, is_admin)
+    _authorize_mutation(task, actor, is_admin, actor_user_id)
     if task.status == "COMPLETED":
         return task                      # idempotent
 
@@ -403,7 +407,8 @@ class TaskForbidden(TaskError):
     """Raised when the actor may not mutate this task (403, not 400)."""
 
 
-def authorize_assignee(assignee, actor, is_admin):
+def authorize_assignee(assignee, actor, is_admin, tenant_id=None,
+                       actor_user_id=None):
     """The single authorization rule for mutating a task — Phase 16.5A7-B/D.
 
     Admin / Super Admin  -> any task in their tenant.
@@ -434,6 +439,34 @@ def authorize_assignee(assignee, actor, is_admin):
     if not clean_assignee or clean_assignee == "Unassigned":
         raise TaskForbidden(
             "this task is unassigned; only an admin may modify it")
+
+    # Phase RC2.3E-1 Batch 2: when a tenant is supplied, the name must
+    # identify EXACTLY ONE user or the request is refused — FAIL CLOSED.
+    #
+    # staff_service.resolve() matches username OR display_name and returns
+    # None both when nothing matches and when several do. Both are grounds to
+    # refuse: a name that does not pick out one person cannot authorize
+    # anything. Production currently has two users answering to 'nibu', which
+    # is precisely the case that must not resolve to "allowed".
+    #
+    # With actor_user_id this becomes an integer comparison even here, so the
+    # legacy no-Task-row path reaches the same standard as the Task path
+    # rather than a weaker parallel one.
+    if tenant_id is not None:
+        from app.services import staff_service
+
+        owner = staff_service.resolve(tenant_id, assignee)
+        if owner is None:
+            raise TaskForbidden(
+                f"{assignee!r} does not identify exactly one current staff "
+                f"member of this institute; only an admin may modify it")
+        if actor_user_id is not None:
+            if owner.id != actor_user_id:
+                raise TaskForbidden(
+                    f"task is assigned to {assignee!r}; "
+                    f"{actor!r} may not modify it")
+            return
+
     if clean_assignee != _norm(actor):
         raise TaskForbidden(
             f"task is assigned to {assignee!r}; {actor!r} may not modify it")
@@ -446,6 +479,35 @@ def _norm(name):
     return cleaned.title() if cleaned else ""
 
 
-def _authorize_mutation(task, actor, is_admin):
-    """Authorize a mutation of a Task row. Delegates to authorize_assignee()."""
+def _authorize_mutation(task, actor, is_admin, actor_user_id=None):
+    """Authorize a mutation of a Task row.
+
+    Phase RC2.3E-1 Batch 2: the FK is authoritative WHENEVER BOTH SIDES HAVE
+    ONE. Names are compared only when they are the only identity available.
+
+    This closes two live defects. `assigned_staff` holds a DISPLAY LABEL while
+    _actor_name() supplies a USERNAME, and those are different fields:
+
+      LOCKOUT     a staff member whose display_name differs from their
+                  username was refused access to their OWN task. Production
+                  holds exactly that (username NIBU01, display label 'nibu').
+      ESCALATION  username is unique per tenant; display_name has NO
+                  uniqueness constraint, so one user's username can normalize
+                  onto another's display label — and the first could then
+                  mutate the second's tasks. Production holds that too
+                  (username 'NIBU' vs display label 'nibu'), survivable today
+                  only because that account happens to be an ADMIN and
+                  short-circuits above the comparison.
+
+    Integer identity has neither problem. The name path remains for rows
+    predating the dual-write, and for the legacy no-Task-row completion path.
+    """
+    if is_admin:
+        return
+    if task.assigned_user_id is not None and actor_user_id is not None:
+        if task.assigned_user_id != actor_user_id:
+            raise TaskForbidden(
+                f"task is assigned to {task.assigned_staff!r}; "
+                f"{actor!r} may not modify it")
+        return
     authorize_assignee(task.assigned_staff, actor, is_admin)

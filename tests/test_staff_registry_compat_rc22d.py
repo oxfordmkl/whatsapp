@@ -391,7 +391,14 @@ class TestStage0IsNotWired:
                           os.path.join("app", "services",
                                        "staff_identity_service.py"),
                           os.path.join("app", "services",
-                                       "sales_pipeline_service.py")])
+                                       "sales_pipeline_service.py"),
+                          # RC2.3E-1 Batch 2: authorize_assignee() resolves a
+                          # LEGACY payload name to exactly one user so the
+                          # no-Task-row completion path fails closed on an
+                          # unknown or AMBIGUOUS name. Production has two
+                          # users answering to 'nibu'.
+                          os.path.join("app", "services",
+                                       "task_service.py")])
         assert sorted(set(offenders)) == allowed, \
             f"unapproved consumer: {set(offenders)}"
 

@@ -5591,6 +5591,25 @@ def _actor_is_admin():
     return actor.get("role") in ("ADMIN", "SUPER_ADMIN")
 
 
+def _actor_user_id():
+    """The acting user's PRIMARY KEY, or None when there isn't one.
+
+    Phase RC2.3E-1 Batch 2: task authorization compares this integer instead
+    of two name strings that were never the same field — task.assigned_staff
+    holds a DISPLAY LABEL, _actor_name() supplies a USERNAME.
+
+    None for ADMIN_KEY auth, which has no User row. That is safe: the only
+    caller treats a missing id as "fall back to the name comparison", and
+    ADMIN_KEY resolves to is_admin=True and never reaches the comparison.
+    """
+    try:
+        if current_user.is_authenticated:
+            return getattr(current_user, "id", None)
+    except Exception:                                       # noqa: BLE001
+        pass
+    return None
+
+
 @admin_bp.route("/crm/tasks/create", methods=["POST"])
 @admin_required
 def crm_tasks_create():
@@ -5727,6 +5746,7 @@ def crm_tasks_staff_update(task_id):
             tenant_id=tenant_id, task_id=task_id, actor=_actor_name(),
             status=payload.get("status"), staff_notes=payload.get("staff_notes"),
             is_admin=_actor_is_admin(),
+            actor_user_id=_actor_user_id(),
         )
     except task_service.TaskForbidden as e:
         # B1: staff attempting to modify another staff member's task.
@@ -5789,7 +5809,8 @@ def crm_tasks_complete():
     if task is not None:
         try:
             task_service.complete_task(_tid, task.id, completed_by,
-                                       is_admin=_actor_is_admin())
+                                       is_admin=_actor_is_admin(),
+                                       actor_user_id=_actor_user_id())
         except task_service.TaskForbidden as e:
             # B1: only the assignee (or an admin) may complete — completed_by is
             # the credit record that feeds staff_productivity.
@@ -5844,8 +5865,14 @@ def crm_tasks_complete():
         return redirect(url_for("admin.crm_lead_detail", phone=phone))
 
     try:
+        # Phase RC2.3E-1 Batch 2: tenant_id makes this FAIL CLOSED when the
+        # legacy payload's name does not identify exactly one current staff
+        # member, and actor_user_id turns the check into an integer compare
+        # so this path reaches the same standard as the Task path.
         task_service.authorize_assignee(_legacy_assignee, completed_by,
-                                        _actor_is_admin())
+                                        _actor_is_admin(),
+                                        tenant_id=_tid,
+                                        actor_user_id=_actor_user_id())
     except task_service.TaskForbidden as e:
         logging.warning("legacy task completion denied tenant=%s task=%s "
                         "actor=%s: %s", _tid, task_id, completed_by, e)

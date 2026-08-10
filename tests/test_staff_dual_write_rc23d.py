@@ -322,10 +322,22 @@ class TestNoReaderMigration:
     # own every FK read once consumers migrate. Allowlisted BY NAME so the
     # guard still catches a consumer reading the FK directly.
     ALLOWED = {"models.py", "staff_backfill_service.py", "staff_service.py",
-               "staff_identity_service.py"}
+               "staff_identity_service.py",
+               # RC2.3E-1 Batch 2: task AUTHORIZATION reads the FK directly,
+               # on purpose. See the docstring below.
+               "task_service.py"}
 
     def test_no_module_reads_assigned_user_id(self):
-        """RC2.3D writes only. Reader migration is RC2.3E."""
+        """RC2.3D writes only. Reader migration is RC2.3E.
+
+        INVERTED for task_service.py by RC2.3E-1 Batch 2. Every other migrated
+        reader goes through owner_filter() and so follows the flag. Task
+        authorization deliberately does not: it replaces a name comparison
+        that is unsafe in BOTH regimes (username is unique per tenant,
+        display_name is not, so one user's username can normalize onto
+        another's display label), and gating that fix on the flag would leave
+        the escalation open while the flag is off.
+        """
         offenders = []
         for dp, _d, fs in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dp:

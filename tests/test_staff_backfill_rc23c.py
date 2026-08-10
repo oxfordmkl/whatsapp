@@ -587,12 +587,26 @@ class TestScopeContainment:
         own every FK read once consumers migrate. It is allowlisted BY NAME so
         the guard still catches a consumer reading the FK directly, which is
         the thing that would break the flag's rollback property.
+
+        RC2.3E-1 Batch 2 adds task_service, DELIBERATELY and as the sole
+        exception. Every other migrated reader goes through owner_filter(), so
+        its behaviour follows the flag and rolls back with it. Task
+        AUTHORIZATION must not: it decides who may mutate someone else's work,
+        and the name comparison it replaces is unsafe in BOTH regimes —
+        username is unique per tenant, display_name is not, so one user's
+        username can normalize onto another's display label. Routing that
+        through the flag would leave the escalation open whenever the flag is
+        off, i.e. right now.
+
+        The rollback property is preserved in the sense that matters: with the
+        FK absent (pre-dual-write rows) the name path still runs, so reverting
+        the flag never denies a legitimate owner.
         """
         import ast
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         offenders = []
         allowed = {"models.py", "staff_backfill_service.py",
-                   "staff_identity_service.py"}
+                   "staff_identity_service.py", "task_service.py"}
         for dp, _d, fs in os.walk(os.path.join(root, "app")):
             if "__pycache__" in dp:
                 continue
