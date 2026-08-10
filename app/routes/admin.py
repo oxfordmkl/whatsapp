@@ -3611,7 +3611,15 @@ def calculate_revenue_analytics(tenant_id=None):
             total_admissions += 1
 
         # Staff aggregation (ConversationState.assigned_staff)
-        staff_key = (staff or "").strip() or "Unassigned"
+        #
+        # Phase RC2.3E-1 Batch 4: normalized, so one person is ONE row.
+        # This was `(staff or "").strip() or "Unassigned"` — case-sensitive,
+        # so production rendered FIVE staff rows for THREE people: 'Kiran' 24
+        # and 'kiran' 3 sat side by side, each with its own admissions, and
+        # the Top Performing Staff KPI was picked from the split figures.
+        # normalize_staff_name() also returns "Unassigned" for a blank, which
+        # is the same bucket label this line already used.
+        staff_key = normalize_staff_name(staff)
         if staff_key not in staff_agg:
             staff_agg[staff_key] = {"assigned": 0, "admissions": 0}
         staff_agg[staff_key]["assigned"] += 1
@@ -6283,11 +6291,23 @@ def crm_staff_performance_detail():
             "completed_tasks": 0
         }
         
+    # Phase RC2.3E-1 Batch 4: match on the NORMALIZED name.
+    #
+    # This was `s = lead.assigned_staff; if s not in staff_metrics: continue`
+    # — an EXACT string match between the raw column and the raw display
+    # label, so any lead stored in another spelling was silently skipped. In
+    # production that hid 4 lead-rows on this screen: Kiran read 24 against a
+    # true 27, Anju 26 against 27.
+    #
+    # staff_metrics stays keyed by the RAW display label because the template
+    # renders those keys; only the LOOKUP is normalized.
+    _by_norm = {normalize_staff_name(s): s for s in active_staff}
+
     for lead in leads:
-        s = lead.assigned_staff
-        if not s or s not in staff_metrics:
+        s = _by_norm.get(normalize_staff_name(lead.assigned_staff or ""))
+        if not s:
             continue
-            
+
         staff_metrics[s]["assigned_leads"] += 1
         
         if lead.lead_status not in LEAD_TERMINAL_STATUSES:
@@ -6304,11 +6324,23 @@ def crm_staff_performance_detail():
             staff_metrics[s]["total_score"] += score
             staff_metrics[s]["leads_with_score"] += 1
 
-    open_tasks, completed_tasks = get_all_tasks()
+    # _tid passed explicitly: get_all_tasks() with no tenant is the call shape
+    # that produced the "tenant_query could not resolve a tenant" warnings in
+    # RC2.2E. The task counts on this screen are part of the same numbers the
+    # lead match above fixes, so they are scoped the same way.
+    open_tasks, completed_tasks = get_all_tasks(_tid)
 
     for s in active_staff:
-        staff_metrics[s]["open_tasks"] = sum(1 for t in open_tasks if t.get("staff") == s)
-        staff_metrics[s]["completed_tasks"] = sum(1 for t in completed_tasks if t.get("staff") == s)
+        # Same normalized match as the leads above — get_all_tasks() returns
+        # the raw assigned_staff string, so an exact == dropped case variants
+        # here too.
+        _n = normalize_staff_name(s)
+        staff_metrics[s]["open_tasks"] = sum(
+            1 for t in open_tasks
+            if normalize_staff_name(t.get("staff") or "") == _n)
+        staff_metrics[s]["completed_tasks"] = sum(
+            1 for t in completed_tasks
+            if normalize_staff_name(t.get("staff") or "") == _n)
 
     for s, m in staff_metrics.items():
         if m["assigned_leads"] > 0:
