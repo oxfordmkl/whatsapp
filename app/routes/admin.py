@@ -2122,7 +2122,8 @@ def crm_lead_detail(phone):
     from app.models import ConversationState, MessageLog, ConversationMessage, LeadEvent
     from datetime import datetime, timedelta
 
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-a: _sps.get_stage_history() consumes this tenant directly.
+    _tid = _actor_tenant_id()
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
@@ -2366,7 +2367,14 @@ def crm_lead_update(phone):
     from app.models import ConversationState
     from app.extensions import db
 
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-a: _actor_tenant_id() honours session['impersonate_tenant_id'].
+    # The getattr form returns NULL for a SUPER_ADMIN, and _tid is consumed here
+    # by resolve_assignment(), _sync_assigned_user(), transition_verdict(),
+    # log_audit() and notification_service.notify() -- not only by
+    # tenant_query(), whose SUPER_ADMIN branch ignores the argument entirely.
+    # With _tid None, H3's validator resolved no staff and rejected EVERY edit
+    # an impersonating SUPER_ADMIN made, blaming the staff member for it.
+    _tid = _actor_tenant_id()
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
@@ -2793,7 +2801,10 @@ def crm_lead_send(phone):
         return _deny()
 
     from app.models import ConversationState
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-a: log_message() and save_conversation_message() consume this
+    # tenant directly and do NOT guard against None, so the getattr form could
+    # attribute an impersonating SUPER_ADMIN's message to no tenant at all.
+    _tid = _actor_tenant_id()
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
@@ -6302,7 +6313,15 @@ def crm_staff_performance_detail():
     
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-a: CONSISTENCY, not a behavioural fix — stated plainly because
+    # the H4 discovery classified this route as H4-a on the grounds that it
+    # passes _tid to get_all_tasks(). It does, but get_all_tasks() hands that
+    # tenant straight to tenant_query(), whose SUPER_ADMIN branch returns
+    # BEFORE reading the argument — so an impersonating SUPER_ADMIN already
+    # got the right tasks under the old idiom. Reverting this one line alone
+    # changes no behaviour; it is aligned with the other three so the four
+    # routes resolve their tenant by one rule.
+    _tid = _actor_tenant_id()
     leads = tenant_query(ConversationState, _tid).all()
     
     staff_metrics = {}

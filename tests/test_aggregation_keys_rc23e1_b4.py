@@ -322,12 +322,23 @@ class TestStructure:
             assert "STAFF_IDENTITY_READ_FK" not in src
             assert "read_fk_enabled" not in src
 
-    def test_h4_remains_open_here(self):
-        """HONEST RECORD: crm_staff_performance_detail still uses the unsafe
-        tenant idiom. H4 was approved for Batch 1a only and is tracked as its
-        own item across 11 routes. Update this when H4 lands — do not delete
-        it to make the file look clean."""
-        assert "getattr(current_user, 'tenant_id'" in self._fn("crm_staff_performance_detail")
+    def test_h4_is_now_closed_here(self):
+        """INVERTED by H4-a, which is what this test asked for.
+
+        When Batch 4 shipped, this asserted crm_staff_performance_detail still
+        used the getattr idiom, and said "update this when H4 lands". H4-a
+        landed and migrated it, so the assertion now guards the other
+        direction — the route must not regress.
+
+        Worth recording: for THIS route the change was consistency, not a
+        behavioural fix. get_all_tasks() passes its tenant to tenant_query(),
+        whose SUPER_ADMIN branch returns before reading the argument, so an
+        impersonating SUPER_ADMIN already saw the right tasks. The three other
+        H4-a routes did have real defects.
+        """
+        src = self._fn("crm_staff_performance_detail")
+        assert "getattr(current_user, 'tenant_id'" not in src
+        assert "_actor_tenant_id()" in src
 
     def test_no_schema_or_migration_change(self):
         """Compared against git rather than by filename substring.

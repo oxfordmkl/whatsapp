@@ -378,20 +378,34 @@ class TestProgrammeInvariants:
             if before is not None:
                 os.environ["STAFF_IDENTITY_READ_FK"] = before
 
-    def test_h4_is_still_open_and_counted(self):
-        """HONEST RECORD. H4 is 11 routes, not the 'two idioms' my Batch 1
-        discovery claimed. Batch 1a closed three. Update the number when H4
-        lands — do not delete this to make the file look finished."""
+    def test_h4_progress_is_counted(self):
+        """HONEST RECORD, updated as H4 is repaid — which is what the previous
+        version of this test explicitly asked for.
+
+        H4 is 14 route-level sites, not the "two idioms" my Batch 1 discovery
+        claimed. Batch 1a closed three; H4-a closed four more. Seven remain,
+        all of them H4-b scope: routes where _tid feeds ONLY tenant_query(),
+        whose SUPER_ADMIN branch ignores the argument — so migrating them
+        changes no behaviour and is pure consistency work.
+
+        Asserted as an exact set, not a count: a count cannot tell an intended
+        migration from an accidental one.
+        """
         tree = _tree(ADMIN)
         GET = "getattr(current_user, 'tenant_id'"
         remaining = {n.name for n in ast.walk(tree)
                      if isinstance(n, ast.FunctionDef)
                      and GET in ast.unparse(n)
                      and n.name not in ("_actor_tenant_id", "check_billing_status")}
-        for closed in ("crm_leads", "crm_my_leads", "crm_staff_dashboard"):
+        for closed in ("crm_leads", "crm_my_leads", "crm_staff_dashboard",
+                       "crm_lead_update", "crm_lead_send", "crm_lead_detail",
+                       "crm_staff_performance_detail"):
             assert closed not in remaining, f"{closed} regressed to the H4 idiom"
-        assert len(remaining) == 11, \
-            f"H4 count moved to {len(remaining)}: {sorted(remaining)}"
+        assert remaining == {
+            "campaigns", "crm_course_admissions", "crm_operations",
+            "crm_staff_allocation", "crm_staff_allocation_check",
+            "crm_staff_allocation_detail", "crm_unassigned_leads",
+        }, f"H4-b set changed: {sorted(remaining)}"
 
     def test_no_schema_or_migration_change(self):
         import subprocess
@@ -400,11 +414,23 @@ class TestProgrammeInvariants:
         assert out == "", out
 
     def test_this_phase_changed_no_production_code(self):
-        """Batch 5a is a CONTRACT phase. If app/ is dirty, the phase has
-        exceeded its own scope."""
+        """Batch 5a was a CONTRACT phase: its commit touched no app/ file.
+
+        Asserted against the COMMIT that introduced this file, not against the
+        working tree. The first version checked `git status -- app/`, which
+        made it fail during H4-a merely because a LATER, separately approved
+        phase was editing admin.py — a test that breaks whenever anyone else
+        works is measuring the wrong thing. What is durably true is what this
+        phase itself shipped.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "app/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout
-        dirty = [l.split()[-1] for l in out.splitlines()
-                 if l.strip() and not l.endswith("screens.py")]
-        assert dirty == [], f"Batch 5a modified production code: {dirty}"
+        rel = os.path.relpath(__file__, ROOT).replace(os.sep, "/")
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", rel],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            pytest.skip("Batch 5a is not committed yet")
+        files = subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split()
+        assert files == [rel], f"the Batch 5a commit touched: {files}"

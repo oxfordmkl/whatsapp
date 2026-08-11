@@ -336,7 +336,23 @@ class TestScopeContainment:
     def test_no_other_function_changed_its_tenant_source(self):
         """RC2.2F touches exactly two functions. Every other consumer keeps
         whatever it had — converging the two _tid idioms repo-wide is separate
-        debt (RC2.2E H4), deliberately not done here."""
+        debt (RC2.2E H4), deliberately not done here.
+
+        UPDATED as that debt is repaid. This is a scope-containment tripwire,
+        so its threshold falls each time a LATER, separately approved phase
+        migrates routes on purpose:
+
+            RC2.2F           14 legacy sites
+            RC2.3E-1 Batch 1a -3 (crm_leads, crm_my_leads, crm_staff_dashboard)
+            H4-a              -4 (crm_lead_update, crm_lead_send,
+                                  crm_lead_detail, crm_staff_performance_detail)
+                            => 7 remain, all of them H4-b scope
+
+        The assertion below is lowered to 7 and made EXACT rather than a
+        floor. A floor cannot detect an accidental migration; equality can.
+        The point of the test — that RC2.2F itself changed only two functions
+        — is preserved by naming the remaining seven explicitly.
+        """
         tree = _tree()
         legacy = set()
         for fn in ast.walk(tree):
@@ -345,7 +361,14 @@ class TestScopeContainment:
             if "getattr(current_user, 'tenant_id', None)" in ast.unparse(fn):
                 legacy.add(fn.name)
         assert "crm_staff_workload" not in legacy
-        assert len(legacy) >= 10, f"unrelated functions were changed: {legacy}"
+        # _actor_tenant_id defines the correct idiom; check_billing_status has
+        # its own three-way resolution. Neither is an H4 site.
+        routes = legacy - {"_actor_tenant_id", "check_billing_status"}
+        assert routes == {
+            "campaigns", "crm_course_admissions", "crm_operations",
+            "crm_staff_allocation", "crm_staff_allocation_check",
+            "crm_staff_allocation_detail", "crm_unassigned_leads",
+        }, f"H4 site set changed unexpectedly: {sorted(routes)}"
 
     def test_staff_service_behaviour_untouched(self):
         """RC2.2F must not change staff_service BEHAVIOUR.
