@@ -33,16 +33,34 @@ def resolve_tenant_id(tenant_id: str = None) -> str:
 
     Order:
       1. Explicit tenant_id from the caller — always wins.
-      2. PRIMARY_TENANT_ID from app config (set in production). A warning is
-         logged because the caller should have passed tenant_id explicitly.
-      3. Legacy Tenant.query.first() — ONLY for environments where
-         PRIMARY_TENANT_ID is not configured (local dev, old deploys).
-         This is the pre-Sprint-2 behavior, preserved for backward compat;
-         it never executes in production.
+      2. PRIMARY_TENANT_ID from app config (set in production). Logged at
+         ERROR: the caller should have passed tenant_id explicitly, and this
+         branch attributes data to a tenant nobody named.
+      3. None. There is no third guess.
 
-    Replaces direct calls to _get_default_tenant_id(), whose first-row
-    strategy resolves to an arbitrary tenant in multi-tenant production
-    (TD-P0-1; caused the Phase 17.1-C mis-filing incident).
+    PHASE H4-c — WHY THERE IS NO LONGER A THIRD LEG
+    -----------------------------------------------
+    This used to fall through to _get_default_tenant_id(), i.e.
+    Tenant.query.first() — an ARBITRARY tenant. That is the exact mechanism
+    behind TD-P0-1 / the Phase 17.1-C mis-filing incident, and the comment
+    claiming it "never executes in production" was a statement about
+    configuration, not a guarantee: it fires whenever PRIMARY_TENANT_ID is
+    unset, which no code path enforces.
+
+    Returning None instead means a caller that supplies no tenant gets no
+    tenant. For the three log writers this surfaces as an IntegrityError on a
+    NOT NULL column, caught by their own try/except and logged — one lost log
+    line instead of a row silently attributed to another customer. In a
+    multi-tenant CRM that is the correct trade; a lost audit line is
+    recoverable, a cross-tenant write is not.
+
+    Behaviour in production is UNCHANGED: PRIMARY_TENANT_ID is configured, so
+    leg 2 has always answered before leg 3 could. This removes a trap, not a
+    working path.
+
+    NOTE: callers are not limited to the log writers. bot/router.smart_reply()
+    also resolves through here and uses the result as conversation state, so
+    the None case must stay loud rather than silent.
     """
     if tenant_id:
         return tenant_id
@@ -50,14 +68,18 @@ def resolve_tenant_id(tenant_id: str = None) -> str:
         from flask import current_app
         primary = (current_app.config.get("PRIMARY_TENANT_ID") or "").strip()
         if primary:
-            logging.warning(
+            logging.error(
                 "[tenant] implicit resolution → PRIMARY_TENANT_ID "
                 "(caller passed tenant_id=None; pass it explicitly)"
             )
             return primary
     except Exception:
         logging.exception("[tenant] resolve_tenant_id: config lookup failed")
-    return _get_default_tenant_id()
+    logging.error(
+        "[tenant] UNRESOLVED: no explicit tenant_id and no PRIMARY_TENANT_ID. "
+        "Refusing to guess a tenant; the caller must pass one."
+    )
+    return None
 
 
 # ── Phase 12-C1: Tenant Resolution Helper (LEGACY — do not call directly) ──

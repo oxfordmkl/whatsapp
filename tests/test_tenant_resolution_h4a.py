@@ -500,23 +500,45 @@ class TestStructure:
         # regression via the loop above.
         assert remaining == set(), remaining
 
-    def test_h4c_services_were_not_modified(self):
-        """log_audit / log_message / save_conversation_message keep their
-        current (unguarded) signatures — H4-c was explicitly out of scope."""
-        import subprocess
-        out = subprocess.run(
-            ["git", "status", "--porcelain", "--",
-             "app/services/audit_service.py", "app/services/log_service.py"],
-            cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", f"H4-c files modified: {out}"
+    def _phase_commit_files(self, marker):
+        """Files touched by the commit that introduced `marker`.
 
-    def test_only_admin_py_changed(self):
+        Asserted against the COMMIT, not `git status`. A worktree assertion
+        breaks the moment a LATER, separately approved phase edits app/ --
+        which is exactly what H4-c did to the first version of these tests. A
+        phase's scope is a fact about what it shipped, not about what anyone
+        is editing now.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "app/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout
-        dirty = sorted(l.split()[-1] for l in out.splitlines()
-                       if l.strip() and not l.endswith("screens.py"))
-        assert dirty == ["app/routes/admin.py"], dirty
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", marker],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            return None
+        return sorted(subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split())
+
+    def test_h4c_services_were_not_modified_by_THIS_phase(self):
+        """H4-a shipped without touching the logging services.
+
+        H4-c later hardened resolve_tenant_id() in log_service.py under its
+        own approval, so a worktree check here would now fail for a reason
+        that has nothing to do with H4-a. Asserted against H4-a's commit.
+        """
+        files = self._phase_commit_files("tests/test_tenant_resolution_h4a.py")
+        if files is None:
+            pytest.skip("H4-a is not committed yet")
+        for svc in ("app/services/log_service.py",
+                    "app/services/audit_service.py"):
+            assert svc not in files, f"H4-a touched {svc}"
+
+    def test_only_admin_py_changed_by_THIS_phase(self):
+        files = self._phase_commit_files("tests/test_tenant_resolution_h4a.py")
+        if files is None:
+            pytest.skip("H4-a is not committed yet")
+        prod = [f for f in files if f.startswith("app/")]
+        assert prod == ["app/routes/admin.py"], prod
 
     def test_read_fk_flag_untouched(self):
         from app import flags

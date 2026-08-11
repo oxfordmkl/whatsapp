@@ -331,13 +331,25 @@ class TestStructure:
         assert "if not tenant_id" not in src, \
             "log_lead_event now guards — H4-c has landed; update this test"
 
-    def test_out_of_scope_files_untouched(self):
+    def test_out_of_scope_files_untouched_by_THIS_phase(self):
+        """H4-b shipped touching only admin.py under app/.
+
+        Asserted against H4-b's own commit rather than `git status`: H4-c
+        subsequently edited log_service.py under separate approval, and a
+        worktree check would blame H4-b for it.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "app/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout
-        dirty = sorted(l.split()[-1] for l in out.splitlines()
-                       if l.strip() and not l.endswith("screens.py"))
-        assert dirty == ["app/routes/admin.py"], dirty
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--",
+             "tests/test_tenant_resolution_h4b.py"],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            pytest.skip("H4-b is not committed yet")
+        files = subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split()
+        prod = sorted(f for f in files if f.startswith("app/"))
+        assert prod == ["app/routes/admin.py"], prod
 
     def test_no_schema_or_migration_change(self):
         import subprocess
