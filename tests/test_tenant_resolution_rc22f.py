@@ -346,7 +346,8 @@ class TestScopeContainment:
             RC2.3E-1 Batch 1a -3 (crm_leads, crm_my_leads, crm_staff_dashboard)
             H4-a              -4 (crm_lead_update, crm_lead_send,
                                   crm_lead_detail, crm_staff_performance_detail)
-                            => 7 remain, all of them H4-b scope
+                              -7 (H4-b: the remainder)
+                            => 0 remain; H4 is closed
 
         The assertion below is lowered to 7 and made EXACT rather than a
         floor. A floor cannot detect an accidental migration; equality can.
@@ -364,11 +365,9 @@ class TestScopeContainment:
         # _actor_tenant_id defines the correct idiom; check_billing_status has
         # its own three-way resolution. Neither is an H4 site.
         routes = legacy - {"_actor_tenant_id", "check_billing_status"}
-        assert routes == {
-            "campaigns", "crm_course_admissions", "crm_operations",
-            "crm_staff_allocation", "crm_staff_allocation_check",
-            "crm_staff_allocation_detail", "crm_unassigned_leads",
-        }, f"H4 site set changed unexpectedly: {sorted(routes)}"
+        # H4-b closed the last seven. The debt this test tracked is repaid;
+        # the assertion now guards against the idiom REAPPEARING.
+        assert routes == set(), f"H4 idiom reappeared in: {sorted(routes)}"
 
     def test_staff_service_behaviour_untouched(self):
         """RC2.2F must not change staff_service BEHAVIOUR.

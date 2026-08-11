@@ -2648,7 +2648,11 @@ def campaigns():
     from app.extensions import db
     
     today = date.today()
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-b: consistency. _tid here feeds ONLY tenant_query(), whose
+    # SUPER_ADMIN branch returns before reading the argument, so this
+    # changes no behaviour -- it makes all four/seven routes resolve the
+    # tenant by one rule.
+    _tid = _actor_tenant_id()
     campaign_msgs = tenant_query(ConversationMessage, _tid).filter(
         ConversationMessage.source == 'campaign',
         db.func.date(ConversationMessage.created_at) == today
@@ -3785,7 +3789,15 @@ def crm_course_admissions(phone):
 
     try:
         from app.models import ConversationState
-        _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+        # Phase H4-b: NOT consistency-only, unlike the other six in this batch.
+        # This route POSTs and calls log_lead_event(tenant_id=_tid), which does
+        # NOT guard a falsy tenant -- it calls resolve_tenant_id(), whose
+        # fallback is PRIMARY_TENANT_ID. With the legacy idiom an impersonating
+        # SUPER_ADMIN would have filed the COURSE_ADMISSION event into the
+        # PRIMARY tenant instead of the impersonated one: a cross-tenant write,
+        # the same class as the TD-P0-1 mis-filing incident. Latent only because
+        # every lead_event today already belongs to the primary tenant.
+        _tid = _actor_tenant_id()
         conversation_state = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
         if conversation_state is None:
             return _not_found(phone)
@@ -4402,7 +4414,11 @@ def crm_operations():
     # Phase 9.6
     from app.models import ConversationState, LeadEvent
     intel_event_types = ["FOLLOW_UP_TASK", "FOLLOW_UP_COMPLETED"]
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-b: consistency. _tid here feeds ONLY tenant_query(), whose
+    # SUPER_ADMIN branch returns before reading the argument, so this
+    # changes no behaviour -- it makes all four/seven routes resolve the
+    # tenant by one rule.
+    _tid = _actor_tenant_id()
     auto_events = tenant_query(LeadEvent, _tid).filter(LeadEvent.event_type.in_(intel_event_types)).all()
     leads = tenant_query(ConversationState, _tid).all()
     automation = calculate_automation_intelligence(leads, auto_events)
@@ -5052,7 +5068,11 @@ def crm_unassigned_leads():
     # materialised list, so the count stays correct across pages.
     PAGE_SIZE = 25
     page = max(1, request.args.get("page", 1, type=int))
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-b: consistency. _tid here feeds ONLY tenant_query(), whose
+    # SUPER_ADMIN branch returns before reading the argument, so this
+    # changes no behaviour -- it makes all four/seven routes resolve the
+    # tenant by one rule.
+    _tid = _actor_tenant_id()
     pagination = tenant_query(ConversationState, _tid).filter(
         or_(ConversationState.assigned_staff.is_(None), ConversationState.assigned_staff == '')
     ).order_by(ConversationState.lead_score.desc()).paginate(
@@ -6422,7 +6442,11 @@ def crm_staff_allocation():
     import json
     
     # 1. Total & HOT Leads & Admissions
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-b: consistency. _tid here feeds ONLY tenant_query(), whose
+    # SUPER_ADMIN branch returns before reading the argument, so this
+    # changes no behaviour -- it makes all four/seven routes resolve the
+    # tenant by one rule.
+    _tid = _actor_tenant_id()
     lead_stats = tenant_filter(db.session.query(
         ConversationState.assigned_staff,
         func.count(ConversationState.phone).label('total_leads'),
@@ -6574,7 +6598,11 @@ def crm_staff_allocation_detail(staff_name):
     
     actual_name = "" if staff_name == "Unassigned" else staff_name
     
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-b: consistency. _tid here feeds ONLY tenant_query(), whose
+    # SUPER_ADMIN branch returns before reading the argument, so this
+    # changes no behaviour -- it makes all four/seven routes resolve the
+    # tenant by one rule.
+    _tid = _actor_tenant_id()
     if actual_name == "":
         leads = tenant_query(ConversationState, _tid).filter(
             (ConversationState.assigned_staff == None) | (ConversationState.assigned_staff == "")
@@ -6611,7 +6639,11 @@ def crm_staff_allocation_check(staff_name):
         
     # 1. Check Leads
     from sqlalchemy import func
-    _tid = getattr(current_user, 'tenant_id', None) if current_user.is_authenticated else None
+    # Phase H4-b: consistency. _tid here feeds ONLY tenant_query(), whose
+    # SUPER_ADMIN branch returns before reading the argument, so this
+    # changes no behaviour -- it makes all four/seven routes resolve the
+    # tenant by one rule.
+    _tid = _actor_tenant_id()
     lead_count = tenant_query(ConversationState, _tid).filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower()).count()
     admission_count = tenant_query(ConversationState, _tid).filter(func.lower(func.trim(ConversationState.assigned_staff)) == staff_name.lower(), ConversationState.is_admitted == True).count()
     

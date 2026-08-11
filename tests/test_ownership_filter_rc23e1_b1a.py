@@ -375,24 +375,23 @@ class TestStructure:
         assert src.count("_staff_ownership_clause(actor, tenant_id)") == 3
         assert src.count("def _staff_ownership_clause(actor, tenant_id)") == 1
 
-    def test_h4_remains_open_elsewhere(self):
-        """HONEST RECORD: H4 is 14 route-level sites, not the 'two idioms' my
-        Batch 1 discovery described. Batch 1a fixes the three inside its own
-        scope; the rest need their own phase. Update the expected count when
-        that lands — do not delete this test."""
+    def test_h4_is_now_fully_closed(self):
+        """INVERTED by H4-b, which is what the previous version asked for.
+
+        This asserted H4 was still open elsewhere — 14 route-level sites, not
+        the "two idioms" my Batch 1 discovery claimed. Batch 1a closed three,
+        H4-a four, H4-b the last seven. Only _actor_tenant_id (which defines
+        the idiom) and check_billing_status (its own three-way resolution)
+        may still contain it.
+        """
         tree = self._admin()
         remaining = set()
         for n in ast.walk(tree):
             if isinstance(n, ast.FunctionDef):
                 s = ast.unparse(n)
-                if ("getattr(current_user, 'tenant_id'" in s
-                        and n.name not in ("_actor_tenant_id", "check_billing_status")):
+                if "getattr(current_user, 'tenant_id'" in s:
                     remaining.add(n.name)
-        assert "crm_leads" not in remaining
-        assert "crm_my_leads" not in remaining
-        assert "crm_staff_dashboard" not in remaining
-        assert len(remaining) >= 1, \
-            "H4 appears fully closed — update this test and close the item"
+        assert remaining == {"_actor_tenant_id", "check_billing_status"},             f"H4 sites remain: {sorted(remaining)}"
 
     def test_no_schema_or_migration_change(self):
         versions = os.path.join(ROOT, "migrations", "versions")

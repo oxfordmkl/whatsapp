@@ -401,11 +401,9 @@ class TestProgrammeInvariants:
                        "crm_lead_update", "crm_lead_send", "crm_lead_detail",
                        "crm_staff_performance_detail"):
             assert closed not in remaining, f"{closed} regressed to the H4 idiom"
-        assert remaining == {
-            "campaigns", "crm_course_admissions", "crm_operations",
-            "crm_staff_allocation", "crm_staff_allocation_check",
-            "crm_staff_allocation_detail", "crm_unassigned_leads",
-        }, f"H4-b set changed: {sorted(remaining)}"
+        # H4-b closed the last seven, so the set is now empty. H4 total was
+        # FOURTEEN route-level sites: Batch 1a 3, H4-a 4, H4-b 7.
+        assert remaining == set(), f"H4 sites remain: {sorted(remaining)}"
 
     def test_no_schema_or_migration_change(self):
         import subprocess

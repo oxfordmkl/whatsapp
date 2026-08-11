@@ -482,9 +482,10 @@ class TestStructure:
                          "_current_tenant"):
             assert invented not in names, f"new abstraction {invented} added"
 
-    def test_h4b_scope_is_untouched(self):
-        """Seven routes remain on the old idiom BY DESIGN — H4-b was not
-        approved in this phase. Update the count when it lands."""
+    def test_h4b_scope_is_now_closed_too(self):
+        """Was: "seven routes remain on the old idiom BY DESIGN — H4-b was not
+        approved in this phase. Update the count when it lands." H4-b landed
+        and migrated all seven."""
         import ast
         with open(os.path.join(ROOT, "app", "routes", "admin.py"),
                   encoding="utf-8") as fh:
@@ -494,10 +495,10 @@ class TestStructure:
                      if isinstance(n, ast.FunctionDef)
                      and GET in ast.unparse(n)
                      and n.name not in ("_actor_tenant_id", "check_billing_status")}
-        assert remaining == {
-            "campaigns", "crm_course_admissions", "crm_operations",
-            "crm_staff_allocation", "crm_staff_allocation_check",
-            "crm_staff_allocation_detail", "crm_unassigned_leads"}, remaining
+        # H4-b subsequently migrated all seven, so the set is now empty.
+        # Kept (not deleted) because it still guards the H4-a four against
+        # regression via the loop above.
+        assert remaining == set(), remaining
 
     def test_h4c_services_were_not_modified(self):
         """log_audit / log_message / save_conversation_message keep their
