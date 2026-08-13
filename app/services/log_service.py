@@ -149,6 +149,27 @@ def log_message(
         db.session.add(entry)
         db.session.commit()
     except Exception:
+        # Phase H4-d: roll back BEFORE logging.
+        #
+        # A failed flush leaves the Session inactive (SQLAlchemy 2.x), so every
+        # later query in the SAME app context raises PendingRollbackError.
+        # Flask-SQLAlchemy scopes one session per app context, so a daemon
+        # thread is self-contained — but an in-request call shares the route's
+        # session, and four lead-assignment routes do further DB work after
+        # logging. Without this, a lost log line took the rest of the request
+        # with it.
+        #
+        # Not only the unresolved-tenant case: any exception here poisons the
+        # session, including a DataError from an untruncated VARCHAR column or
+        # a transient DB fault.
+        #
+        # The nested try mirrors save_conversation_message(): a failing
+        # rollback must not mask the original error.
+        try:
+            from app.extensions import db
+            db.session.rollback()
+        except Exception:
+            logging.exception("[log_service] Failed to rollback MessageLog transaction")
         logging.exception(
             f"[log_service] Failed to log MessageLog {direction}/{message_type} for {phone}"
         )
@@ -278,6 +299,14 @@ def log_lead_event(
         db.session.add(entry)
         db.session.commit()
     except Exception:
+        # Phase H4-d: roll back BEFORE logging — see log_message() for the
+        # full rationale. Same shape as save_conversation_message(), including
+        # the nested try so a failing rollback cannot mask the original error.
+        try:
+            from app.extensions import db
+            db.session.rollback()
+        except Exception:
+            logging.exception("[log_service] Failed to rollback LeadEvent transaction")
         logging.exception(
             f"[log_service] Failed to log LeadEvent {event_type} for {phone}"
         )

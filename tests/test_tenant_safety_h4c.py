@@ -189,33 +189,29 @@ class TestWritersDoNotMisAttribute:
             log_service.save_conversation_message(
                 phone="919900000002", direction="out", message="hi")
 
-    def test_failed_write_poisons_the_session(self, seeded):
-        """HONEST RECORD OF A CAVEAT THIS PHASE SURFACED.
+    def test_failed_write_no_longer_poisons_the_session(self, seeded):
+        """INVERTED by H4-d, which is exactly what this test asked for.
 
-        My H4-c discovery argued the None return "costs one lost log line".
-        That is true only for save_conversation_message, which rolls back in
-        its except block. log_message and log_lead_event do NOT, so the failed
-        flush leaves the session in PendingRollbackError and every later query
-        in the same request fails too.
+        It previously asserted the OPPOSITE: that a failed write left the
+        session in PendingRollbackError, because log_message and
+        log_lead_event caught their exception without rolling back. My H4-c
+        discovery had claimed the None return "costs one lost log line" — true
+        only for save_conversation_message, which already rolled back. A test
+        failure surfaced that, not foresight.
 
-        UNREACHABLE IN PRODUCTION: PRIMARY_TENANT_ID is configured, so leg 2
-        always answers and None is never returned. This bites only in an
-        environment with no PRIMARY configured — where the previous behaviour
-        was to silently pick an arbitrary tenant instead.
+        H4-d added the same guarded rollback to the other two writers under
+        its own approval, so the caveat is gone: the write is still lost, but
+        the session survives and the rest of the request completes.
 
-        Adding rollback to those two except blocks is a 4-line change to the
-        WRITERS, which the approved H4-c scope excluded ("resolve_tenant_id()
-        only, no callers"). Recorded here so it is not lost; flip this test
-        when that lands.
+        Kept rather than deleted — the history of why those two writers differ
+        from the third is worth more than a clean file.
         """
-        from sqlalchemy.exc import PendingRollbackError
         with _APP.app_context():
             _APP.config["PRIMARY_TENANT_ID"] = ""
             log_service.log_lead_event(phone="919900000004",
                                        event_type="TEST_EVENT")
-            with pytest.raises(PendingRollbackError):
-                LeadEvent.query.count()
-            db.session.rollback()
+            # No rollback() here on purpose: the writer must have done it.
+            assert LeadEvent.query.filter_by(phone="919900000004").count() == 0
 
     def test_save_conversation_message_recovers_on_its_own(self, seeded):
         """The one writer that already rolls back — the shape the other two
