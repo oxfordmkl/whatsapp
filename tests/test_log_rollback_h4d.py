@@ -331,12 +331,25 @@ class TestStructure:
         assert src.rstrip().endswith("return None")
 
     def test_only_log_service_changed(self):
+        """Scope asserted against THIS phase's COMMIT, not the worktree.
+
+        The first version checked `git status -- app/`, which fails whenever a
+        LATER, separately approved phase edits app/ — RC2.3E-2B did exactly
+        that. A phase's scope is a fact about what it shipped; the same
+        correction was already applied to the Batch 5a and H4-a/H4-b suites.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "app/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout
-        dirty = sorted(l.split()[-1] for l in out.splitlines()
-                       if l.strip() and not l.endswith("screens.py"))
-        assert dirty in ([], ["app/services/log_service.py"]), dirty
+        rel = os.path.relpath(__file__, ROOT).replace(os.sep, "/")
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", rel],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            pytest.skip("phase not committed yet")
+        files = subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split()
+        prod = sorted(f for f in files if f.startswith("app/"))
+        assert prod == ["app/services/log_service.py"], prod
 
     def test_no_schema_or_migration_change(self):
         import subprocess

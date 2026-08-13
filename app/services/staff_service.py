@@ -272,6 +272,47 @@ def resolve(tenant_id, name):
     return matches[0]
 
 
+def display_name_conflict(tenant_id, name, exclude_user_id=None):
+    """The user already answering to `name`, or None — Phase RC2.3E-2B.
+
+    Checks the SAME namespace resolve() reads: username OR display_name,
+    case-insensitively, within one tenant. That union is the point. The Staff
+    Management screen used to validate only the CODE (username) namespace,
+    while resolve() reads the union, so a write could be "unique" and still
+    produce a label resolve() cannot resolve. Production holds exactly that:
+
+        id=18  username='NIBU'    display_name='nibu'
+        id=19  username='NIBU01'  display_name='nibu'
+
+    'NIBU01' was a free code, the display name was never examined, and
+    afterwards 'nibu' matched two users — so every assignment to that staff
+    member is rejected by the H3 validators.
+
+    NOT implemented with resolve(): resolve() returns None BOTH when nothing
+    matches and when several do, so a caller using it as a conflict check
+    would read an existing ambiguity as "no conflict" — the opposite of the
+    truth. This returns the first conflicting user so the caller can name them
+    in the error.
+
+    exclude_user_id skips the row being edited: a staff member keeping their
+    own display name must not collide with themselves.
+    """
+    from app.models import User
+
+    needle = (name or "").strip().lower()
+    if not tenant_id or not needle:
+        return None
+
+    for u in User.query.filter(User.tenant_id == tenant_id).all():
+        if exclude_user_id is not None and u.id == exclude_user_id:
+            continue
+        if (u.username or "").strip().lower() == needle:
+            return u
+        if (u.display_name or "").strip().lower() == needle:
+            return u
+    return None
+
+
 def resolve_id(tenant_id, name):
     """resolve() returning just the user id, or None."""
     user = resolve(tenant_id, name)

@@ -1932,6 +1932,21 @@ def crm_staff_management():
             if staff_service.resolve_code(_tenant, code, include_admins=True) is not None:
                 return redirect(url_for("admin.crm_staff_management", err="Staff code already exists"))
 
+            # Phase RC2.3E-2B: the DISPLAY NAME must be unique in the namespace
+            # resolve() reads — username OR display_name — not just the code.
+            #
+            # The check above only ever spanned codes, so a free code plus an
+            # already-taken name passed validation and produced a label that
+            # resolve() reports as ambiguous. Production holds that pair
+            # (NIBU/'nibu' and NIBU01/'nibu'), and every assignment to that
+            # staff member is now rejected by the H3 validators.
+            _clash = staff_service.display_name_conflict(_tenant, display_name)
+            if _clash is not None:
+                return redirect(url_for(
+                    "admin.crm_staff_management",
+                    err=f"'{display_name}' is already used by staff "
+                        f"'{_clash.username}' — choose a different name"))
+
             from app.models import User
             # The staff_code IS the username: as_registry() derives the code as
             # username.upper(), so storing the code round-trips unchanged and
@@ -2003,6 +2018,25 @@ def crm_staff_management():
                 if leads_count > 0:
                     err_msg = f"BLOCK_DEACTIVATION:{leads_count}:{norm_name}"
                     return redirect(url_for("admin.crm_staff_management", err=err_msg))
+
+            # Phase RC2.3E-2B: same check on the EDIT path, which validated
+            # nothing at all — an admin could rename any staff member onto
+            # any other's label. exclude_user_id skips this row, so keeping
+            # your own name is not a collision with yourself.
+            #
+            # Only a NON-EMPTY submission is validated: the assignment below
+            # falls back to the current label when the field is blank, so a
+            # blank submission changes nothing and cannot introduce a clash.
+            # That fallback is pre-existing behaviour and is left alone.
+            _proposed = request.form.get("display_name", "").strip()
+            if _proposed:
+                _clash = staff_service.display_name_conflict(
+                    _tenant, _proposed, exclude_user_id=staff.id)
+                if _clash is not None:
+                    return redirect(url_for(
+                        "admin.crm_staff_management",
+                        err=f"'{_proposed}' is already used by staff "
+                            f"'{_clash.username}' — choose a different name"))
 
             _old_role = staff.role
             staff.display_name = request.form.get("display_name", "").strip() or staff.display_label()
