@@ -4271,7 +4271,7 @@ def crm_action_center():
 
 # ── Phase 8.8: CRM Operations Command Center ─────────────────────────────
 
-def calculate_operations(tenant_id=None):
+def calculate_operations(tenant_id=None, actor=None):
     from app.models import ConversationState, LeadEvent
     from app.bot.constants import normalize_course_name
     from datetime import datetime, timedelta
@@ -4281,7 +4281,33 @@ def calculate_operations(tenant_id=None):
     followup_threshold_date = now - timedelta(days=3)
 
     events = tenant_query(LeadEvent, tenant_id).all()
-    leads = tenant_query(ConversationState, tenant_id).all()
+
+    # Phase RC2.3E-3C: STAFF see only leads they own.
+    #
+    # This helper had NO actor parameter, so it could not filter by owner even
+    # in principle — not a check that failed, a check that was never written.
+    # /crm/operations is guarded by check_auth(), which authenticates without
+    # inspecting role, so under SESSION_ONLY every STAFF member read the whole
+    # tenant. Three panels below carry customer name AND phone
+    # (data_issues, admission_ready, high_value_ops); production measured 38
+    # of 90 customers reaching any staff actor, 25 of them owned by a
+    # colleague. The route's own docstring still claims "Protected by
+    # ?key=ADMIN_KEY", which is why this was never a deliberate decision.
+    #
+    # Same mechanism as _build_leads_query, deliberately: one ownership rule,
+    # not a second implementation. owner_filter() keys on display_label() and
+    # on assigned_user_id once STAFF_IDENTITY_READ_FK is on.
+    #
+    # Only the LEAD SET narrows. Every downstream calculation, issue class and
+    # threshold is untouched, so an ADMIN's numbers are bit-for-bit what they
+    # were. `events` is deliberately NOT filtered: it is consulted only via
+    # phone_data for leads already in the loop below, so filtering the leads
+    # is sufficient and leaves the enquiry/admission derivation unchanged.
+    lead_q = tenant_query(ConversationState, tenant_id)
+    if actor and actor.get("source") == "SESSION" and actor.get("role") == "STAFF":
+        lead_q = lead_q.filter(staff_identity_service.owner_filter(
+            ConversationState, current_user))
+    leads = lead_q.all()
 
     phone_data = {}
     for e in events:
@@ -4442,7 +4468,11 @@ def crm_operations():
     if not check_auth():
         return _deny()
     
-    data = calculate_operations()
+    # Phase RC2.3E-3C: the actor decides which leads this page may show. The
+    # tenant argument stays None so tenant resolution is byte-for-byte what it
+    # was (tenant_query resolves it, honouring SUPER_ADMIN impersonation);
+    # only the ownership filter is new.
+    data = calculate_operations(actor=get_current_actor())
     intel = calculate_intelligence()
     
     # Phase 9.6

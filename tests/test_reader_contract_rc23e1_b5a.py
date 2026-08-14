@@ -70,7 +70,7 @@ HELPER = os.path.join(ROOT, "app", "services", "staff_identity_service.py")
 NORMALIZED = [                      # normalize_staff_name() in Python
     "calculate_action_center", "calculate_admission_analytics",
     "calculate_automation_intelligence", "calculate_crm_health",
-    "calculate_intelligence", "calculate_operations",
+    "calculate_intelligence",
     "calculate_staff_performance", "calculate_staff_performance_fixed",
     "calculate_workload_scoring", "crm_staff_workload",
     "crm_staff_allocation",
@@ -78,6 +78,18 @@ NORMALIZED = [                      # normalize_staff_name() in Python
 
 CASE_INSENSITIVE_SQL = [            # lower(trim(col)) == <name>, in SQL
     "crm_staff_allocation_check",
+]
+
+# RC2.3E-3C reclassified calculate_operations OUT of NORMALIZED. It still
+# normalizes for display, but it now also restricts its lead row-set by
+# OWNERSHIP for a SESSION STAFF actor, which is a different contract: these
+# readers are ALLOWED — required — to consult the regime, because that is how
+# owner_filter() bridges name and FK. The assertion below is the inversion of
+# test_does_not_consult_the_flag, not its deletion: it fails if the ownership
+# filter is ever dropped, which is exactly the boundary Batch 5a was guarding
+# in the other direction.
+OWNERSHIP_FILTERED = [
+    "calculate_operations",
 ]
 
 DISPLAY_ONLY = [
@@ -142,12 +154,30 @@ class TestNormalizedAggregations:
                       "owner_column", "owner_filter"):
             assert token not in src, f"{name} now depends on the regime"
 
+    @pytest.mark.parametrize("name", OWNERSHIP_FILTERED)
+    def test_ownership_filtered_readers_still_filter(self, name):
+        """The inversion of test_does_not_consult_the_flag. RC2.3E-3C moved
+        calculate_operations here; if the filter is later removed the reader
+        silently goes back to leaking every colleague's customer."""
+        src = _src(ADMIN, name)
+        assert "owner_filter" in src, f"{name} no longer filters by ownership"
+
+    @pytest.mark.parametrize("name", OWNERSHIP_FILTERED)
+    def test_ownership_filtered_readers_stay_tenant_wide_for_admin(self, name):
+        """The filter must be conditional on the actor, not unconditional."""
+        src = _src(ADMIN, name)
+        assert "STAFF" in src, f"{name} filters without checking the role"
+
     def test_the_buckets_are_still_the_expected_size(self):
-        """A new aggregation must be classified deliberately, not absorbed."""
-        assert len(NORMALIZED) == 11
-        assert len(set(NORMALIZED)) == 11
+        """A new aggregation must be classified deliberately, not absorbed.
+        Totals are unchanged: RC2.3E-3C MOVED one entry, it did not add one."""
+        assert len(NORMALIZED) == 10
+        assert len(set(NORMALIZED)) == 10
         assert len(CASE_INSENSITIVE_SQL) == 1
-        assert len(NORMALIZED) + len(CASE_INSENSITIVE_SQL) == 12
+        assert len(OWNERSHIP_FILTERED) == 1
+        assert "calculate_operations" not in NORMALIZED
+        assert (len(NORMALIZED) + len(CASE_INSENSITIVE_SQL)
+                + len(OWNERSHIP_FILTERED)) == 12
 
 
 class TestCaseInsensitiveSqlReaders:
