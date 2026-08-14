@@ -70,7 +70,6 @@ HELPER = os.path.join(ROOT, "app", "services", "staff_identity_service.py")
 NORMALIZED = [                      # normalize_staff_name() in Python
     "calculate_action_center", "calculate_admission_analytics",
     "calculate_automation_intelligence", "calculate_crm_health",
-    "calculate_intelligence",
     "calculate_staff_performance", "calculate_staff_performance_fixed",
     "calculate_workload_scoring", "crm_staff_workload",
     "crm_staff_allocation",
@@ -90,6 +89,13 @@ CASE_INSENSITIVE_SQL = [            # lower(trim(col)) == <name>, in SQL
 # in the other direction.
 OWNERSHIP_FILTERED = [
     "calculate_operations",
+    # RC2.3E-9 moved calculate_intelligence here for the same reason: it now
+    # narrows its PRIORITY QUEUE (Module 4) by ownership for a SESSION STAFF
+    # actor. Note the narrower contract — only that module is filtered; the
+    # shared `leads` collection every other module aggregates from is
+    # deliberately untouched, because crm_staff_dashboard derives the viewer's
+    # RANK from the leaderboard built out of it.
+    "calculate_intelligence",
 ]
 
 DISPLAY_ONLY = [
@@ -168,14 +174,31 @@ class TestNormalizedAggregations:
         src = _src(ADMIN, name)
         assert "STAFF" in src, f"{name} filters without checking the role"
 
+    def test_intelligence_does_not_filter_the_shared_leads_collection(self):
+        """RC2.3E-9's narrower contract, and the reason it could ship at all.
+
+        calculate_intelligence() is ALSO called by crm_staff_dashboard, which
+        never renders the priority queue but does derive the viewer's rank from
+        the leaderboard. Filtering the shared `leads` query would collapse that
+        leaderboard to one person and every staff member would rank #1. Only
+        Module 4 may narrow.
+        """
+        src = _src(ADMIN, "calculate_intelligence")
+        line = [l for l in src.splitlines()
+                if l.strip().startswith("leads = tenant_query(")]
+        assert line, "the shared leads query moved or was renamed"
+        assert "owner_filter" not in line[0], \
+            "ownership was applied to the SHARED leads collection"
+
     def test_the_buckets_are_still_the_expected_size(self):
         """A new aggregation must be classified deliberately, not absorbed.
         Totals are unchanged: RC2.3E-3C MOVED one entry, it did not add one."""
-        assert len(NORMALIZED) == 10
-        assert len(set(NORMALIZED)) == 10
+        assert len(NORMALIZED) == 9
+        assert len(set(NORMALIZED)) == 9
         assert len(CASE_INSENSITIVE_SQL) == 1
-        assert len(OWNERSHIP_FILTERED) == 1
+        assert len(OWNERSHIP_FILTERED) == 2
         assert "calculate_operations" not in NORMALIZED
+        assert "calculate_intelligence" not in NORMALIZED
         assert (len(NORMALIZED) + len(CASE_INSENSITIVE_SQL)
                 + len(OWNERSHIP_FILTERED)) == 12
 

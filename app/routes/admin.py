@@ -4539,7 +4539,10 @@ def crm_operations():
     # was (tenant_query resolves it, honouring SUPER_ADMIN impersonation);
     # only the ownership filter is new.
     data = calculate_operations(actor=get_current_actor())
-    intel = calculate_intelligence()
+    # Phase RC2.3E-9: same actor, same reason — it narrows the priority queue
+    # (Module 4) only. crm_staff_dashboard deliberately keeps calling this with
+    # the default actor=None so its leaderboard/rank stays tenant-wide.
+    intel = calculate_intelligence(actor=get_current_actor())
     
     # Phase 9.6
     from app.models import ConversationState, LeadEvent
@@ -4566,12 +4569,18 @@ def crm_operations():
 
 # ── Phase 9.5: Operations Intelligence Layer ──────────────────────────
 
-def calculate_intelligence(tenant_id=None):
+def calculate_intelligence(tenant_id=None, actor=None):
     """
     Five intelligence modules. Exactly TWO bulk queries total.
     Query 1: LeadEvent filtered to intel types only.
     Query 2: ConversationState scoped to tenant.
     O(L+E). No N+1. Read-only.
+
+    Phase RC2.3E-9: `actor` narrows MODULE 4 ONLY (the priority queue). It is
+    deliberately not applied to `leads`, which every other module aggregates
+    from — see the comment at Module 4. A STAFF actor adds ONE query; ADMIN
+    and the default actor=None path issue exactly the two queries above, so
+    the documented cost is unchanged for every existing caller.
     """
     from app.models import ConversationState, LeadEvent
     from datetime import datetime
@@ -4752,8 +4761,45 @@ def calculate_intelligence(tenant_id=None):
         })
 
     # Module 4: Priority Opportunity Queue (score >= HOT, not admitted, top 25)
+    #
+    # Phase RC2.3E-9: STAFF see only leads they own.
+    #
+    # RC2.3E-3C isolated the three calculate_operations() panels on this same
+    # page and had to leave this one open: it is produced by THIS helper, which
+    # had no actor parameter, and crm_staff_dashboard calls it too. The rows
+    # carry customer name AND phone, plus an /crm/lead/<phone> link — so the
+    # exposure was not only disclosure but a working click-through to a
+    # colleague's customer, where lead update/stage/send sit behind
+    # check_auth() alone. (Those route guards are a separate RBAC question and
+    # are NOT touched here.)
+    #
+    # THE FILTER IS SCOPED TO THIS MODULE, NOT TO `leads`.
+    # Filtering `leads` would change leaderboard, sla, activity_feed and
+    # workload_snapshot for BOTH callers, and crm_staff_dashboard derives the
+    # viewer's RANK from that leaderboard — filtered to one person, every staff
+    # member would rank #1. crm_staff_dashboard never renders priority_queue,
+    # so confining the filter here leaves that screen provably untouched.
+    #
+    # owner_filter() is the same ownership rule used by _build_leads_query, the
+    # deactivation guard and calculate_operations — not a second one. It is a
+    # SQL predicate and `leads` is already materialised, so ownership is
+    # resolved by one extra scoped query and applied to the in-memory rows.
+    # That query runs ONLY for a SESSION STAFF actor: ADMIN, SUPER_ADMIN and
+    # the default actor=None path are byte-for-byte unchanged, including their
+    # query count.
+    _pq_leads = leads
+    if actor and actor.get("source") == "SESSION" and actor.get("role") == "STAFF":
+        _owned_phones = {
+            row[0] for row in
+            tenant_query(ConversationState, tenant_id)
+            .with_entities(ConversationState.phone)
+            .filter(staff_identity_service.owner_filter(
+                ConversationState, current_user)).all()
+        }
+        _pq_leads = [l for l in leads if l.phone in _owned_phones]
+
     priority_queue = []
-    for lead in leads:
+    for lead in _pq_leads:
         score = lead.lead_score or 0
         if score >= INTELLIGENCE_CONSTANTS["THRESHOLD_HOT"] and not lead.is_admitted:
             priority_queue.append({

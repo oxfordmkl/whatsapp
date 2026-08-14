@@ -227,30 +227,31 @@ class TestNoColleaguePII:
         blob = repr(d["data_issues"]) + repr(d["admission_ready"]) +             repr(d["high_value_ops"])
         assert secret not in blob, f"{secret} leaked through an approved panel"
 
-    def test_priority_queue_still_leaks(self, seeded):
-        """HONEST RECORD OF A GAP THIS PHASE DOES NOT CLOSE.
+    def test_priority_queue_is_now_filtered_too(self, seeded):
+        """INVERTED by Phase RC2.3E-9 — deliberately not deleted.
 
-        RC2.3E-3B identified THREE PII panels. There are FOUR:
-        intel.priority_queue carries phone + name + owning staff and is fed by
-        calculate_intelligence(), which has no actor parameter — the same
-        shape calculate_operations() had.
+        This asserted the OPPOSITE: that intel.priority_queue still leaked a
+        colleague's customer. That was the honest record of a gap RC2.3E-3C
+        could not close, because calculate_intelligence() had no actor
+        parameter and is also called by crm_staff_dashboard.
 
-        It is NOT fixed here because closing it would require either
-        (a) filtering calculate_intelligence(), which crm_staff_dashboard also
-        calls for its leaderboard — an unrelated reporting surface this phase
-        must not modify, or (b) re-filtering the returned dicts by name in the
-        route, which would be a SECOND ownership implementation, explicitly
-        forbidden.
+        RC2.3E-9 closed it by threading an actor and filtering MODULE 4 ONLY —
+        not the shared `leads` collection — so crm_staff_dashboard's
+        leaderboard and rank are untouched. The assertion is therefore
+        reversed, not removed: this file's job is still to pin what a STAFF
+        actor may see on /crm/operations, and the answer for this panel has
+        changed from "everything" to "only their own".
 
-        priority_queue is rendered ONLY by crm_operations.html, so the blast
-        radius of a follow-up is one page.
-
-        This test asserts the leak is STILL PRESENT so the gap cannot be
-        forgotten. Invert it when the follow-up phase lands.
+        The gap that REMAINS is the automation panels
+        (unassigned_hot / stalled_admissions / recovery_queue /
+        recommendations, from calculate_automation_intelligence). Those are
+        pinned by tests/test_priority_queue_isolation_rc23e9.py::
+        TestKnownRemainingExposure, not here.
         """
         ctx, _ = ops(seeded["anju"])
         pq = repr(ctx.get("intel", {}).get("priority_queue", []))
-        assert K2 in pq or "KiranCustomerTwo" in pq,             "priority_queue is now filtered — update this test and close the gap"
+        assert K2 not in pq and "KiranCustomerTwo" not in pq, \
+            "priority_queue leaked a colleague's lead — RC2.3E-9 regressed"
 
     def test_other_tenant_never_appears(self, seeded):
         _, html = ops(seeded["anju"])
