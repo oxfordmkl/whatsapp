@@ -186,6 +186,10 @@
             </td>
             <td>
               {% set admin = tenant_admins.get(tenant.id) %}
+              {# Phase RC2.3E-6: one row per tenant, with the number of ACTIVE
+                 admins. The block below shows one admin's contact details; the
+                 count is what tells the operator whether there are others. #}
+              <div class="text-muted small">Admins: {{ admin_counts.get(tenant.id, 0) }}</div>
               {% if admin %}
                 <div style="font-weight: 500;">{{ admin.username }}</div>
                 <div class="text-muted small">{{ admin.email }}</div>

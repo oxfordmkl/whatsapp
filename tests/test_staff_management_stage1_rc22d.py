@@ -59,6 +59,16 @@ NEW = "t-new"        # a freshly provisioned institute: no staff at all
 SOLO = "t-solo"      # one staff member
 URL = "/crm/staff-management"
 
+# Phase RC2.3E-6: the registry now lists a tenant's ADMIN members beside its
+# STAFF. The fixture gives every tenant an `admin_<tid>` ADMIN, so each
+# expectation below gains exactly that one code. This is a RECLASSIFICATION,
+# not a relaxation: the rows are the same rows, and the role column
+# distinguishes them. as_registry()'s own default still excludes admins, which
+# is why the service-level tests in this file are untouched.
+A_OX = f"ADMIN_{OX}".upper()
+A_NEW = f"ADMIN_{NEW}".upper()
+A_SOLO = f"ADMIN_{SOLO}".upper()
+
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
 
@@ -148,38 +158,58 @@ def rendered_codes(html):
 
 class TestOxfordTenant:
     def test_oxford_still_sees_its_own_staff(self, seeded, client):
-        assert rendered_codes(page(client, seeded[OX])) == {"ANJU", "KIRAN", "NISHA"}
+        assert rendered_codes(page(client, seeded[OX])) == {
+            "ANJU", "KIRAN", "NISHA", A_OX}
 
     def test_oxford_output_matches_the_legacy_file(self, seeded, client):
         """The no-regression test that matters: Oxford's rendered rows are
         exactly the set the global JSON produced — compared against the frozen
         production snapshot of that file."""
         html = page(client, seeded[OX])
-        assert rendered_codes(html) == set(LEGACY_OXFORD_REGISTRY)
+        # The STAFF rows must still be exactly the legacy set; the admin is
+        # an addition beside them, not a change to them.
+        assert rendered_codes(html) - {A_OX} == set(LEGACY_OXFORD_REGISTRY)
         for data in LEGACY_OXFORD_REGISTRY.values():
             assert data["display_name"] in html
 
-    def test_admin_account_is_not_listed_as_staff(self, seeded, client):
-        """Stage 0's I1 fix, now observable through the real screen.
+    def test_admin_account_is_listed_with_its_role(self, seeded, client):
+        """INVERTED by Phase RC2.3E-6 — deliberately not deleted.
+
+        This asserted the opposite: that no ADMIN appeared on this screen.
+        That was Stage 0's I1 fix seen through the route, and I1 REMAINS
+        CORRECT for as_registry()'s default, which still excludes admins and
+        is still pinned by test_staff_registry_compat_rc22d (37 tests).
+
+        What changed is this SCREEN. An admin is a member of the tenant, and
+        hiding them here deleted a promoted staff member from the only place
+        they could be edited back. So the row must be present AND carry its
+        real role — listing it as STAFF would be a different defect.
 
         Read from the table, not the document: the sidebar prints the viewer's
         own username, so a page-wide search would find the admin either way.
         """
-        codes = rendered_codes(page(client, seeded[OX]))
-        assert not any("ADMIN" in c for c in codes), codes
+        html = page(client, seeded[OX])
+        assert A_OX in rendered_codes(html)
+        body = html.split("<tbody>", 1)[-1].split("</tbody>", 1)[0]
+        assert "ADMIN" in body
+        assert "STAFF" in body
 
 
 class TestEmptyTenant:
     def test_new_institute_sees_no_staff(self, seeded, client):
         """THE BUG THIS STAGE CLOSES: before Stage 1 this table rendered
         Oxford's Anju / Kiran / Nisha in a brand-new institute."""
-        assert rendered_codes(page(client, seeded[NEW])) == set()
+        assert rendered_codes(page(client, seeded[NEW])) == {A_NEW}
 
-    def test_empty_state_renders_not_an_error(self, seeded, client):
+    def test_a_new_institute_sees_only_its_own_admin(self, seeded, client):
         r = login(client, seeded[NEW]).get(URL)
         assert r.status_code == 200
-        assert "No staff" in r.get_data(as_text=True) or \
-               "no staff" in r.get_data(as_text=True).lower()
+        # Phase RC2.3E-6: a tenant you can LOG INTO is never empty — viewing
+        # this screen requires an ADMIN of that tenant, and that admin is now
+        # a row. The empty-state branch survives only for a SUPER_ADMIN
+        # impersonating a tenant with no users, and the branch itself is still
+        # pinned by TestTemplateCompatibility::test_template_is_unmodified.
+        assert rendered_codes(r.get_data(as_text=True)) == {A_NEW}
 
     def test_empty_tenant_registry_is_empty(self, seeded):
         from app.services import staff_service
@@ -190,19 +220,19 @@ class TestEmptyTenant:
 class TestSingleStaffTenant:
     def test_one_staff_renders(self, seeded, client):
         html = page(client, seeded[SOLO])
-        assert rendered_codes(html) == {"RAVI"}
+        assert rendered_codes(html) == {"RAVI", A_SOLO}
         assert "Ravi Kumar" in html
 
     def test_display_name_wins_over_username(self, seeded, client):
         """Code is derived from username, label from display_name."""
         html = page(client, seeded[SOLO])
         assert "Ravi Kumar" in html
-        assert rendered_codes(html) == {"RAVI"}
+        assert rendered_codes(html) == {"RAVI", A_SOLO}
 
 
 class TestCrossTenantIsolation:
     def test_no_oxford_staff_leak_into_other_tenants(self, seeded, client):
-        for tid, expected in ((NEW, set()), (SOLO, {"RAVI"})):
+        for tid, expected in ((NEW, {A_NEW}), (SOLO, {"RAVI", A_SOLO})):
             codes = rendered_codes(page(_APP.test_client(), seeded[tid]))
             assert codes == expected, f"leak into {tid}: {codes}"
 
@@ -216,8 +246,10 @@ class TestCrossTenantIsolation:
         ox = rendered_codes(page(_APP.test_client(), seeded[OX]))
         new_second = rendered_codes(page(_APP.test_client(), seeded[NEW]))
         assert "ANJU" in ox
-        assert new_first == set()
-        assert new_second == set()
+        assert new_first == {A_NEW}
+        assert new_second == {A_NEW}
+        # The leak this guards would now show Oxford's admin too.
+        assert A_OX not in new_first and A_OX not in new_second
 
 
 # ═══ Requirement 2 — shape / template compatibility ══════════════════════════
@@ -244,7 +276,7 @@ class TestTemplateCompatibility:
 
     def test_stat_columns_still_render(self, seeded, client):
         html = page(client, seeded[OX])
-        assert rendered_codes(html) == {"ANJU", "KIRAN", "NISHA"}
+        assert rendered_codes(html) == {"ANJU", "KIRAN", "NISHA", A_OX}
         assert "<table" in html.lower()
 
 

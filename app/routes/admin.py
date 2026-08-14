@@ -1988,6 +1988,36 @@ def crm_staff_management():
                 return redirect(url_for("admin.crm_staff_management", err="Staff not found"))
 
             new_active = request.form.get("active") == "on"
+
+            # Phase RC2.3E-6: a tenant must never reach zero active ADMINs.
+            #
+            # Reachable only because the registry above now lists admins: with
+            # no row there was no edit modal and no toggle, so this screen
+            # could not strip admin status at all. The fix that makes admins
+            # visible is what makes them removable, which is why the guard
+            # ships with it rather than after it.
+            #
+            # BLOCK_DEACTIVATION below does NOT cover this: it counts assigned
+            # LEADS, and production's 'admin' (id=1) and 'NIBU' (id=18) own
+            # zero, so they would pass it and leave the tenant unadministered.
+            #
+            # ONE guard for both transitions the edit form can perform —
+            # demotion (role away from ADMIN) and deactivation — because they
+            # are the same hazard reached through two fields of one submission,
+            # and a form can do both at once. _new_role mirrors line 2043's
+            # expression exactly so the guard tests the value that will
+            # actually be written.
+            _new_role = request.form.get("role", "").strip() or staff.role
+            if (staff.role == "ADMIN" and staff.is_active
+                    and (_new_role != "ADMIN" or not new_active)):
+                if staff_service.active_admin_count(
+                        _tenant, exclude_user_id=staff.id) == 0:
+                    return redirect(url_for(
+                        "admin.crm_staff_management",
+                        err=f"'{staff.display_label()}' is this tenant's only "
+                            f"active admin — promote another member to admin "
+                            f"first"))
+
             if not new_active and staff.is_active:
                 from app.models import ConversationState
                 # Phase RC2.3E-1 Batch 3: the deactivation guard now resolves
@@ -2058,6 +2088,22 @@ def crm_staff_management():
             staff = staff_service.resolve_code(_tenant, code, include_admins=True)
             if staff is not None:
                 new_active = not staff.is_active
+
+                # Phase RC2.3E-6: the toggle reaches the same hazard as the
+                # edit path and must not diverge from it — the third and last
+                # way to strip admin status from this screen. Only
+                # DEACTIVATION is guarded: reactivating an admin can only
+                # raise the count.
+                if (not new_active and staff.role == "ADMIN"
+                        and staff.is_active):
+                    if staff_service.active_admin_count(
+                            _tenant, exclude_user_id=staff.id) == 0:
+                        return redirect(url_for(
+                            "admin.crm_staff_management",
+                            err=f"'{staff.display_label()}' is this tenant's "
+                                f"only active admin — promote another member "
+                                f"to admin first"))
+
                 if not new_active:
                     from app.models import ConversationState
                     # Phase RC2.3E-1 Batch 3: the toggle path reaches the same
@@ -2096,7 +2142,27 @@ def crm_staff_management():
     # Stage 2 has now migrated the writers above, so this screen no longer
     # touches the JSON file at all — for THIS screen it is fully retired.
     # It remains the store for the other 15 consumers until Stage 3.
-    display_registry = staff_service.as_registry(_tenant)
+    # Phase RC2.3E-6: the registry lists BOTH roles of this tenant.
+    #
+    # This read was the only asymmetric one on the screen: all three write
+    # paths above already resolve with include_admins=True, so an ADMIN could
+    # be mutated but never seen. Promoting a staff member through this very
+    # screen therefore deleted them from it — production lost Anju (id=2) on
+    # 2026-08-14, and with no row there is no edit modal, so the promotion
+    # could not be undone either. The role is rendered in its own column, so
+    # an admin appears AS an admin rather than as an extra staff member.
+    #
+    # It also removes a latent wrong-row write: codes were assigned here over
+    # STAFF only while resolve_code() re-assigned them over STAFF+ADMIN, and
+    # _assign_codes() gives the unsuffixed base to the LOWEST id. A username
+    # collision across the two roles would therefore have displayed a code
+    # that resolved to a different user.
+    #
+    # Deliberately the CALL SITE, not as_registry()'s default. The service
+    # default stays False: it feeds the assignment dropdowns and the "Staff
+    # Active" card, where an admin genuinely does not belong (RC2.2D I1), and
+    # 37 compat tests pin that contract.
+    display_registry = staff_service.as_registry(_tenant, include_admins=True)
 
     staff_list = []
     for code, data in display_registry.items():
@@ -6992,8 +7058,26 @@ def crm_super_dashboard():
         admin.tenant_id: admin
         for admin in admins
     }
-    
-    return render_template("crm_super_dashboard.html", tenants=tenants, tenant_admins=tenant_admins)
+
+    # Phase RC2.3E-6: a tenant is ONE row with a count, never one row per
+    # admin. tenant_admins above is keyed by tenant_id, so with three admins
+    # two are silently discarded and which one survives depends on query
+    # order — Oxford's 3 rendered as 1. It is retained (the detail block reads
+    # its email and verification badge) but is no longer the only signal that
+    # admins exist.
+    #
+    # Counted from the same rows already loaded rather than a second query:
+    # one pass, and the count cannot disagree with the object shown beside it.
+    # ACTIVE only, matching staff_service.active_admin_count() — an admin who
+    # cannot log in should not make a tenant look covered.
+    admin_counts = {}
+    for admin in admins:
+        if admin.is_active:
+            admin_counts[admin.tenant_id] = admin_counts.get(admin.tenant_id, 0) + 1
+
+    return render_template("crm_super_dashboard.html", tenants=tenants,
+                           tenant_admins=tenant_admins,
+                           admin_counts=admin_counts)
 
 @admin_bp.route("/admin/tenant/<tenant_id>/resend-verification", methods=["POST"])
 @login_required

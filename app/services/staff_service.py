@@ -313,6 +313,46 @@ def display_name_conflict(tenant_id, name, exclude_user_id=None):
     return None
 
 
+def active_admin_count(tenant_id, exclude_user_id=None):
+    """Active ADMIN users in ONE tenant — Phase RC2.3E-6.
+
+    The counter behind the last-active-ADMIN guard. A tenant that reaches zero
+    active admins has nobody who can promote anyone, and there is no
+    super-admin screen that grants a role, so the state is unrecoverable from
+    inside the product.
+
+    Counts role='ADMIN' AND is_active — an INACTIVE admin cannot log in and
+    therefore cannot administer anything, so counting them would let the last
+    usable admin be removed while the guard reported the tenant as covered.
+
+    SUPER_ADMIN is deliberately NOT counted. It has tenant_id NULL, so it never
+    matches this filter anyway, but the intent matters: a platform operator is
+    not a tenant's administrator, and treating one as such would let the last
+    real admin be stripped from every tenant at once.
+
+    exclude_user_id skips the row being edited, so the caller asks the question
+    that actually matters — "who would be left BESIDES this person?" — rather
+    than counting the target as their own replacement.
+
+    Returns 0 for a missing tenant_id: fail closed, matching every other
+    function here. A caller that cannot resolve a tenant must refuse the write,
+    not assume coverage.
+    """
+    from app.models import User
+
+    if not tenant_id:
+        logger.warning("staff_service.active_admin_count called without "
+                       "tenant_id — returning 0 (fail-closed)")
+        return 0
+
+    q = User.query.filter(User.tenant_id == tenant_id,
+                          User.role == "ADMIN",
+                          User.is_active.is_(True))
+    if exclude_user_id is not None:
+        q = q.filter(User.id != exclude_user_id)
+    return q.count()
+
+
 def resolve_id(tenant_id, name):
     """resolve() returning just the user id, or None."""
     user = resolve(tenant_id, name)
