@@ -549,6 +549,34 @@ body {
     <div class="nav-divider"></div>
     {% endif %}
 
+    <!-- OPERATIONS (STAFF) — Phase RC2.3E-10C — begin -->
+    {#
+      A SEPARATE section, deliberately not a widening of the ADMIN gate below.
+
+      /crm/operations was already reachable by STAFF and has been ownership
+      filtered for them by three phases: RC2.3E-3C (data_issues,
+      admission_ready, high_value_ops), RC2.3E-9 (priority_queue) and
+      RC2.3E-10A (unassigned_hot, stalled_admissions, recovery_queue,
+      recommendations). It was simply absent from their navigation, so the page
+      was reachable only by typing the URL.
+
+      Adding 'STAFF' to the ADMIN block instead would also expose Action Center
+      and Staff Workload, which are still tenant-wide and unfiltered — that is
+      why this is a second block containing exactly ONE link. STAFF and
+      ADMIN/SUPER_ADMIN are mutually exclusive here, so only one Operations
+      section ever renders, and it renders in the same position for both.
+    #}
+    {% if actor.role == 'STAFF' %}
+    <div class="nav-section">
+      <div class="nav-section-label">Operations</div>
+      <a class="nav-item" href="/crm/operations" data-path="/crm/operations">
+        <i class="bi bi-speedometer2"></i>
+        <span class="nav-label">Command Center</span>
+      </a>
+    </div>
+    <div class="nav-divider"></div>
+    {% endif %}
+
     <!-- OPERATIONS — future_role: ADMIN | SUPER_ADMIN — begin -->
     {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
