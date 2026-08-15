@@ -4554,7 +4554,11 @@ def crm_operations():
     _tid = _actor_tenant_id()
     auto_events = tenant_query(LeadEvent, _tid).filter(LeadEvent.event_type.in_(intel_event_types)).all()
     leads = tenant_query(ConversationState, _tid).all()
-    automation = calculate_automation_intelligence(leads, auto_events)
+    # Phase RC2.3E-10A: same actor, same reason — it narrows the four
+    # customer-record lists only. `aging` and `productivity` are unchanged, and
+    # crm_staff_dashboard deliberately keeps calling this with no actor.
+    automation = calculate_automation_intelligence(leads, auto_events,
+                                                   actor=get_current_actor())
 
     return render_template(
         "crm_operations.html",
@@ -4923,10 +4927,17 @@ def get_auto_task_suggestions(lead, lead_events_list, open_task_titles):
         
     return suggestions
 
-def calculate_automation_intelligence(leads, events):
+def calculate_automation_intelligence(leads, events, actor=None):
     """
     Phase 9.6: 2 Bulk Queries (via args). No N+1.
     Computes Aging, Recovery, Follow-Up Recommendations, and Staff Productivity.
+
+    Phase RC2.3E-10A: `actor` narrows ONLY the four CUSTOMER-RECORD lists
+    (unassigned_hot, stalled_admissions, recovery_queue, recommendations). It
+    does NOT touch `aging`, which is counted in its own earlier loop, and it
+    cannot touch `productivity`, which is derived from `events` alone. A STAFF
+    actor adds ONE query; every existing caller passes no actor and is
+    byte-for-byte unchanged, including its query count.
     """
     from datetime import datetime
     from app.models import LEAD_TERMINAL_STATUSES
@@ -4998,8 +5009,54 @@ def calculate_automation_intelligence(leads, events):
     # Phase 10N-D: Admin Operations Signals
     unassigned_hot = []
     stalled_admissions = []
-    
-    for lead in leads:
+
+    # Phase RC2.3E-10A: STAFF see only leads they own.
+    #
+    # The four lists built below carry customer NAME and PHONE, and the
+    # template renders each with an /crm/lead/<phone> link — where lead
+    # detail/update/stage/send sit behind check_auth() alone. So this was not
+    # only disclosure but a working click-through to a colleague's customer.
+    # (Those route guards are a separate RBAC defect and are NOT touched here.)
+    # Production measured 20 rendered rows (all from recommendations), 17-20 of
+    # them not the viewer's, for 3 of 3 STAFF members. unassigned_hot and
+    # recovery_queue were empty by DATA and populate as soon as a lead meets
+    # their predicates. stalled_admissions is empty by CONSTRUCTION: it keys on
+    # PAYMENT_PENDING events, but both callers pass only FOLLOW_UP_TASK /
+    # FOLLOW_UP_COMPLETED, so its set is always empty. That is a pre-existing
+    # dead panel, not fixed here — reviving it would ADD a panel's worth of
+    # customer PII and belongs in its own phase.
+    #
+    # SCOPED TO THIS LOOP ONLY.
+    # `aging` is counted in its own earlier loop over `leads` and stays
+    # tenant-wide; `productivity` is derived from `events` and cannot be
+    # affected. crm_staff_dashboard consumes ONLY productivity — it never even
+    # passes `automation` to its template — so it is provably untouched.
+    # Filtering `leads` globally would silently turn `aging` from a tenant-wide
+    # count into a per-staff one, which nobody asked for.
+    #
+    # owner_filter() is the same ownership rule used by _build_leads_query, the
+    # deactivation guard, calculate_operations and calculate_intelligence — not
+    # a second one. It is a SQL predicate and `leads` arrives already
+    # materialised, so ownership is resolved by one scoped query and applied to
+    # the in-memory rows.
+    #
+    # UNASSIGNED LEADS DISAPPEAR FOR STAFF, deliberately: they have no owner,
+    # so no ownership rule can match them. Approved, and consistent with
+    # RC2.3E-3C, where the same consequence was accepted for the "Unassigned
+    # lead" issue class — claiming unassigned work stays an ADMIN capability.
+    _cust_leads = leads
+    if actor and actor.get("source") == "SESSION" and actor.get("role") == "STAFF":
+        from app.models import ConversationState
+        _owned_phones = {
+            row[0] for row in
+            tenant_query(ConversationState)
+            .with_entities(ConversationState.phone)
+            .filter(staff_identity_service.owner_filter(
+                ConversationState, current_user)).all()
+        }
+        _cust_leads = [l for l in leads if l.phone in _owned_phones]
+
+    for lead in _cust_leads:
         if lead.is_admitted or lead.lead_status in LEAD_TERMINAL_STATUSES:
             continue
             

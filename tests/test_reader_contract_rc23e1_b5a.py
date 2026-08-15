@@ -69,7 +69,7 @@ HELPER = os.path.join(ROOT, "app", "services", "staff_identity_service.py")
 # file did on crm_staff_allocation_check.
 NORMALIZED = [                      # normalize_staff_name() in Python
     "calculate_action_center", "calculate_admission_analytics",
-    "calculate_automation_intelligence", "calculate_crm_health",
+    "calculate_crm_health",
     "calculate_staff_performance", "calculate_staff_performance_fixed",
     "calculate_workload_scoring", "crm_staff_workload",
     "crm_staff_allocation",
@@ -96,6 +96,13 @@ OWNERSHIP_FILTERED = [
     # deliberately untouched, because crm_staff_dashboard derives the viewer's
     # RANK from the leaderboard built out of it.
     "calculate_intelligence",
+    # RC2.3E-10A moved calculate_automation_intelligence here on the same
+    # narrow contract: it filters ONLY the four customer-record lists
+    # (unassigned_hot / stalled_admissions / recovery_queue /
+    # recommendations). `aging` keeps its own unfiltered loop over the whole
+    # tenant lead set, and `productivity` is derived from `events`, so
+    # crm_staff_dashboard - which consumes productivity alone - is untouched.
+    "calculate_automation_intelligence",
 ]
 
 DISPLAY_ONLY = [
@@ -190,15 +197,30 @@ class TestNormalizedAggregations:
         assert "owner_filter" not in line[0], \
             "ownership was applied to the SHARED leads collection"
 
+    def test_automation_aging_loop_is_not_ownership_filtered(self):
+        """RC2.3E-10A's narrower contract.
+
+        calculate_automation_intelligence() filters only the customer-record
+        loop. `aging` counts the whole tenant from its own earlier loop over
+        `leads`; if ownership reached it, a STAFF viewer's aging buckets would
+        silently become per-staff counts while the ADMIN's stayed tenant-wide.
+        """
+        src = _src(ADMIN, "calculate_automation_intelligence")
+        assert "for lead in leads:" in src, (
+            "the aging loop no longer iterates the full tenant lead set")
+        assert "for lead in _cust_leads:" in src, (
+            "the customer-record loop is no longer the filtered one")
+
     def test_the_buckets_are_still_the_expected_size(self):
         """A new aggregation must be classified deliberately, not absorbed.
         Totals are unchanged: RC2.3E-3C MOVED one entry, it did not add one."""
-        assert len(NORMALIZED) == 9
-        assert len(set(NORMALIZED)) == 9
+        assert len(NORMALIZED) == 8
+        assert len(set(NORMALIZED)) == 8
         assert len(CASE_INSENSITIVE_SQL) == 1
-        assert len(OWNERSHIP_FILTERED) == 2
+        assert len(OWNERSHIP_FILTERED) == 3
         assert "calculate_operations" not in NORMALIZED
         assert "calculate_intelligence" not in NORMALIZED
+        assert "calculate_automation_intelligence" not in NORMALIZED
         assert (len(NORMALIZED) + len(CASE_INSENSITIVE_SQL)
                 + len(OWNERSHIP_FILTERED)) == 12
 

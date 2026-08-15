@@ -191,13 +191,14 @@ def phones(queue):
 def pq_panel(body):
     """Just the Priority Opportunity Queue table.
 
-    Asserting page-wide would be wrong: /crm/operations renders FOUR other
-    panels that also emit /crm/lead/<phone> links, fed by
-    calculate_automation_intelligence() — unassigned_hot, stalled_admissions,
-    recovery_queue and recommendations. Those are OUT OF SCOPE for this phase
-    and still unfiltered; see TestKnownRemainingExposure below, which pins them
-    so they cannot be forgotten. This slice keeps the assertions honest about
-    what this phase actually fixed.
+    When this file was written, asserting page-wide would have been wrong:
+    /crm/operations renders FOUR other panels that also emit /crm/lead/<phone>
+    links, fed by calculate_automation_intelligence(), and those were out of
+    scope for RC2.3E-9. RC2.3E-10A has since filtered them, so the page-wide
+    assertion is now made by
+    TestKnownRemainingExposure::test_no_colleague_lead_link_anywhere_on_the_page.
+    This slice is retained because it keeps THIS phase's assertions specific to
+    the panel it fixed — a failure here names the priority queue, not the page.
     """
     start = body.find("Priority Opportunity Queue")
     assert start != -1, "priority queue panel not found in the page"
@@ -472,41 +473,41 @@ class TestWiring:
 # ═══ what this phase does NOT fix ════════════════════════════════════════════
 
 class TestKnownRemainingExposure:
-    """A FIFTH PII surface on /crm/operations, found while writing this file.
+    """INVERTED by Phase RC2.3E-10A — deliberately not deleted.
 
-    calculate_automation_intelligence(leads, events) feeds four more panels
-    that render customer name, phone and an /crm/lead/<phone> link:
-    unassigned_hot, stalled_admissions, recovery_queue and recommendations. It
-    takes a pre-fetched `leads` list, has no actor parameter and no ownership
-    filter, and is shared with crm_staff_dashboard — the same shape as the
-    defect this phase fixes.
+    These asserted the OPPOSITE: that the automation panels
+    (unassigned_hot / stalled_admissions / recovery_queue / recommendations,
+    from calculate_automation_intelligence) STILL leaked a colleague's
+    customer. That was the honest record of a fifth PII surface found while
+    writing this file and explicitly out of RC2.3E-9's scope.
 
-    It is EXPLICITLY out of scope (the approved scope names it), so these tests
-    assert the leak is STILL PRESENT. They will FAIL when it is closed, which
-    is the point: the gap cannot be quietly forgotten, and whoever closes it is
-    forced to come here and invert them.
+    RC2.3E-10A closed it the same way: an actor threaded in, and the ownership
+    filter applied to the customer-record loop only — never to the shared
+    `leads` collection, so `aging` stays tenant-wide and `productivity`
+    (derived from events) is untouched.
+
+    The assertions are reversed rather than removed, because this file's job is
+    still to pin what a STAFF actor may see on /crm/operations. The detailed
+    coverage of those four panels lives in
+    tests/test_automation_isolation_rc23e10a.py; what remains here is the
+    page-level guarantee that no colleague lead link survives ANYWHERE on it.
     """
 
-    def test_automation_helper_still_has_no_actor(self):
+    def test_automation_helper_now_takes_an_actor(self):
         src = open(ADMIN_PY, encoding="utf-8").read()
         node = [n for n in ast.walk(ast.parse(src))
                 if isinstance(n, ast.FunctionDef)
                 and n.name == "calculate_automation_intelligence"][0]
-        assert [a.arg for a in node.args.args] == ["leads", "events"], \
-            "calculate_automation_intelligence now takes an actor — close the " \
-            "gap and invert this test"
+        assert [a.arg for a in node.args.args] == ["leads", "events", "actor"]
 
-    def test_automation_panels_still_leak_a_colleagues_lead(self, seeded):
-        """Kiran still sees the unowned/colleague leads through the automation
-        panels, outside the priority queue."""
+    def test_no_colleague_lead_link_anywhere_on_the_page(self, seeded):
+        """The page-wide assertion RC2.3E-9 could not make.
+
+        With both helpers now filtered, a STAFF actor's /crm/operations must
+        not carry a link to ANY lead they do not own — in the priority queue,
+        the automation panels, or the operations panels from RC2.3E-3C.
+        """
         _, _, body = render(seeded["kiran"])
-        panel = pq_panel(body)
-        leaked = [ph for ph in (A_HOT, ADM_HOT, UNOWNED)
-                  if f"/crm/lead/{ph}" in body]
-        assert leaked, \
-            "the automation panels no longer leak — update this test and " \
-            "remove the caveat from the module docstring"
-        for ph in leaked:
-            assert f"/crm/lead/{ph}" not in panel, \
-                "a leak reappeared INSIDE the priority queue — this phase " \
-                "regressed"
+        for ph in (A_HOT, ADM_HOT, UNOWNED):
+            assert f"/crm/lead/{ph}" not in body, ph
+        assert f"/crm/lead/{K_HOT}" in body, "own leads must still be linked"
