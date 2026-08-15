@@ -4719,12 +4719,56 @@ def calculate_intelligence(tenant_id=None, actor=None):
         except Exception:
             pass
 
+    # Phase RC2.3E-12: the owned-lead set, resolved ONCE for this call.
+    #
+    # RC2.3E-9 computed this inside Module 4. Module 3 needs the same set, so
+    # it is hoisted here and both modules read it — one query, not two, and one
+    # ownership rule. None means "no ownership narrowing": ADMIN, SUPER_ADMIN
+    # and the default actor=None path are byte-for-byte unchanged, including
+    # their query count.
+    _owned_phones = None
+    if actor and actor.get("source") == "SESSION" and actor.get("role") == "STAFF":
+        _owned_phones = {
+            row[0] for row in
+            tenant_query(ConversationState, tenant_id)
+            .with_entities(ConversationState.phone)
+            .filter(staff_identity_service.owner_filter(
+                ConversationState, current_user)).all()
+        }
+
     # Module 3: Activity Feed (newest first, max 50)
+    #
+    # Phase RC2.3E-12: STAFF see activity on leads THEY OWN.
+    #
+    # This panel has no name/phone field — it renders a pre-formatted `label`,
+    # and three of the five event types interpolate the customer:
+    #   COURSE_ADMISSION  "{staff} admitted {lead_name}: {course}"
+    #   LEAD_REASSIGNED   "Reassigned {lead_name}: {from} -> {to}"
+    #   MANUAL_MESSAGE    "{staff} messaged {lead_name}"
+    # so no field-level redaction reaches it. Production measured 45 of 50
+    # entries naming a customer, 43 distinct customers, 29-45 of them not the
+    # viewer's — a larger disclosure than RC2.3E-9 or RC2.3E-10A, and it also
+    # revealed the tenant's reassignment history. lead_name falls back to
+    # ev.phone for a nameless lead, so a raw customer number can appear in the
+    # label text too.
+    #
+    # OWNERSHIP OF THE LEAD, NOT THE ACTOR IN THE EVENT PAYLOAD.
+    # The approved definition is "activity on my leads", not "my activity".
+    # edata['staff'] / 'completed_by' are display strings written at event
+    # time; they are not an authorization signal and can name someone who no
+    # longer owns the lead. Keying on ev.phone against the owned set uses the
+    # same rule as every other filtered panel.
+    #
+    # The cap is applied AFTER this check, deliberately: it counts RENDERED
+    # entries, so a staff member still sees their newest 50 rather than having
+    # the budget consumed by colleagues' events they cannot see.
     activity_feed = []
     feed_types = {"LEAD_REASSIGNED", "COURSE_ADMISSION", "FOLLOW_UP_TASK",
                   "FOLLOW_UP_COMPLETED", "MANUAL_MESSAGE"}
     for ev in events:
         if ev.event_type not in feed_types or len(activity_feed) >= 50:
+            continue
+        if _owned_phones is not None and ev.phone not in _owned_phones:
             continue
         lead = lead_map.get(ev.phone)
         lead_name = (lead.name if lead and lead.name else None) or ev.phone
@@ -4791,15 +4835,10 @@ def calculate_intelligence(tenant_id=None, actor=None):
     # That query runs ONLY for a SESSION STAFF actor: ADMIN, SUPER_ADMIN and
     # the default actor=None path are byte-for-byte unchanged, including their
     # query count.
+    # Phase RC2.3E-12: reads the set hoisted above Module 3 rather than
+    # resolving it again. Same rule, same values, one query for both modules.
     _pq_leads = leads
-    if actor and actor.get("source") == "SESSION" and actor.get("role") == "STAFF":
-        _owned_phones = {
-            row[0] for row in
-            tenant_query(ConversationState, tenant_id)
-            .with_entities(ConversationState.phone)
-            .filter(staff_identity_service.owner_filter(
-                ConversationState, current_user)).all()
-        }
+    if _owned_phones is not None:
         _pq_leads = [l for l in leads if l.phone in _owned_phones]
 
     priority_queue = []
