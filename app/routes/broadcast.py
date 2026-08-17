@@ -1,5 +1,5 @@
 import time
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.config import BROADCAST_API_KEY
 from app.services.whatsapp_service import (
     send_text, send_template, upload_media, fetch_templates)
@@ -15,7 +15,14 @@ def templates_route():
     if request.headers.get("X-API-Key") != BROADCAST_API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
     try:
-        data = fetch_templates()
+        # Phase RC2.4.1: LEGACY PRIMARY-TENANT-ONLY ENDPOINT, now explicit.
+        # Authenticated by the single global X-API-Key, with no tenant context.
+        # It has always used the primary tenant's WABA identity - previously by
+        # omitting tenant_id and letting the service layer guess. The guess is now
+        # refused, so the decision is stated here. Per-tenant keys are a separate
+        # product decision, deliberately not taken in this phase.
+        _primary = current_app.config.get("PRIMARY_TENANT_ID")
+        data = fetch_templates(tenant_id=_primary)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     return jsonify({"templates": data, "count": len(data)})
@@ -37,8 +44,16 @@ def upload_media_route():
         return jsonify({"error": "file is required"}), 400
 
     try:
+        # Phase RC2.4.1: LEGACY PRIMARY-TENANT-ONLY ENDPOINT, now explicit.
+        # Authenticated by the single global X-API-Key, with no tenant context.
+        # It has always used the primary tenant's WABA identity - previously by
+        # omitting tenant_id and letting the service layer guess. The guess is now
+        # refused, so the decision is stated here. Per-tenant keys are a separate
+        # product decision, deliberately not taken in this phase.
+        _primary = current_app.config.get("PRIMARY_TENANT_ID")
         media_id = upload_media(
-            f.read(), f.filename, f.mimetype or "image/jpeg")
+            f.read(), f.filename, f.mimetype or "image/jpeg",
+            tenant_id=_primary)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -57,19 +72,28 @@ def broadcast():
     if not numbers or not message:
         return jsonify({"error": "numbers and message are required"}), 400
 
+    # Phase RC2.4.1: LEGACY PRIMARY-TENANT-ONLY ENDPOINT, now explicit.
+    # Authenticated by the single global X-API-Key, with no tenant context.
+    # It has always used the primary tenant's WABA identity - previously by
+    # omitting tenant_id and letting the service layer guess. The guess is now
+    # refused, so the decision is stated here. Per-tenant keys are a separate
+    # product decision, deliberately not taken in this phase.
+    _primary = current_app.config.get("PRIMARY_TENANT_ID")
     results = []
     for num in numbers:
         num = str(num).strip()
         if not num.startswith("91"):
             num = "91" + num.lstrip("0")
-        r = send_text(num, message)
+        r = send_text(num, message, tenant_id=_primary)
         results.append({"number": num, "status": r.status_code, "ok": r.status_code == 200})
         time.sleep(delay)
 
     ok = sum(1 for x in results if x["ok"])
     # Phase 0 Sprint 3: sovereign audit log (Constitution I.7) — counts only,
     # never message bodies or phone lists.
-    from flask import current_app
+    # Phase RC2.4.1: the local `from flask import current_app` was removed —
+    # it shadowed the module-level import and made current_app a local name,
+    # so the earlier _primary lookup raised UnboundLocalError.
     from app.services.audit_service import log_audit, request_ip
     log_audit("BROADCAST_SEND", actor="broadcast-api",
               tenant_id=current_app.config.get("PRIMARY_TENANT_ID") or None,
@@ -104,6 +128,13 @@ def broadcast_template():
     if not numbers or not template_name:
         return jsonify({"error": "numbers and template_name are required"}), 400
 
+    # Phase RC2.4.1: LEGACY PRIMARY-TENANT-ONLY ENDPOINT, now explicit.
+    # Authenticated by the single global X-API-Key, with no tenant context.
+    # It has always used the primary tenant's WABA identity - previously by
+    # omitting tenant_id and letting the service layer guess. The guess is now
+    # refused, so the decision is stated here. Per-tenant keys are a separate
+    # product decision, deliberately not taken in this phase.
+    _primary = current_app.config.get("PRIMARY_TENANT_ID")
     results = []
     for item in numbers:
         if isinstance(item, dict):
@@ -132,13 +163,16 @@ def broadcast_template():
             components.append({"type": "body",
                                "parameters": [{"type": "text", "text": v} for v in resolved]})
 
-        r = send_template(num, template_name, language, components or None)
+        r = send_template(num, template_name, language, components or None,
+                          tenant_id=_primary)
         results.append({"number": num, "status": r.status_code, "ok": r.status_code == 200})
         time.sleep(delay)
 
     ok = sum(1 for x in results if x["ok"])
     # Phase 0 Sprint 3: sovereign audit log (Constitution I.7)
-    from flask import current_app
+    # Phase RC2.4.1: local `from flask import current_app` removed — it
+    # shadowed the module-level import (UnboundLocalError at the _primary
+    # lookup above).
     from app.services.audit_service import log_audit, request_ip
     log_audit("BROADCAST_SEND", actor="broadcast-api",
               tenant_id=current_app.config.get("PRIMARY_TENANT_ID") or None,

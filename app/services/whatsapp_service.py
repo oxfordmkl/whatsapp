@@ -14,6 +14,31 @@ def _get_waba_credentials(tenant_id: str = None) -> tuple[str, str]:
     from app.services.log_service import resolve_tenant_id
     from app.services.encryption_service import decrypt_token
 
+    # Phase RC2.4.1: OUTBOUND CREDENTIALS FAIL CLOSED WITHOUT A TENANT.
+    #
+    # resolve_tenant_id(None) answers PRIMARY_TENANT_ID (leg 2). For a LOG
+    # write that is a defensible default; for OUTBOUND TRANSPORT it is not —
+    # it decides which WhatsApp number the customer sees, whose quota is
+    # spent, and which tenant's webhook receives the reply. A caller that does
+    # not name a tenant is not asking for the primary one, it has lost track
+    # of which tenant it is acting for.
+    #
+    # RC2.4.0 traced 5 production messages that were sent through the primary
+    # tenant's WABA while being persisted elsewhere: the transport and the
+    # record disagreed because only one of them was explicit. This closes the
+    # transport half. Nothing else about resolution changes — an explicitly
+    # named tenant still resolves exactly as before, and a known tenant with
+    # no credentials still fails closed below.
+    #
+    # resolve_tenant_id() itself is deliberately NOT modified: it is shared
+    # with the log writers and bot/router.smart_reply(), whose leg-2 behaviour
+    # is out of this phase's scope.
+    if not tenant_id:
+        raise ValueError(
+            "Outbound WhatsApp requires an explicit tenant_id. Refusing to "
+            "fall back to the primary tenant: the caller must name the tenant "
+            "whose WABA identity is being used.")
+
     # Phase 0 Sprint 2: explicit tenant resolution (config-first). Previously
     # fell back to _get_default_tenant_id() (Tenant.query.first()), which
     # resolves to an arbitrary tenant in multi-tenant production.

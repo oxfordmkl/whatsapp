@@ -551,7 +551,17 @@ def trigger_followup():
     if not phone.startswith("91"):
         phone = "91" + phone.lstrip("0")
 
-    r = send_text(phone, message)
+    # Phase RC2.4.1: LEGACY PRIMARY-TENANT-ONLY ENDPOINT, now explicit.
+    #
+    # This route authenticates with the single global X-Admin-Key and carries
+    # no tenant context of any kind. It has always sent through the primary
+    # tenant's WABA — previously by omitting tenant_id and letting the service
+    # layer guess. The guess is now refused, so the decision is stated here
+    # instead: one visible, greppable line rather than an invisible default.
+    # Making this multi-tenant is a separate product decision (per-tenant API
+    # keys), deliberately not taken in this phase.
+    r = send_text(phone, message,
+                  tenant_id=current_app.config.get("PRIMARY_TENANT_ID"))
     return jsonify({"ok": r.status_code == 200, "status": r.status_code, "phone": phone})
 
 
@@ -2933,7 +2943,21 @@ def crm_lead_send(phone):
     if request.args.get("range"):  qs += f"&range={urllib.parse.quote(request.args.get('range'))}"
 
     try:
-        r = send_text(phone, message)
+        # Phase RC2.4.1: bind the transport to the LEAD's tenant.
+        #
+        # This call previously omitted tenant_id, so the message left through
+        # whichever WABA identity resolve_tenant_id(None) produced — the
+        # primary tenant's. The four persistence calls below were bound to the
+        # actor's tenant by Phase 17.1-B, so transport and record could name
+        # different tenants; RC2.4.0 found 5 production messages where they
+        # did.
+        #
+        # lead.tenant_id, NOT _tid: the lead was fetched through
+        # tenant_query(..., _tid) so the two are equal here by construction.
+        # Binding to the RECORD is the invariant that survives a future
+        # divergence between actor and lead — which is exactly the class of
+        # bug this fixes.
+        r = send_text(phone, message, tenant_id=lead.tenant_id)
         if r.status_code == 200:
             # ── Log manual outbound message (MessageLog — raw technical log) ──
             from app.services.log_service import log_message
