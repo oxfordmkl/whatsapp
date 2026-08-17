@@ -550,7 +550,18 @@ class TestStructure:
                 os.environ["STAFF_IDENTITY_READ_FK"] = before
 
     def test_no_schema_or_migration_change(self):
-        import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "migrations/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", out
+        """H4-a shipped no migration or schema change.
+
+        Phase RC2.4.2: converted from `git status --porcelain -- migrations/`
+        to a COMMIT-scoped check. The worktree form asserted that NOBODY has a
+        migration in progress, which is not this phase's business and which
+        failed the moment RC2.4.2 added an authorised one. The invariant is
+        unchanged and still enforced: H4-a's OWN committed changeset must
+        contain no migrations/ path.
+        """
+        files = self._phase_commit_files("tests/test_tenant_resolution_h4a.py")
+        if files is None:
+            pytest.skip("H4-a is not committed yet")
+        migrations = [f for f in files if f.startswith("migrations/")]
+        assert migrations == [], (
+            f"H4-a committed a migration: {migrations}")

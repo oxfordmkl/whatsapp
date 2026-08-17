@@ -351,11 +351,40 @@ class TestStructure:
         prod = sorted(f for f in files if f.startswith("app/"))
         assert prod == ["app/services/log_service.py"], prod
 
-    def test_no_schema_or_migration_change(self):
+    def _phase_commit_files(self, marker):
+        """Files touched by the commit that introduced `marker`.
+
+        Asserted against the COMMIT, not `git status`. A worktree assertion
+        breaks the moment a LATER, separately approved phase ships a change --
+        a phase's scope is a fact about what it shipped, not about what anyone
+        is editing now.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "migrations/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", out
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", marker],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            return None
+        return sorted(subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split())
+
+    def test_no_schema_or_migration_change(self):
+        """H4-d shipped no migration or schema change.
+
+        Phase RC2.4.2: converted from `git status --porcelain -- migrations/`
+        to a COMMIT-scoped check. The worktree form asserted that NOBODY has a
+        migration in progress, which is not this phase's business and which
+        failed the moment RC2.4.2 added an authorised one. The invariant is
+        unchanged and still enforced: H4-d's OWN committed changeset must
+        contain no migrations/ path.
+        """
+        files = self._phase_commit_files("tests/test_log_rollback_h4d.py")
+        if files is None:
+            pytest.skip("H4-d is not committed yet")
+        migrations = [f for f in files if f.startswith("migrations/")]
+        assert migrations == [], (
+            f"H4-d committed a migration: {migrations}")
 
     def test_columns_are_still_not_null(self):
         """Unchanged: making these nullable is the migration H4-c declined and

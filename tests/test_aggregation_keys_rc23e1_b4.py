@@ -340,19 +340,46 @@ class TestStructure:
         assert "getattr(current_user, 'tenant_id'" not in src
         assert "_actor_tenant_id()" in src
 
-    def test_no_schema_or_migration_change(self):
-        """Compared against git rather than by filename substring.
+    def _phase_commit_files(self, marker):
+        """Files touched by the commit that introduced `marker`.
 
-        The first version of this test looked for "b4" in the filename and
-        tripped on 5d03593d42b4_add_users_table.py — an alembic revision hash.
-        Substring matching over generated names is exactly the false-positive
-        trap this codebase keeps hitting; ask git what actually changed.
+        Asserted against the COMMIT, not `git status`. A worktree assertion
+        breaks the moment a LATER, separately approved phase ships a change --
+        a phase's scope is a fact about what it shipped, not about what anyone
+        is editing now.
         """
         import subprocess
-        out = subprocess.run(
-            ["git", "status", "--porcelain", "--", "migrations/"],
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", marker],
             cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", f"migrations/ is not clean:\n{out}"
+        if not sha:
+            return None
+        return sorted(subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split())
+
+    def test_no_schema_or_migration_change(self):
+        """Batch 4 shipped no migration or schema change.
+
+        Compared against git rather than by filename substring. The first
+        version looked for "b4" in the filename and tripped on
+        5d03593d42b4_add_users_table.py -- an alembic revision hash. Substring
+        matching over generated names is exactly the false-positive trap this
+        codebase keeps hitting; ask git what actually changed.
+
+        Phase RC2.4.2: converted from `git status --porcelain -- migrations/`
+        to a COMMIT-scoped check. The worktree form asserted that NOBODY has a
+        migration in progress, which is not this phase's business and which
+        failed the moment RC2.4.2 added an authorised one. The invariant is
+        unchanged and still enforced: Batch 4's OWN committed changeset must
+        contain no migrations/ path.
+        """
+        files = self._phase_commit_files("tests/test_aggregation_keys_rc23e1_b4.py")
+        if files is None:
+            pytest.skip("Batch 4 is not committed yet")
+        migrations = [f for f in files if f.startswith("migrations/")]
+        assert migrations == [], (
+            f"Batch 4 committed a migration: {migrations}")
 
     def test_flag_default_is_still_off(self):
         from app import flags

@@ -480,11 +480,40 @@ class TestProgrammeInvariants:
         # FOURTEEN route-level sites: Batch 1a 3, H4-a 4, H4-b 7.
         assert remaining == set(), f"H4 sites remain: {sorted(remaining)}"
 
-    def test_no_schema_or_migration_change(self):
+    def _phase_commit_files(self, marker):
+        """Files touched by the commit that introduced `marker`.
+
+        Asserted against the COMMIT, not `git status`. A worktree assertion
+        breaks the moment a LATER, separately approved phase ships a change --
+        a phase's scope is a fact about what it shipped, not about what anyone
+        is editing now.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "migrations/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", out
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", marker],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            return None
+        return sorted(subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split())
+
+    def test_no_schema_or_migration_change(self):
+        """Batch 5a shipped no migration or schema change.
+
+        Phase RC2.4.2: converted from `git status --porcelain -- migrations/`
+        to a COMMIT-scoped check. The worktree form asserted that NOBODY has a
+        migration in progress, which is not this phase's business and which
+        failed the moment RC2.4.2 added an authorised one. The invariant is
+        unchanged and still enforced: Batch 5a's OWN committed changeset must
+        contain no migrations/ path.
+        """
+        files = self._phase_commit_files("tests/test_reader_contract_rc23e1_b5a.py")
+        if files is None:
+            pytest.skip("Batch 5a is not committed yet")
+        migrations = [f for f in files if f.startswith("migrations/")]
+        assert migrations == [], (
+            f"Batch 5a committed a migration: {migrations}")
 
     def test_this_phase_changed_no_production_code(self):
         """Batch 5a was a CONTRACT phase: its commit touched no app/ file.

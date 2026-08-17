@@ -91,6 +91,22 @@
         </button>
 
       </form>
+
+      {# Phase RC2.4.2: release this WhatsApp identity so the Phone Number ID
+         can be configured elsewhere. Its OWN form — nesting it inside the save
+         form above would submit both. Shown only when something is actually
+         configured. Clears the id AND the token together, because this system
+         treats them as a pair everywhere it reads them. #}
+      {% if tenant.waba_phone_number_id or has_token %}
+      <form action="{{ url_for('tenant.tenant_whatsapp_clear') }}" method="POST"
+            onsubmit="return confirm('Disconnect WhatsApp for this account? The Phone Number ID and stored token are removed and the number becomes available to configure again. Your leads, conversations and messages are not affected.');"
+            style="margin-top:0.75rem;">
+        <button type="submit" class="t-btn t-btn-secondary"
+                style="display:flex;align-items:center;gap:0.5rem;width:100%;justify-content:center;">
+          <i class="bi bi-x-circle"></i> Disconnect WhatsApp
+        </button>
+      </form>
+      {% endif %}
     </div>
 
   </div>

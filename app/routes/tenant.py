@@ -331,15 +331,46 @@ def tenant_whatsapp_save():
         flash('No tenant associated with your account.', 'danger')
         return redirect(url_for('tenant.tenant_home'))
         
+    from app.models import Tenant
+
     phone_number_id = request.form.get('phone_number_id', '').strip()
     access_token = request.form.get('access_token', '').strip()
-    
+
     if not phone_number_id or not phone_number_id.isdigit():
         flash('Valid numeric Phone Number ID is required.', 'danger')
         return redirect(url_for('tenant.tenant_whatsapp'))
-        
+
+    # Phase RC2.4.2: refuse another tenant's WhatsApp identity.
+    #
+    # This path previously validated only .isdigit(), so a tenant admin could
+    # enter ANY Phone Number ID — including one already claimed by another
+    # tenant. The inbound webhook resolves the tenant from this column with
+    # .first() and no ORDER BY, so a duplicate would be resolved arbitrarily
+    # and one tenant could start receiving another's customer conversations.
+    #
+    # Keeping your OWN existing id must still succeed: the form posts the
+    # current value back on every save, so excluding this tenant is what makes
+    # a no-op save work rather than reporting a collision with itself.
+    #
+    # This check is a FRIENDLY GUARD, not the integrity boundary. Two
+    # concurrent requests can both pass it; the partial unique index added in
+    # migration b8f4c2e97d15 is what actually prevents the duplicate, and the
+    # IntegrityError handler below turns that into the same readable message.
+    #
+    # The message deliberately does not name the other tenant — a tenant admin
+    # has no business learning which customer of ours holds an id.
+    _clash = Tenant.query.filter(
+        Tenant.waba_phone_number_id == phone_number_id,
+        Tenant.id != tenant.id,
+    ).first()
+    if _clash is not None:
+        flash('That WhatsApp Phone Number ID is already configured for '
+              'another account. Each WhatsApp number can belong to only one '
+              'account.', 'danger')
+        return redirect(url_for('tenant.tenant_whatsapp'))
+
     tenant.waba_phone_number_id = phone_number_id
-    
+
     if access_token:
         # Encrypt and save new token
         try:
@@ -347,14 +378,98 @@ def tenant_whatsapp_save():
         except Exception as e:
             flash(f'Encryption failed: {e}', 'danger')
             return redirect(url_for('tenant.tenant_whatsapp'))
-            
+
     try:
         db.session.commit()
         flash('WhatsApp settings saved successfully.', 'success')
+    except IntegrityError:
+        # Phase RC2.4.2: the unique index is the final boundary. Reached when
+        # two requests race past the check above, or if the index is enforced
+        # against data the check did not see. The user gets the same readable
+        # message rather than a raw database error.
+        db.session.rollback()
+        flash('That WhatsApp Phone Number ID is already configured for '
+              'another account. Each WhatsApp number can belong to only one '
+              'account.', 'danger')
     except Exception as e:
         db.session.rollback()
         flash(f'Failed to save settings: {e}', 'danger')
-        
+
+    return redirect(url_for('tenant.tenant_whatsapp'))
+
+
+@tenant_bp.route('/whatsapp/clear', methods=['POST'])
+@login_required
+@tenant_admin_required
+def tenant_whatsapp_clear():
+    """Phase RC2.4.2: release this tenant's WhatsApp identity.
+
+    WHY THIS EXISTS
+    ---------------
+    tenant_whatsapp_save() rejects an empty Phone Number ID, so before this
+    route there was no way to UNSET one. Combined with the uniqueness index and
+    ADR-011 (tenants are never deleted, only SUSPENDED), a churned tenant would
+    have held its Phone Number ID forever and permanently blocked reuse of that
+    WhatsApp number — a realistic scenario when a number is reassigned.
+
+    IT CLEARS THE CREDENTIAL TOO, AND THAT IS NOT AN INVENTION
+    ----------------------------------------------------------
+    The existing architecture already treats id + token as a PAIR, at three
+    independent sites:
+
+        whatsapp_service._get_waba_credentials  `if id and token:`
+        tenant_whatsapp_test                    `if not id or not token:`
+        templates/tenant/whatsapp.html          `{% if has_token and id %}`
+
+    and production holds 0 half-configured rows in either direction. Clearing
+    only the id would therefore create a state this system has never had and
+    that no consumer expects. Releasing the identity releases its credential.
+
+    SCOPE: this tenant only. _get_current_tenant() resolves the caller's own
+    tenant, so no other tenant's configuration is reachable. No lead,
+    conversation, message or tenant row is deleted — ADR-011's data-permanence
+    policy is untouched; only the WhatsApp binding is released.
+    """
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    if not tenant.waba_phone_number_id and not tenant.waba_access_token_encrypted:
+        flash('No WhatsApp configuration to clear.', 'warning')
+        return redirect(url_for('tenant.tenant_whatsapp'))
+
+    _released = tenant.waba_phone_number_id
+    tenant.waba_phone_number_id = None
+    tenant.waba_access_token_encrypted = None
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to clear WhatsApp settings: {e}', 'danger')
+        return redirect(url_for('tenant.tenant_whatsapp'))
+
+    # Auditable through the existing mechanism (Constitution I.7). Records that
+    # the binding was released and by whom; the id itself is configuration, not
+    # customer data, and naming it is what makes a later reassignment traceable.
+    try:
+        from app.services.audit_service import log_audit, request_ip
+        log_audit('TENANT_SETTINGS_CHANGE',
+                  actor=getattr(current_user, 'email', None)
+                  or getattr(current_user, 'username', None),
+                  tenant_id=tenant.id,
+                  target='waba_phone_number_id',
+                  detail={'event': 'waba_identity_released',
+                          'released_phone_number_id': _released},
+                  ip=request_ip())
+    except Exception:                                       # noqa: BLE001
+        # An audit failure must not undo a completed, committed release.
+        import logging
+        logging.exception('RC2.4.2: audit write failed for WABA clear')
+
+    flash('WhatsApp configuration cleared. This Phone Number ID is now '
+          'available to be configured again.', 'success')
     return redirect(url_for('tenant.tenant_whatsapp'))
 
 

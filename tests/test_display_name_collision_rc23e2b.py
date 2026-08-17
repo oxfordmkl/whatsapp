@@ -361,11 +361,40 @@ class TestStructure:
         assert "resolve(" not in src, \
             "resolve() returns None for an existing ambiguity — see the docstring"
 
-    def test_no_schema_or_migration_change(self):
+    def _phase_commit_files(self, marker):
+        """Files touched by the commit that introduced `marker`.
+
+        Asserted against the COMMIT, not `git status`. A worktree assertion
+        breaks the moment a LATER, separately approved phase ships a change --
+        a phase's scope is a fact about what it shipped, not about what anyone
+        is editing now.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "migrations/"],
-                             cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        assert out == "", out
+        sha = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "-1", "--", marker],
+            cwd=ROOT, capture_output=True, text=True).stdout.strip()
+        if not sha:
+            return None
+        return sorted(subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=ROOT, capture_output=True, text=True).stdout.split())
+
+    def test_no_schema_or_migration_change(self):
+        """RC2.3E-2B shipped no migration or schema change.
+
+        Phase RC2.4.2: converted from `git status --porcelain -- migrations/`
+        to a COMMIT-scoped check. The worktree form asserted that NOBODY has a
+        migration in progress, which is not this phase's business and which
+        failed the moment RC2.4.2 added an authorised one. The invariant is
+        unchanged and still enforced: RC2.3E-2B's OWN committed changeset must
+        contain no migrations/ path.
+        """
+        files = self._phase_commit_files("tests/test_display_name_collision_rc23e2b.py")
+        if files is None:
+            pytest.skip("RC2.3E-2B is not committed yet")
+        migrations = [f for f in files if f.startswith("migrations/")]
+        assert migrations == [], (
+            f"RC2.3E-2B committed a migration: {migrations}")
 
     def test_display_name_still_has_no_db_constraint(self):
         """HONEST RECORD: this phase is application-level only. Option B (a
