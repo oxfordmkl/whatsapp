@@ -100,17 +100,20 @@ None.
 
 ---
 
-#### R-004 — `_get_default_tenant_id()` Single-Tenant Assumption
+#### R-004 — Implicit Tenant Fallback in `resolve_tenant_id()` (residual)
 | Field | Value |
 |-------|-------|
 | **ID** | R-004 |
 | **Severity** | LOW |
-| **Description** | In `app/services/log_service.py`, background thread functions call `_get_default_tenant_id()` which returns the first tenant found. This is acceptable for Kerala (single tenant) but becomes incorrect with multiple active tenants. |
-| **Impact** | Low for Kerala (single tenant). Will cause incorrect tenant assignment in multi-tenant future if not addressed. |
-| **Mitigation** | All primary paths pass `tenant_id` explicitly. This fallback only triggers in edge cases. |
-| **Resolution** | Remove fallback in Phase 16 when multi-tenant is active |
+| **Original Description (historical)** | "In `app/services/log_service.py`, background thread functions call `_get_default_tenant_id()` which returns the first tenant found. This is acceptable for Kerala (single tenant) but becomes incorrect with multiple active tenants." **Both halves of that sentence are now false:** no code calls `_get_default_tenant_id()` (the function no longer exists), and the platform is no longer single-tenant — production holds 12 tenants. |
+| **RETIRED portion** | The arbitrary database-first resolver `_get_default_tenant_id()` = `Tenant.query.first()` is **deleted** as of Phase RC2.4.3, commit `cbf335afeb66cf2d0660d7c591f0020cc957befc`. Verified against the serving production tree: 0 definitions, 0 imports, 0 calls, 0 dynamic references. It can no longer resolve any tenant, arbitrary or otherwise. |
+| **STILL LIVE — residual risk** | `resolve_tenant_id()` retains its `PRIMARY_TENANT_ID` fallback (leg 2): a caller passing `tenant_id=None` is resolved to the configured primary tenant, logged at ERROR. This is **NOT** retired by RC2.4.3 and is intentional. It is materially safer than the retired helper — an explicitly configured tenant rather than an arbitrary row — but it still attributes an unnamed write to a tenant nobody named. Ten non-outbound callers can reach it. |
+| **Impact** | Residual only. A write path that loses track of its tenant is attributed to `PRIMARY_TENANT_ID` rather than failing. Cannot mis-file to a random tenant, which was the mechanism behind the Phase 17.1-C incident. |
+| **Mitigation** | Leg 2 logs at ERROR so it is alertable; leg 3 returns `None` rather than guessing. **Outbound transport is already fail-closed** (Phase RC2.4.1): `_get_waba_credentials()` raises `ValueError` on a falsy `tenant_id` *before* `resolve_tenant_id()` is reached, so no WhatsApp message can be sent through an unnamed tenant's identity. |
+| **Resolution** | Arbitrary-resolver half: **RETIRED in RC2.4.3**. Residual leg-2 half: **OPEN** — retiring it requires auditing the ten remaining callers and is a separate phase. Do not read RC2.4.3 as having eliminated all implicit tenant fallback. |
 | **Owner** | Engineering Team |
 | **Phase Identified** | Phase 14B.1 |
+| **Phase Partially Retired** | RC2.4.3 (`cbf335afeb66cf2d0660d7c591f0020cc957befc`) |
 
 ---
 

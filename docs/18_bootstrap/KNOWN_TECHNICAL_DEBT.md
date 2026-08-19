@@ -34,13 +34,15 @@ Owner: Architecture Team
 - **Risk**: Low
 - **Target Phase**: Phase 19
 
-## 4. Residual `_get_default_tenant_id()` Write Sites (TD-P0-1)
-- **Current Debt**: `_get_default_tenant_id()` resolves to `Tenant.query.first()` — in production (10 tenants) this is `amboori`, not the primary tenant. ~20 call sites remain across 9 files (`app/bot/router.py`, `app/state.py`, `app/routes/admin.py`, `app/services/{campaign,followup,log,notification,task,whatsapp}_service.py`) after Phase 17.1-B closed Category B only.
+## 4. Residual `_get_default_tenant_id()` Write Sites (TD-P0-1) — RETIRED
+- **Original Debt (historical)**: `_get_default_tenant_id()` resolved to `Tenant.query.first()` — an arbitrary row with no filter and no `ORDER BY`; in production (10 tenants at the time) that was `amboori`, not the primary tenant. The entry recorded "~20 call sites remain across 9 files (`app/bot/router.py`, `app/state.py`, `app/routes/admin.py`, `app/services/{campaign,followup,log,notification,task,whatsapp}_service.py`) after Phase 17.1-B closed Category B only."
+- **⚠️ That "~20 call sites" figure is HISTORICAL and NO LONGER CURRENT.** It described the state after Phase 17.1-B. The RC2.4.3 discovery re-measured by AST over 184 files and found **1 definition, 0 callers, 0 imports, 0 runtime paths** — the call sites had already been closed by Phase 0 — Sprint 2 and Phases 17.1-B/C. Do not plan work against the old count.
 - **Interest Rate**: Already caused a production incident — 25 mis-filed `lead_event` rows, repaired in Phase 17.1-C.
-- **Future Refactors**: Thread explicit `tenant_id` through all remaining call paths; forbid the helper in new write paths (ADR-021 rule).
-- **Priority**: Critical
-- **Risk**: Critical
-- **Target Phase**: Phase 0 — Sprint 2
+- **Resolution**: Explicit `tenant_id` was threaded through all call paths (Phase 0 — Sprint 2, Phases 17.1-B/C); Phase H4-c removed the helper from `resolve_tenant_id()` leg 3 but left it defined; Phase RC2.4.3 deleted the function itself, so it can no longer be re-wired by a careless import. Deployment-validated against the serving production tree: **0 `FunctionDef`, 0 imports, 0 calls, 0 dynamic references** across all 63 `app/**/*.py` modules.
+- **NOT closed by this**: `resolve_tenant_id()` still answers `PRIMARY_TENANT_ID` when a caller passes `tenant_id=None` (its leg 2). That is a **different mechanism** — an explicitly configured tenant, not an arbitrary database row — and it remains **LIVE by design**, with ten non-outbound callers resolving through it. Retiring leg 2 is separate follow-up work, not covered by RC2.4.3. RC2.4.1 already closed it for **outbound transport only**: `_get_waba_credentials()` raises `ValueError` before `resolve_tenant_id()` is reached.
+- **Priority**: —
+- **Risk**: —
+- **Status**: RETIRED (Phase RC2.4.3, commit `cbf335afeb66cf2d0660d7c591f0020cc957befc`)
 
 ## 5. Missing Tenant-Isolation Test Suite (TD-P0-2)
 - **Current Debt**: No test anywhere asserts that cross-tenant read/write fails. Constitution I.1 requires isolation proven by automated tests on every deploy.
