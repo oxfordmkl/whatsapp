@@ -43,7 +43,14 @@ _DB = os.path.join(tempfile.gettempdir(), "phase_rc241_outbound.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB}"
 os.environ.setdefault("ADMIN_KEY", "rc241-admin-key")
 os.environ.setdefault("SECRET_KEY", "rc241-secret-key")
-os.environ.setdefault("BROADCAST_API_KEY", "rc241-broadcast-key")
+# ASSIGNMENT, not setdefault: TestLegacyEndpointsExplicit sends this key as a
+# hardcoded literal (KEY, below), so the app must authenticate against exactly
+# this value. setdefault() is a no-op when the variable is already set, and CI
+# sets BROADCAST_API_KEY=ci-broadcast job-wide — the app then expected
+# 'ci-broadcast' while the tests sent 'rc241-broadcast-key', producing 401s in
+# CI that never reproduced locally. ADMIN_KEY above stays setdefault() because
+# its test reads os.environ["ADMIN_KEY"] back rather than hardcoding it.
+os.environ["BROADCAST_API_KEY"] = "rc241-broadcast-key"
 os.environ["AUTH_MODE"] = "SESSION_ONLY"
 os.environ.setdefault("PRIMARY_TENANT_ID", "t-ox")
 if not os.environ.get("WABA_ENCRYPTION_KEY"):
