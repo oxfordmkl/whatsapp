@@ -13,11 +13,16 @@ Architecture:
                                           captured via current_app._get_current_object()
   log_message_in_thread()               → thread-safe wrapper for log_message()
 
-Phase 12-C1 Emergency Hotfix:
-  _get_default_tenant_id()              → resolves the active tenant_id from the
-                                          Tenant table dynamically. Required after
-                                          Phase 12-B added nullable=False tenant_id
-                                          FK columns to all INSERT targets.
+Tenant resolution:
+  resolve_tenant_id()                   → the ONLY tenant resolver. Explicit
+                                          tenant_id, else PRIMARY_TENANT_ID,
+                                          else None. See its docstring.
+
+Phase RC2.4.3 removed _get_default_tenant_id() (Tenant.query.first()), the
+Phase 12-C1 emergency hotfix that resolved an ARBITRARY tenant. H4-c had
+already unwired it from resolve_tenant_id(); by RC2.4.3 it had 1 definition,
+0 callers and 0 imports repository-wide, so deleting it changed no runtime
+path. It is gone rather than merely uncalled so it cannot be rewired.
 """
 import logging
 from datetime import datetime
@@ -80,33 +85,6 @@ def resolve_tenant_id(tenant_id: str = None) -> str:
         "Refusing to guess a tenant; the caller must pass one."
     )
     return None
-
-
-# ── Phase 12-C1: Tenant Resolution Helper (LEGACY — do not call directly) ──
-
-def _get_default_tenant_id() -> str:
-    """
-    Resolve the active tenant_id from the Tenant table.
-
-    Strategy:
-      - Query Tenant.query.first() — safe while only one tenant exists.
-      - Returns the tenant's primary-key ID string.
-      - Returns None on failure so the caller's existing except block handles it.
-
-    This function must ONLY be called from within an active Flask app context.
-    It is intentionally not cached at module level so it remains compatible
-    with future multi-tenant routing (Phase 12-C Multi-WhatsApp).
-    """
-    try:
-        from app.models import Tenant
-        tenant = Tenant.query.first()
-        if tenant:
-            return tenant.id
-        logging.error("[log_service] _get_default_tenant_id: No Tenant rows found in DB.")
-        return None
-    except Exception:
-        logging.exception("[log_service] _get_default_tenant_id: Failed to resolve tenant_id.")
-        return None
 
 
 # ── Phase 4D: Raw technical event log ──────────────────────────────────────

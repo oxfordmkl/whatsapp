@@ -278,9 +278,33 @@ class TestStructure:
         assert "_get_default_tenant_id" not in src, \
             "the arbitrary-tenant fallback is back"
 
+    def test_the_arbitrary_resolver_no_longer_exists(self):
+        """Phase RC2.4.3 DELETED it. H4-c could only unwire it, so this guard
+        used to assert the weaker property "defined but uncalled"; the
+        definition is now gone, so assert the stronger one. The caller check is
+        kept below rather than replaced — a definition can come back in a file
+        this walk covers, but a CALL can also appear before anyone notices the
+        definition, and the two failures point at different mistakes."""
+        defs = []
+        for dp, _d, fs in os.walk(os.path.join(ROOT, "app")):
+            if "__pycache__" in dp:
+                continue
+            for f in fs:
+                if not f.endswith(".py"):
+                    continue
+                p = os.path.join(dp, f)
+                try:
+                    tree = ast.parse(open(p, encoding="utf-8").read())
+                except SyntaxError:
+                    continue
+                for n in ast.walk(tree):
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                            and n.name == "_get_default_tenant_id":
+                        defs.append(os.path.relpath(p, ROOT))
+        assert defs == [], f"_get_default_tenant_id was reintroduced: {defs}"
+
     def test_the_arbitrary_resolver_has_no_caller_anywhere(self):
-        """It is still DEFINED — deleting it was outside the approved scope —
-        so this guards the thing that actually matters: nothing calls it."""
+        """Retained from H4-c: nothing may call it, whether or not it exists."""
         callers = []
         for dp, _d, fs in os.walk(os.path.join(ROOT, "app")):
             if "__pycache__" in dp:
