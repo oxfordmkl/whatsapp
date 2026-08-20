@@ -791,9 +791,17 @@ def crm_marketing_start_job():
         return jsonify({"error": "Message is required"}), 400
         
     from app.services.campaign_service import start_campaign
-    
+
+    # Phase RC2.4.4a: resolve the actor's tenant BEFORE dispatching. The inline
+    # form passed the result straight into start_campaign(), which resolves
+    # through leg 2, so a tenant-less actor would have run a whole campaign
+    # under PRIMARY_TENANT_ID. JSON shape matches crm_tasks_complete.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        return jsonify({"error": "Tenant unresolved"}), 400
+
     try:
-        start_campaign(phones, message, campaign_name, tenant_id=_actor_tenant_id())
+        start_campaign(phones, message, campaign_name, tenant_id=_tid)
         return jsonify({"success": True, "count": len(phones)})
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
@@ -2485,6 +2493,12 @@ def crm_lead_update(phone):
     # With _tid None, H3's validator resolved no staff and rejected EVERY edit
     # an impersonating SUPER_ADMIN made, blaming the staff member for it.
     _tid = _actor_tenant_id()
+    # Phase RC2.4.4a: refuse the write when the actor has no tenant. _tid feeds
+    # log_lead_event(), log_audit(), resolve_assignment() and notify() below,
+    # none of which guard a falsy tenant; log_lead_event() would resolve through
+    # leg 2 to PRIMARY_TENANT_ID and file another tenant's edit under primary.
+    if not _tid:
+        return _deny()
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
@@ -2898,8 +2912,17 @@ def campaign_send():
         return redirect(url_for("admin.campaigns"))
         
     from app.services.campaign_service import start_campaign
+
+    # Phase RC2.4.4a: same root as crm_marketing_start_job. flash+redirect here
+    # to match this route's own convention rather than introducing a new shape.
+    _tid = _actor_tenant_id()
+    if not _tid:
+        flash("No tenant context for this action. Impersonate a tenant first.",
+              "danger")
+        return redirect(url_for("admin.campaigns"))
+
     try:
-        start_campaign(phones, message, name, tenant_id=_actor_tenant_id())
+        start_campaign(phones, message, name, tenant_id=_tid)
         flash(f"Campaign '{name}' started successfully. Sending to {len(phones)} leads. Check dashboard later for results.", "success")
     except Exception as e:
         flash(f"Failed to start campaign: {str(e)}", "danger")
@@ -2919,6 +2942,15 @@ def crm_lead_send(phone):
     # tenant directly and do NOT guard against None, so the getattr form could
     # attribute an impersonating SUPER_ADMIN's message to no tenant at all.
     _tid = _actor_tenant_id()
+    # Phase RC2.4.4a: refuse the write when the actor has no tenant.
+    # tenant_query() does NOT stop this: its SUPER_ADMIN branch is evaluated
+    # BEFORE tenant_id and returns an UNFILTERED query when not impersonating,
+    # so `lead` would be found across tenants and the three writers below would
+    # receive tenant_id=None -> resolve_tenant_id() leg 2 -> PRIMARY_TENANT_ID.
+    # admin_security_guard blocks that actor today, but the contract belongs at
+    # the write, not in middleware. Same shape as crm_tasks_complete.
+    if not _tid:
+        return _deny()
     lead = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
     if lead is None:
         return _not_found(phone)
@@ -3922,6 +3954,12 @@ def crm_course_admissions(phone):
         # the same class as the TD-P0-1 mis-filing incident. Latent only because
         # every lead_event today already belongs to the primary tenant.
         _tid = _actor_tenant_id()
+        # Phase RC2.4.4a: enforce the contract the comment above already states.
+        # log_lead_event(tenant_id=_tid) below does not guard a falsy tenant, so
+        # a None here filed the COURSE_ADMISSION event into PRIMARY_TENANT_ID
+        # via resolve_tenant_id() leg 2 -- the cross-tenant write described.
+        if not _tid:
+            return _deny()
         conversation_state = tenant_query(ConversationState, _tid).filter_by(phone=phone).first()
         if conversation_state is None:
             return _not_found(phone)

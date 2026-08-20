@@ -55,7 +55,23 @@ def _get_waba_credentials(tenant_id: str = None) -> tuple[str, str]:
         return tenant.waba_phone_number_id, token
 
     # Backward compatibility for the primary tenant (global env credentials)
-    if tenant_id == resolve_tenant_id(None):
+    #
+    # Phase RC2.4.4a: read PRIMARY_TENANT_ID directly instead of calling
+    # resolve_tenant_id(None). The old form was a CONFIG READ dressed up as a
+    # resolution: it fired leg 2's "[tenant] implicit resolution" ERROR on every
+    # legitimate primary-tenant send, drowning the one log line that is supposed
+    # to signal a real defect. That alarm has to be trustworthy before leg 2 can
+    # be retired, which is why this is fixed here and not later.
+    #
+    # Boolean behaviour is identical: a blank/unset PRIMARY_TENANT_ID still
+    # yields no match (falls through to the raise below), and no app context
+    # still yields no match. resolve_tenant_id() itself is NOT modified.
+    try:
+        from flask import current_app
+        _primary = (current_app.config.get("PRIMARY_TENANT_ID") or "").strip()
+    except Exception:
+        _primary = ""
+    if _primary and tenant_id == _primary:
         if not PHONE_NUMBER_ID or not ACCESS_TOKEN:
             raise ValueError("Primary tenant missing global WABA configuration.")
         return PHONE_NUMBER_ID, ACCESS_TOKEN
