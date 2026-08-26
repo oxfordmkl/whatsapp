@@ -605,7 +605,14 @@ def admin_panel():
         # defaults.  html.escape prevents attribute-injection if the secret
         # contains characters requiring HTML escaping.
         from app.config import BROADCAST_API_KEY as _bk
-        _origin = request.host_url.rstrip("/")
+        # Phase RC2.4.4c fix: Railway terminates TLS at its edge and forwards
+        # plain HTTP internally, so request.scheme/request.host_url reported
+        # "http" even though the browser sees "https" -- the panel then
+        # injected an http:// origin, and the browser blocked the fetch() as
+        # mixed content ("Failed to fetch"). request.host_url is used nowhere
+        # else in this codebase, so this is scoped to this route only.
+        _scheme = request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip()
+        _origin = f"{_scheme}://{request.host}"
         page = page.replace(
             'value="oxford_broadcast_2026"',
             'value="' + _html.escape(_bk, quote=True) + '"',
