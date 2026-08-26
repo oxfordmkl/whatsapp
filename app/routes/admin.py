@@ -597,8 +597,26 @@ def admin_panel():
             "</body></html>"
         ), 403
     try:
+        import html as _html
         with open("templates/panel.html", "r", encoding="utf-8") as f:
-            return f.read(), 200, {"Content-Type": "text/html"}
+            page = f.read()
+        # Phase RC2.4.4c: inject the real production BROADCAST_API_KEY and
+        # server origin so the panel no longer uses the stale hardcoded
+        # defaults.  html.escape prevents attribute-injection if the secret
+        # contains characters requiring HTML escaping.
+        from app.config import BROADCAST_API_KEY as _bk
+        _origin = request.host_url.rstrip("/")
+        page = page.replace(
+            'value="oxford_broadcast_2026"',
+            'value="' + _html.escape(_bk, quote=True) + '"',
+            1,
+        )
+        page = page.replace(
+            'value="https://web-production-d03fb.up.railway.app"',
+            'value="' + _html.escape(_origin, quote=True) + '"',
+            1,
+        )
+        return page, 200, {"Content-Type": "text/html"}
     except FileNotFoundError:
         return "templates/panel.html not found in project", 404
 
