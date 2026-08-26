@@ -113,19 +113,30 @@ class TestResolution:
             _APP.config["PRIMARY_TENANT_ID"] = PRIMARY
             assert resolve_tenant_id(OTHER) == OTHER
 
-    def test_falls_back_to_primary_when_configured(self, seeded):
+    def test_primary_fallback_now_raises_instead_of_resolving(self, seeded):
+        """Phase RC2.4.4b inverted this test (was
+        test_falls_back_to_primary_when_configured, asserting
+        resolve_tenant_id(None) == PRIMARY). RC2.4.4b's discovery traced
+        every reachable caller to an explicit tenant_id and a 5-day
+        production window confirmed 0 leg-2 firings, so the silent
+        fallback this test pinned no longer exists -- it raises instead."""
         with _APP.app_context():
             _APP.config["PRIMARY_TENANT_ID"] = PRIMARY
-            assert resolve_tenant_id(None) == PRIMARY
-
-    def test_primary_fallback_logs_at_error(self, seeded, caplog):
-        """Raised from WARNING so it is alertable, not lost in the noise."""
-        with _APP.app_context():
-            _APP.config["PRIMARY_TENANT_ID"] = PRIMARY
-            with caplog.at_level(logging.ERROR):
+            with pytest.raises(ValueError):
                 resolve_tenant_id(None)
-        assert any("implicit resolution" in r.message for r in caplog.records
-                   if r.levelno >= logging.ERROR), caplog.text
+
+    def test_primary_fallback_raise_names_the_problem(self, seeded):
+        """Phase RC2.4.4b inverted this test (was
+        test_primary_fallback_logs_at_error, asserting the old
+        "implicit resolution" ERROR log line). That line is retired along
+        with the silent return it accompanied; the failure is now the raise
+        itself, so this asserts the exception message names the same
+        problem the old log line did."""
+        with _APP.app_context():
+            _APP.config["PRIMARY_TENANT_ID"] = PRIMARY
+            with pytest.raises(ValueError) as exc_info:
+                resolve_tenant_id(None)
+        assert "None" in str(exc_info.value) or "explicit" in str(exc_info.value).lower()
 
     def test_returns_none_when_nothing_resolves(self, seeded):
         """THE FIX. This used to return Tenant.query.first() — an arbitrary
@@ -323,11 +334,23 @@ class TestStructure:
                         callers.append(os.path.relpath(p, ROOT))
         assert callers == [], f"_get_default_tenant_id was wired again: {callers}"
 
-    def test_primary_branch_logs_at_error_not_warning(self):
+    def test_primary_branch_still_fails_loudly(self):
+        """Phase RC2.4.4b inverted this test (was
+        test_primary_branch_logs_at_error_not_warning: asserted the
+        primary-fallback branch logged at ERROR, not WARNING -- i.e. stayed
+        LOUD rather than being quietly downgraded).
+
+        The mechanism changed (RC2.4.4b: raise ValueError instead of
+        log-and-return), but the property this test protects -- "this branch
+        must not be softened back into something quiet" -- has not. A revert
+        to logging.warning(...); return primary would be exactly the
+        regression this test exists to catch, whichever phase reintroduced
+        it."""
         src = self._fn(LOGSVC, "resolve_tenant_id")
-        i = src.index("implicit resolution")
-        window = src[max(0, i - 200):i]
-        assert "logging.error" in window, "downgraded back to warning"
+        i = src.index("if primary:")
+        window = src[i:i + 200]
+        assert "raise ValueError" in window, "primary branch no longer fails loudly"
+        assert "logging.warning" not in window, "downgraded to a quiet warning"
 
     def test_none_is_returned_not_guessed(self):
         src = self._fn(LOGSVC, "resolve_tenant_id")

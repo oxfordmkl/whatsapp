@@ -381,15 +381,19 @@ class TestPrimarySendEmitsNoImplicitResolutionError:
         offending = [r.message for r in caplog.records if LEG2 in r.message]
         assert offending == [], f"legitimate primary send still fired leg 2: {offending}"
 
-    def test_detector_actually_works(self, seeded, caplog):
-        """Negative control: the assertion above is only meaningful if this
-        detector can see a real leg-2 firing."""
+    def test_detector_actually_works(self, seeded):
+        """Negative control: the assertion above (no leg-2 firing on a
+        legitimate primary send) is only meaningful if leg 2 is genuinely
+        reachable and would have fired here -- not vacuously true because
+        leg 2 is silently broken or disabled.
+
+        Phase RC2.4.4b: leg 2 no longer logs an ERROR message to detect; it
+        raises. INVERTED (not deleted) to prove the raise itself still fires
+        under the exact config the sibling test relies on being safe from."""
         with _APP.app_context():
             _APP.config["PRIMARY_TENANT_ID"] = OX
-            with caplog.at_level(logging.ERROR):
-                assert resolve_tenant_id(None) == OX
-        assert any(LEG2 in r.message for r in caplog.records), \
-            "detector is blind — the no-error assertion above proves nothing"
+            with pytest.raises(ValueError):
+                resolve_tenant_id(None)
 
     def test_blank_primary_still_fails_closed(self, seeded, monkeypatch):
         monkeypatch.setattr(wa, "PHONE_NUMBER_ID", "111111111111111")
@@ -430,12 +434,18 @@ class TestPrimarySendEmitsNoImplicitResolutionError:
 # ═══ leg 2 is deliberately still live ═══════════════════════════════════════
 
 class TestLegTwoStillLive:
-    """RC2.4.4a does NOT retire leg 2. If RC2.4.4b ever does, INVERT these."""
+    """RC2.4.4a did NOT retire leg 2 -- that was RC2.4.4b. Per this class's
+    own original instruction ("If RC2.4.4b ever does, INVERT these"), the
+    leg-2 test below is inverted, not deleted: RC2.4.4b's discovery + a 5-day
+    production observation window (661 organic requests, 0 leg-2 firings)
+    found no reachable caller left that could still pass None, so leg 2 now
+    raises instead of silently resolving to the primary tenant."""
 
-    def test_leg2_still_resolves_none_to_primary(self, seeded):
+    def test_leg2_now_raises_instead_of_resolving_to_primary(self, seeded):
         with _APP.app_context():
             _APP.config["PRIMARY_TENANT_ID"] = OX
-            assert resolve_tenant_id(None) == OX
+            with pytest.raises(ValueError):
+                resolve_tenant_id(None)
 
     def test_resolve_tenant_id_was_not_modified(self):
         src = open(os.path.join(ROOT, "app", "services", "log_service.py"),

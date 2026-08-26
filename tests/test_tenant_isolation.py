@@ -241,8 +241,14 @@ def wa_payload(phone_number_id, from_number, text, wamid):
 # ═══ Preserved from the original script ══════════════════════════════════════
 
 class TestResolveTenantId:
-    """The crutch regression: None must resolve to PRIMARY_TENANT_ID, never to
-    Tenant.query.first()."""
+    """The crutch regression: None must never resolve to Tenant.query.first().
+
+    Through RC2.4.4a, None resolved to PRIMARY_TENANT_ID instead -- safer
+    than the arbitrary first row, but still an implicit guess. Phase
+    RC2.4.4b closed that too: a 5-day production observation window found no
+    reachable caller left that ever passes None, so None now raises rather
+    than resolving to anything at all. The test below is INVERTED, not
+    deleted, to match."""
 
     def test_precondition_first_row_is_not_the_primary_tenant(self, iso_db):
         assert Tenant.query.first().id == B_ID, "fixture ordering broken"
@@ -251,10 +257,14 @@ class TestResolveTenantId:
         from app.services.log_service import resolve_tenant_id
         assert resolve_tenant_id(B_ID) == B_ID
 
-    def test_none_resolves_to_primary_not_first_row(self, iso_db):
+    def test_none_raises_instead_of_resolving_to_anything(self, iso_db):
+        """Phase RC2.4.4b: was test_none_resolves_to_primary_not_first_row,
+        asserting None resolved to A_ID (primary) and never B_ID (first
+        row). Both outcomes are now impossible -- None resolves to nothing,
+        loudly."""
         from app.services.log_service import resolve_tenant_id
-        assert resolve_tenant_id(None) == A_ID
-        assert resolve_tenant_id(None) != B_ID
+        with pytest.raises(ValueError):
+            resolve_tenant_id(None)
 
 
 class TestServiceLayerLeadIsolation:
@@ -320,13 +330,18 @@ class TestLogWritesAreTenantScoped:
             assert model.query.filter_by(tenant_id=A_ID).count() == 1
             assert model.query.filter_by(tenant_id=B_ID).count() == 0
 
-    def test_implicit_write_files_under_primary_not_first_row(self, iso_db):
+    def test_implicit_write_is_refused_not_filed_under_primary(self, iso_db):
+        """Phase RC2.4.4b: was test_implicit_write_files_under_primary_not_
+        first_row, asserting a tenant-less write landed under A_ID (primary)
+        and never B_ID (first row). log_lead_event() never raises to its
+        caller (H4-d: it catches, rolls back, and logs internally) -- but
+        resolve_tenant_id(None) now raises INSIDE that try block, so the
+        write is refused outright. Stronger than the original guarantee:
+        not "misattributed to the safer tenant" but "not written anywhere
+        at all"."""
         from app.services.log_service import log_lead_event
         log_lead_event(A_ONLY_PHONE, "LEAD_CREATED", tenant_id=None)
-        assert LeadEvent.query.filter_by(tenant_id=A_ID,
-                                         phone=A_ONLY_PHONE).count() == 1
-        assert LeadEvent.query.filter_by(tenant_id=B_ID,
-                                         phone=A_ONLY_PHONE).count() == 0
+        assert LeadEvent.query.filter_by(phone=A_ONLY_PHONE).count() == 0
 
 
 class TestWebhookRouting:

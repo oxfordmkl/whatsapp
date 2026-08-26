@@ -219,19 +219,29 @@ class TestNoUnfilteredTenantFirst:
 # ═══ resolve_tenant_id keeps EXACTLY its three legs ══════════════════════════
 
 class TestResolveTenantIdUnchanged:
-    """RC2.4.3 does NOT retire leg 2. These assert it still answers."""
+    """RC2.4.3 did not retire leg 2 -- that was RC2.4.4b, which converted it
+    from a silent PRIMARY_TENANT_ID return to a raised ValueError. This class
+    still asserts leg 1 and leg 3 answer as always; the leg-2 test below was
+    INVERTED (not deleted) per this repo's tripwire doctrine and its own
+    original docstring's instruction."""
 
     def test_leg1_explicit_tenant_wins(self, seeded):
         with _APP.app_context():
             _APP.config["PRIMARY_TENANT_ID"] = PRIMARY
             assert resolve_tenant_id(OTHER) == OTHER
 
-    def test_leg2_none_resolves_to_primary(self, seeded):
-        """STILL LIVE BY DESIGN. Retiring this is a separate phase; if that
-        phase happens, invert this test rather than deleting it."""
+    def test_leg2_none_raises_instead_of_resolving_to_primary(self, seeded):
+        """Phase RC2.4.4b: inverted from "STILL LIVE BY DESIGN" /
+        "resolve_tenant_id(None) == PRIMARY" per that comment's own
+        instruction ("if that phase happens, invert this test rather than
+        deleting it"). RC2.4.4b's discovery + a 5-day production observation
+        window found 0 reachable callers that could still pass None, so leg 2
+        now raises instead of silently attributing a write to the primary
+        tenant."""
         with _APP.app_context():
             _APP.config["PRIMARY_TENANT_ID"] = PRIMARY
-            assert resolve_tenant_id(None) == PRIMARY
+            with pytest.raises(ValueError):
+                resolve_tenant_id(None)
 
     def test_leg3_none_without_primary_returns_none(self, seeded):
         with _APP.app_context():

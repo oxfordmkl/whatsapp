@@ -5491,7 +5491,12 @@ def crm_unassigned_assign():
         lead.assigned_staff = _owner.value
         _sync_assigned_user(lead, _tid)          # Phase RC2.3D dual-write
 
-        log_lead_event(tenant_id=_actor_tenant_id(),
+        # Phase RC2.4.4b: reuse the already-guarded _tid rather than
+        # re-invoking _actor_tenant_id() -- the two are provably equal here
+        # (nothing mutates session between the guard and this call), but
+        # binding to the validated variable is the invariant that survives a
+        # future edit, not a fresh re-read of mutable session state.
+        log_lead_event(tenant_id=_tid,
             phone=lead.phone,
             event_type="LEAD_REASSIGNED",
             event_data=json.dumps({
@@ -5612,7 +5617,10 @@ def crm_auto_assign_confirm():
                 lead.assigned_staff = target_staff
                 _sync_assigned_user(lead, _tid)  # Phase RC2.3D dual-write
 
-                log_lead_event(tenant_id=_actor_tenant_id(),
+                # Phase RC2.4.4b: reuse the already-guarded _tid rather than
+                # re-invoking _actor_tenant_id() -- see crm_unassigned_assign
+                # for why binding to the validated variable is preferred.
+                log_lead_event(tenant_id=_tid,
                     phone=lead.phone,
                     event_type="LEAD_REASSIGNED",
                     event_data=json.dumps({
@@ -5735,7 +5743,10 @@ def crm_reassignment_confirm():
             _sync_assigned_user(lead, _tid)      # Phase RC2.3D dual-write
             updated_count += 1
             # Add LEAD_REASSIGNED event
-            log_lead_event(tenant_id=_actor_tenant_id(),
+            # Phase RC2.4.4b: reuse the already-guarded _tid rather than
+            # re-invoking _actor_tenant_id() -- see crm_unassigned_assign for
+            # why binding to the validated variable is preferred.
+            log_lead_event(tenant_id=_tid,
                 phone=lead.phone,
                 event_type="LEAD_REASSIGNED",
                 event_data=json.dumps({

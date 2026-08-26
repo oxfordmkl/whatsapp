@@ -38,9 +38,8 @@ def resolve_tenant_id(tenant_id: str = None) -> str:
 
     Order:
       1. Explicit tenant_id from the caller — always wins.
-      2. PRIMARY_TENANT_ID from app config (set in production). Logged at
-         ERROR: the caller should have passed tenant_id explicitly, and this
-         branch attributes data to a tenant nobody named.
+      2. PRIMARY_TENANT_ID from app config. Phase RC2.4.4b: RAISES instead of
+         returning it silently — see below.
       3. None. There is no third guess.
 
     PHASE H4-c — WHY THERE IS NO LONGER A THIRD LEG
@@ -59,27 +58,46 @@ def resolve_tenant_id(tenant_id: str = None) -> str:
     multi-tenant CRM that is the correct trade; a lost audit line is
     recoverable, a cross-tenant write is not.
 
-    Behaviour in production is UNCHANGED: PRIMARY_TENANT_ID is configured, so
-    leg 2 has always answered before leg 3 could. This removes a trap, not a
-    working path.
-
     NOTE: callers are not limited to the log writers. bot/router.smart_reply()
     also resolves through here and uses the result as conversation state, so
     the None case must stay loud rather than silent.
+
+    PHASE RC2.4.4b — WHY LEG 2 NOW RAISES
+    --------------------------------------
+    RC2.4.4a's discovery traced every reachable caller of this function to a
+    root that already supplies an explicit tenant_id: the six /crm/ write
+    routes it guarded, four more independently guarded since ADR-021, and
+    every webhook/worker path that resolves its own tenant before calling in.
+    A 5-day passive production window (661 organic requests, 221 webhook
+    deliveries, 0 leg-2 firings) then confirmed it empirically. Leg 2 has
+    therefore become a safety net for a defect that no longer has a way to
+    occur through the current call graph — but a future caller could still
+    reintroduce an unguarded root, and returning PRIMARY_TENANT_ID silently
+    would let that recreate a TD-P0-1-class mis-filing without anyone
+    noticing beyond a log line. Raising makes it fail loudly and immediately
+    instead — the same trade H4-c already made for leg 3, extended to leg 2
+    now that the evidence supports it.
+
+    Leg 1 and leg 3 are UNCHANGED by this phase: an explicit tenant_id still
+    always wins, and genuine non-resolution (no tenant_id, no
+    PRIMARY_TENANT_ID, or the config lookup itself failing) still returns
+    None rather than raising — H4-c's decision there is not reopened.
     """
     if tenant_id:
         return tenant_id
+    primary = ""
     try:
         from flask import current_app
         primary = (current_app.config.get("PRIMARY_TENANT_ID") or "").strip()
-        if primary:
-            logging.error(
-                "[tenant] implicit resolution → PRIMARY_TENANT_ID "
-                "(caller passed tenant_id=None; pass it explicitly)"
-            )
-            return primary
     except Exception:
         logging.exception("[tenant] resolve_tenant_id: config lookup failed")
+    if primary:
+        raise ValueError(
+            "[tenant] resolve_tenant_id() refused an implicit resolution: "
+            "caller passed tenant_id=None. PRIMARY_TENANT_ID is configured, "
+            "but Phase RC2.4.4b stopped returning it silently — the caller "
+            "must name the tenant explicitly."
+        )
     logging.error(
         "[tenant] UNRESOLVED: no explicit tenant_id and no PRIMARY_TENANT_ID. "
         "Refusing to guess a tenant; the caller must pass one."
