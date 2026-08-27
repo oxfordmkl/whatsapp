@@ -459,6 +459,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                 f"Student {name} is not sure which course to choose. "
                 "Ask one friendly question about their qualification and career goal to recommend the right course.",
                 name,
+                tenant_id=tenant_id,
             )
             return (ai or smart_fallback(name, low)), "GOAL"
 
@@ -532,7 +533,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                     wa_message_id=wa_message_id,
                     course_context=f"Course details:\n{card}",
                 )
-                ai = gemini_reply(raw, name, context=context)
+                ai = gemini_reply(raw, name, context=context, tenant_id=tenant_id)
                 if ai:
                     return ai, "COURSE"
             return msg_course_detail(idx)
@@ -559,7 +560,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         phone=phone,
         wa_message_id=wa_message_id,
     )
-    ai = gemini_reply(raw, name, context=context)
+    ai = gemini_reply(raw, name, context=context, tenant_id=tenant_id)
     if ai:
         return ai, "COURSE"
 
