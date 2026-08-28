@@ -101,3 +101,32 @@ Njan simple aayi guide cheyyam.
 +2 / Degree / Working aano?
 Job aanu main goal alle?"
 """
+
+# ── Phase RC2.5.2: Layer 4 (vertical behaviour) as a template ────────────────
+#
+# AALIZA_PROMPT above is UNCHANGED and remains the compatibility baseline --
+# it is still the literal string Oxford's live AI has always received.
+#
+# EDUCATION_PROMPT_TEMPLATE is DERIVED from it by substitution rather than
+# retyped, so the round trip is guaranteed structurally: rendering it with
+# Oxford's own identity values reproduces AALIZA_PROMPT byte for byte. A
+# hand-copied 100-line template could drift on a single character; this cannot.
+# app/services/prompt_composer.py renders it, and the RC2.5.2 test suite
+# asserts the byte-identical round trip.
+#
+# Only IDENTITY-bearing values are templatised. Course names, fees, the
+# Rutronix/PSC/NORKA rules and the objection-handling scripts remain Oxford's
+# hardcoded education content -- those belong to the tenant knowledge layer
+# (RC2.5.3+), not to RC2.5.2.
+#
+# Longest location string is substituted first so it cannot be partially
+# consumed by the shorter one.
+EDUCATION_PROMPT_TEMPLATE = (
+    AALIZA_PROMPT
+    .replace("Malayinkeezhu Junction, Thiruvananthapuram, Kerala", "{location_full}")
+    .replace("Malayinkeezhu, Thiruvananthapuram, Kerala", "{location_short}")
+    .replace("The Oxford Computers", "{business_name}")
+    .replace("Oxford Nova", "{persona_name}")
+    .replace("theoxfordedu.com", "{website}")
+    .replace("9447329972", "{phone}")
+)

@@ -62,13 +62,32 @@ def _resolve_persona(tenant_id: str | None) -> tuple[str, "types.GenerateContent
         persona_name = tenant.ai_persona_name or _DEFAULT_PERSONA_NAME
 
         if tenant.ai_prompt_override:
+            # RC2.5.1 contract, unchanged: an explicit override replaces the
+            # composed identity + vertical layers outright. It is the
+            # documented power-user escape hatch and still wins.
             generation_config = types.GenerateContentConfig(
                 system_instruction=tenant.ai_prompt_override,
                 max_output_tokens=200,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
         else:
-            generation_config = _DEFAULT_GENERATION_CONFIG
+            # Phase RC2.5.2: the system instruction is now COMPOSED per tenant
+            # instead of always being the one import-time AALIZA_PROMPT.
+            # compose_system_prompt() returns AALIZA_PROMPT byte-identically
+            # for any tenant with no configured business_profile (Oxford
+            # today), so this branch is a no-op change for existing behaviour.
+            from app.services.prompt_composer import compose_system_prompt
+            system_instruction = compose_system_prompt(tenant_id, persona_name)
+            if system_instruction == AALIZA_PROMPT:
+                # Reuse the module-level config object so the unconfigured
+                # path stays exactly as cheap as it was before this phase.
+                generation_config = _DEFAULT_GENERATION_CONFIG
+            else:
+                generation_config = types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    max_output_tokens=200,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                )
 
         return persona_name, generation_config
     except Exception:

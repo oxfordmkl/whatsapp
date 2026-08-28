@@ -219,9 +219,20 @@ class TestPersonaOverrideOnly:
             ai_service.gemini_reply("Hi", "Student", tenant_id=TB)
         assert fake_client["contents"].rstrip().endswith("Reply as Rahul:")
 
-    def test_persona_only_still_uses_default_system_instruction(self, seeded, fake_client):
-        """No prompt override -> falls back to the DEFAULT config, even
-        though a custom persona name is set."""
+    def test_persona_only_now_also_reaches_the_system_instruction(self, seeded, fake_client):
+        """TRIPWIRE INVERTED BY RC2.5.2 (was:
+        test_persona_only_still_uses_default_system_instruction).
+
+        RC2.5.1 applied a custom persona ONLY to the trailing cue, leaving the
+        system instruction saying "You are Oxford Nova" while the cue said
+        "Reply as Rahul:" -- internally contradictory. RC2.5.2 composes the
+        system instruction per tenant, so the persona now reaches both.
+
+        This assertion is inverted, not deleted: it still pins the boundary,
+        now from the other side. Oxford is unaffected (it sets no persona) --
+        test_oxford_uses_the_original_default_config_object above still proves
+        the unconfigured path returns the untouched module-level object.
+        """
         from app.bot.prompts import AALIZA_PROMPT
         with _APP.app_context():
             t = Tenant.query.get(TB)
@@ -229,8 +240,15 @@ class TestPersonaOverrideOnly:
             t.ai_persona_name = "Rahul"
             db.session.commit()
             ai_service.gemini_reply("Hi", "Student", tenant_id=TB)
-        assert fake_client["config"] is ai_service._DEFAULT_GENERATION_CONFIG
-        assert fake_client["config"].system_instruction == AALIZA_PROMPT
+        cfg = fake_client["config"]
+        assert cfg is not ai_service._DEFAULT_GENERATION_CONFIG
+        assert cfg.system_instruction != AALIZA_PROMPT
+        assert "You are Rahul," in cfg.system_instruction
+        assert "You are Oxford Nova," not in cfg.system_instruction
+        # Everything except the persona is still the baseline body.
+        assert cfg.system_instruction == AALIZA_PROMPT.replace(
+            "Oxford Nova", "Rahul")
+        assert fake_client["contents"].rstrip().endswith("Reply as Rahul:")
 
 
 # ═══ GAP D — prompt override only ═════════════════════════════════════════
