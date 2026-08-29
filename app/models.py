@@ -817,6 +817,70 @@ class TenantSettings(db.Model):
                            onupdate=datetime.utcnow, nullable=False)
 
 
+class TenantKnowledge(db.Model):
+    """
+    Phase RC2.5.3a: per-tenant business knowledge served to the AI (Layer 3).
+
+    ONE table for every vertical, discriminated by `kind`. A course, a product,
+    a menu item, a service and an FAQ are all "a titled thing with a body and
+    some attributes" as far as prompt composition is concerned. Splitting into
+    typed tables is deferred until a vertical needs genuine relational
+    structure (variants joined to inventory joined to orders) -- that is a
+    commerce problem, and commerce is not real yet.
+
+    BOUNDARY (established RC2.5.2): columns for what is FILTERED on, JSON for
+    what is only RENDERED. `kind` and `is_active` are columns because
+    retrieval filters on them; per-vertical attributes (fee, duration,
+    payment_url, sku, stock) live in `attributes` because they are only ever
+    interpolated into a prompt.
+
+    ISOLATION: tenant_id is NOT NULL and indexed. RC2.4.x hardened WRITE paths;
+    this is a READ path feeding the AI, so a missing filter would put one
+    tenant's pricing into another tenant's customer conversation. The filter is
+    enforced inside knowledge_service.fetch_knowledge(), never at call sites.
+
+    NOT YET WIRED TO ANY WRITER: RC2.5.3a builds the table and the read path.
+    Populating it (admin UI, Oxford catalog backfill) is RC2.5.3b+. Until rows
+    exist, retrieval returns nothing and the hardcoded catalog in AALIZA_PROMPT
+    continues to serve -- the dual-read fallback that keeps Oxford unchanged.
+    """
+    __tablename__ = 'tenant_knowledge'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant Ownership ───────────────────────────────────────────────────
+    tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                          nullable=False, index=True)
+
+    # ── Discriminator ──────────────────────────────────────────────────────
+    # faq | course | product | service | policy. Deliberately a plain string,
+    # not an Enum: adding a vertical must not require a migration.
+    kind = db.Column(db.String(20), nullable=False, default='faq')
+
+    # ── Content ────────────────────────────────────────────────────────────
+    title = db.Column(db.String(200), nullable=False)
+    body = db.Column(db.Text, nullable=True)
+
+    # Vertical-specific attributes as JSON text, parsed in Python.
+    # Access pattern: json.loads(row.attributes or '{}') -- same convention as
+    # TenantSettings.settings. Never queried server-side.
+    attributes = db.Column(db.Text, nullable=False, default='{}')
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    # ── Audit ──────────────────────────────────────────────────────────────
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # The exact shape retrieval queries on.
+        db.Index('idx_tenant_knowledge_lookup', 'tenant_id', 'kind', 'is_active'),
+    )
+
+
 class PipelineDefinition(db.Model):
     """
     Phase 16.5A3: Named lifecycle funnel owned by a tenant.

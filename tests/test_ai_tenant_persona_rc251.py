@@ -417,11 +417,25 @@ class TestOutOfScopeUntouched:
                    encoding="utf-8").read()
         assert "The Oxford Computers" in src
 
-    def test_no_migration_files_added(self):
+    def test_only_the_authorised_rc253a_migration_exists(self):
+        """TRIPWIRE INVERTED BY RC2.5.3a (was: test_no_migration_files_added).
+
+        RC2.5.1 and RC2.5.2 were both zero-migration phases, and this pinned
+        that. RC2.5.3a adds exactly one authorised migration -- the
+        tenant_knowledge table -- so the assertion is inverted rather than
+        deleted: it still guards migrations/, now by pinning the exact set
+        that may appear instead of requiring the set to be empty. An
+        unexpected second migration still fails here.
+        """
         import subprocess
         out = subprocess.run(["git", "status", "--porcelain", "--", "migrations/"],
                              capture_output=True, text=True, cwd=ROOT).stdout
-        assert out.strip() == "", f"unexpected migrations/ changes: {out}"
+        changed = [ln.split()[-1] for ln in out.strip().splitlines() if ln.strip()]
+        allowed = {
+            "migrations/versions/c1a7e93b45d2_rc2_5_3a_tenant_knowledge.py",
+        }
+        unexpected = [c for c in changed if c not in allowed]
+        assert not unexpected, f"unexpected migrations/ changes: {unexpected}"
 
 
 # ═══ upstream phases remain intact ══════════════════════════════════════

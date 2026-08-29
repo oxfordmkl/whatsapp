@@ -377,11 +377,42 @@ class TestScopeContainment:
         staff_master.json was still the source of truth — which is a
         documentation change, not a behavioural one. Narrowed to the property
         actually being protected: the public surface and the executable code.
+
+        TRIPWIRE FURTHER NARROWED BY RC2.5.3a (was: "app/models.py not in
+        out" — models.py could never appear in the diff at all). RC2.5.3a
+        adds the TenantKnowledge model, an authorised, purely additive
+        change (one new class; git diff --stat shows 64 insertions, 0
+        deletions). The property this test actually protects — that no
+        EXISTING model changes shape — is preserved by an AST comparison
+        against HEAD: every class/function present at HEAD must still be
+        byte-identical, and only new top-level symbols may appear.
         """
+        import ast
         import subprocess
+
         out = subprocess.run(["git", "diff", "--name-only"],
                              cwd=ROOT, capture_output=True, text=True).stdout
-        assert "app/models.py" not in out, "schema changed"
+        if "app/models.py" in out:
+            head_src = subprocess.run(
+                ["git", "show", "HEAD:app/models.py"],
+                cwd=ROOT, capture_output=True, text=True,
+                encoding="utf-8").stdout
+            working_src = open(os.path.join(ROOT, "app", "models.py"),
+                               encoding="utf-8").read()
+
+            def top_level_defs(src):
+                tree = ast.parse(src)
+                lines = src.splitlines()
+                return {
+                    n.name: "\n".join(lines[n.lineno - 1:n.end_lineno])
+                    for n in tree.body
+                    if isinstance(n, (ast.ClassDef, ast.FunctionDef))
+                }
+
+            before, after = top_level_defs(head_src), top_level_defs(working_src)
+            changed = [name for name, src in before.items()
+                      if after.get(name) != src]
+            assert changed == [], f"existing model(s) changed shape: {changed}"
 
         from app.services import staff_service
         for fn in ("list_staff", "as_registry", "active_display_names",
