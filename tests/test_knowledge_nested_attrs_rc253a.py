@@ -610,9 +610,16 @@ class TestIsolationUnregressed:
         assert "OXFORD-SECRET" not in alpha_block
 
     def test_base_query_and_fetch_knowledge_unmodified(self):
-        """Only _render_row/_attributes and the new helpers changed --
-        the isolation-critical functions must be byte-identical to the
-        already-validated RC2.5.3a commit."""
+        """TRIPWIRE NARROWED BY RC2.5.3b (was: fetch_knowledge byte-identical
+        to RC2.5.3a-K's 741b280). RC2.5.3b explicitly authorises changing
+        fetch_knowledge to add query-aware ranking and a real MAX_ITEMS
+        ceiling -- it is no longer expected to be byte-identical.
+        _base_query() is NOT part of that authorisation and keeps the
+        original absolute guarantee. In fetch_knowledge's place, the
+        property actually being protected -- that isolation cannot erode --
+        is checked directly: the tenant equality filter, the falsy-tenant_id
+        guard, and the defence-in-depth check must all still be present in
+        whatever the function's new body is."""
         import subprocess
         head_src = subprocess.run(
             ["git", "show", "741b28041aad6feeca9b010eba4c739d8f5f8e3e:app/services/knowledge_service.py"],
@@ -626,9 +633,14 @@ class TestIsolationUnregressed:
             lines = src.splitlines()
             return "\n".join(lines[fn.lineno - 1:fn.end_lineno])
 
-        for fn_name in ("_base_query", "fetch_knowledge"):
-            assert body_of(head_src, fn_name) == body_of(working_src, fn_name), \
-                f"{fn_name} changed -- out of scope for this phase"
+        assert body_of(head_src, "_base_query") == body_of(working_src, "_base_query"), \
+            "_base_query changed -- out of scope for every phase since RC2.5.3a"
+
+        fk_src = body_of(working_src, "fetch_knowledge")
+        assert "TenantKnowledge.tenant_id == tenant_id" in \
+            body_of(working_src, "_base_query"), "tenant equality filter missing"
+        assert "if not tenant_id:" in fk_src, "falsy-tenant_id guard missing"
+        assert "ISOLATION VIOLATION" in fk_src, "defence-in-depth check missing"
 
 
 # ═══ Scope ═══════════════════════════════════════════════════════════════
@@ -636,17 +648,23 @@ class TestIsolationUnregressed:
 class TestScope:
 
     def test_only_knowledge_service_and_this_test_file_changed(self):
-        """Scoped to app/ + tests/ + migrations/ only, matching every prior
-        phase's scope-audit convention in this session -- the repo root also
-        holds ~80 pre-existing untracked files (some with spaces in their
-        names, e.g. a PDF handbook), unrelated to any phase and not worth
-        enumerating here. Porcelain lines are parsed by fixed offset (status
-        code is always exactly 2 chars + 1 space), not by whitespace-split,
-        so a filename containing a space is not mis-parsed."""
+        """TRIPWIRE WIDENED BY RC2.5.3b (allowed_new gains prompt_composer.py
+        and ai_service.py -- both explicitly authorised this phase to thread
+        `query` through). Still scoped to app/ + tests/ + migrations/ only,
+        matching every prior phase's scope-audit convention in this session
+        -- the repo root also holds ~80 pre-existing untracked files (some
+        with spaces in their names, e.g. a PDF handbook), unrelated to any
+        phase and not worth enumerating here. Porcelain lines are parsed by
+        fixed offset (status code is always exactly 2 chars + 1 space), not
+        by whitespace-split, so a filename containing a space is not
+        mis-parsed."""
         import subprocess
         allowed_new = {
             "app/services/knowledge_service.py",
+            "app/services/prompt_composer.py",
+            "app/services/ai_service.py",
             "tests/test_knowledge_nested_attrs_rc253a.py",
+            "tests/test_knowledge_retrieval_rc253b.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
@@ -680,9 +698,13 @@ class TestScope:
         from app.bot.constants import COURSE_PAYMENT_LINKS
         assert COURSE_PAYMENT_LINKS["PGDCA"][4] == "https://rzp.io/rzp/KAQ2C7t"
 
-    def test_prompt_composer_and_aaliza_prompt_untouched(self):
+    def test_aaliza_prompt_still_untouched(self):
+        """TRIPWIRE NARROWED BY RC2.5.3b (was: prompt_composer.py + prompts.py
+        both pinned as zero-diff). prompt_composer.py is explicitly authorised
+        to change this phase (threading `query` through to the knowledge
+        layer) -- prompts.py/AALIZA_PROMPT carries no such authorisation and
+        keeps the original absolute guarantee."""
         import subprocess
-        for f in ("app/services/prompt_composer.py", "app/bot/prompts.py"):
-            out = subprocess.run(["git", "status", "--porcelain", "--", f],
-                                 cwd=ROOT, capture_output=True, text=True).stdout
-            assert out.strip() == "", f"{f} unexpectedly changed"
+        out = subprocess.run(["git", "status", "--porcelain", "--", "app/bot/prompts.py"],
+                             cwd=ROOT, capture_output=True, text=True).stdout
+        assert out.strip() == "", "app/bot/prompts.py unexpectedly changed"

@@ -113,13 +113,18 @@ def _identity_block(identity):
     return "\n".join(lines) + "\n"
 
 
-def compose_system_prompt(tenant_id, persona_name=None):
+def compose_system_prompt(tenant_id, persona_name=None, query=None):
     """Build the system instruction for one tenant.
 
     Oxford (and any tenant with no configured business_profile) receives
     AALIZA_PROMPT byte for byte. A tenant that HAS configured identity
     receives the same education body rendered with its own identity values,
     followed by its identity block and the platform safety re-assertion.
+
+    RC2.5.3b: `query` (the customer's own message, when the caller has one)
+    is threaded straight through to knowledge_service.render_knowledge_block()
+    for relevance ranking. query=None (the default) is byte-for-byte
+    identical to the pre-RC2.5.3b sort_order-only behaviour.
     """
     try:
         identity = tenant_identity_service.resolve_business_identity(tenant_id)
@@ -161,7 +166,8 @@ def compose_system_prompt(tenant_id, persona_name=None):
         # are populated, which is a later phase -- so this is additive and
         # inert today. When it IS populated it counts as tenant-authored
         # content in its own right, independently of identity.
-        knowledge_block = knowledge_service.render_knowledge_block(tenant_id)
+        knowledge_block = knowledge_service.render_knowledge_block(
+            tenant_id, query=query)
 
         has_authored_content = configured or bool(knowledge_block)
         if not has_authored_content:

@@ -37,7 +37,7 @@ _DEFAULT_GENERATION_CONFIG = types.GenerateContentConfig(
 )
 
 
-def _resolve_persona(tenant_id: str | None) -> tuple[str, "types.GenerateContentConfig"]:
+def _resolve_persona(tenant_id: str | None, query: str | None = None) -> tuple[str, "types.GenerateContentConfig"]:
     """Resolve (persona_name, generation_config) for one Gemini request.
 
     Fail-open, mirroring ContextAssembler._fetch_memory(): no tenant_id, no
@@ -50,6 +50,11 @@ def _resolve_persona(tenant_id: str | None) -> tuple[str, "types.GenerateContent
     cross-tenant WRITE risk if it falls back, so it does not need
     resolve_tenant_id()'s hard-fail contract (RC2.4.4b). A wrong PERSONA on a
     failure is a content-quality issue, not a data-isolation one.
+
+    RC2.5.3b: `query` (the customer's own message) is threaded through to
+    compose_system_prompt() for knowledge relevance ranking. query=None (the
+    default) changes nothing -- see knowledge_service's module docstring for
+    the exact fallback behaviour.
     """
     if not tenant_id:
         return _DEFAULT_PERSONA_NAME, _DEFAULT_GENERATION_CONFIG
@@ -77,7 +82,8 @@ def _resolve_persona(tenant_id: str | None) -> tuple[str, "types.GenerateContent
             # for any tenant with no configured business_profile (Oxford
             # today), so this branch is a no-op change for existing behaviour.
             from app.services.prompt_composer import compose_system_prompt
-            system_instruction = compose_system_prompt(tenant_id, persona_name)
+            system_instruction = compose_system_prompt(
+                tenant_id, persona_name, query=query)
             if system_instruction == AALIZA_PROMPT:
                 # Reuse the module-level config object so the unconfigured
                 # path stays exactly as cheap as it was before this phase.
@@ -102,7 +108,11 @@ def gemini_reply(user_msg: str, name: str, context: str = "", tenant_id: str = N
     if not gemini_client:
         return None
     try:
-        persona_name, generation_config = _resolve_persona(tenant_id)
+        # RC2.5.3b: user_msg is ALREADY the customer's own text -- no new
+        # parameter needed here or in any router.py call site. It is passed
+        # through as `query` purely for knowledge relevance ranking; the
+        # `prompt`/contents built below are unaffected.
+        persona_name, generation_config = _resolve_persona(tenant_id, query=user_msg)
         prompt = (
             f"{'Conversation so far:\n' + context + chr(10) if context else ''}"
             f"Student name: {name}\n"
