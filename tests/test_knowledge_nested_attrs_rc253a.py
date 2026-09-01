@@ -659,12 +659,23 @@ class TestScope:
         by whitespace-split, so a filename containing a space is not
         mis-parsed."""
         import subprocess
+        # WIDENED BY RC2.5.4a: the tenant Courses & Knowledge admin surface
+        # adds a read-only service + two routes on the existing tenant
+        # blueprint. knowledge_service.py itself remains OUT of that phase's
+        # scope and is separately pinned as zero-diff by
+        # test_knowledge_service_file_untouched_this_phase in the RC2.5.4a
+        # suite -- so widening this list does not loosen the prompt-path
+        # guarantee, it only stops this tripwire firing on files a later
+        # authorised phase legitimately owns.
         allowed_new = {
             "app/services/knowledge_service.py",
             "app/services/prompt_composer.py",
             "app/services/ai_service.py",
+            "app/services/knowledge_admin_service.py",
+            "app/routes/tenant.py",
             "tests/test_knowledge_nested_attrs_rc253a.py",
             "tests/test_knowledge_retrieval_rc253b.py",
+            "tests/test_tenant_courses_admin_rc254a.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

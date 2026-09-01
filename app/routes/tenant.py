@@ -500,5 +500,112 @@ def tenant_whatsapp_test():
             flash(f'Meta API Error ({r.status_code}): {r.text}', 'danger')
     except Exception as e:
         flash(f'Test connection failed: {e}', 'danger')
-        
+
     return redirect(url_for('tenant.tenant_whatsapp'))
+
+
+# \u2500\u2500 Phase RC2.5.4a: Courses & Knowledge (READ-ONLY) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+#
+# A management SURFACE over the existing tenant_knowledge architecture. No
+# writes in this phase: no create, edit, delete, pricing, offer or payment-URL
+# mutation. Those are RC2.5.4b+.
+#
+# Reads go through knowledge_admin_service, NOT knowledge_service: the prompt
+# path is bounded at MAX_ITEMS=8 and filters is_active=True, which would
+# silently show 8 of Oxford's 18 rows and hide every inactive one. See that
+# module's docstring. knowledge_service is untouched by this phase.
+#
+# ISOLATION: tenant_id comes from _get_current_tenant() -- the authenticated
+# session -- and never from the query string, a form field, or the URL path.
+# The <int:row_id> below is the ROW id, and it is resolved by (id AND
+# tenant_id) together, so another tenant's row id 404s rather than leaking.
+
+@tenant_bp.route('/courses', methods=['GET'])
+@login_required
+@tenant_admin_required
+def tenant_courses():
+    """Phase RC2.5.4a: paginated, read-only listing of this tenant's
+    knowledge rows -- active AND inactive, so an admin can see everything
+    they own."""
+    from app.services import knowledge_admin_service
+
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    kind = (request.args.get('kind') or '').strip() or None
+    page = request.args.get('page', 1, type=int) or 1
+
+    result = knowledge_admin_service.list_knowledge(
+        tenant.id, kind=kind, page=page
+    )
+
+    rows = []
+    for row in result['rows']:
+        attrs = knowledge_admin_service.parse_attributes(row)
+        commercial = attrs.get('commercial') or {}
+        rows.append({
+            'row': row,
+            'duration': attrs.get('duration'),
+            'currency': commercial.get('currency'),
+            'base_price': commercial.get('base_price'),
+        })
+
+    return render_template(
+        'tenant/courses.html',
+        tenant=tenant,
+        rows=rows,
+        result=result,
+        active_kind=kind,
+    )
+
+
+@tenant_bp.route('/courses/<int:row_id>', methods=['GET'])
+@login_required
+@tenant_admin_required
+def tenant_course_detail(row_id):
+    """Phase RC2.5.4a: read-only detail for one knowledge row owned by the
+    current tenant. A row belonging to another tenant is simply not found."""
+    from app.services import knowledge_admin_service
+
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    row = knowledge_admin_service.get_knowledge(tenant.id, row_id)
+    if row is None:
+        abort(404)
+
+    attrs = knowledge_admin_service.parse_attributes(row)
+    commercial = attrs.get('commercial') or {}
+    regulatory = attrs.get('regulatory') or {}
+
+    offers = commercial.get('offers')
+    if not isinstance(offers, list):
+        offers = []
+
+    components = regulatory.get('components')
+    if not isinstance(components, list):
+        components = []
+
+    # Scalars that are neither commercial nor regulatory (e.g. duration,
+    # historical_alias) -- shown as-is so an admin can see exactly what the
+    # AI layer has to work with.
+    other_attrs = {
+        k: v for k, v in attrs.items()
+        if k not in ('commercial', 'regulatory')
+        and isinstance(v, (str, int, float, bool))
+    }
+
+    return render_template(
+        'tenant/course_detail.html',
+        tenant=tenant,
+        row=row,
+        commercial=commercial,
+        regulatory=regulatory,
+        offers=offers,
+        components=components,
+        other_attrs=other_attrs,
+    )

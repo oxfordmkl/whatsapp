@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ row.title }} — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <a href="{{ url_for('tenant.tenant_courses') }}"
+       style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;font-weight:600;color:var(--text-muted);text-decoration:none;margin-bottom:0.6rem;">
+      <i class="bi bi-chevron-left" style="font-size:0.7rem;"></i> Back to Courses &amp; Knowledge
+    </a>
+    <h1 style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+      <span>{{ row.title }}</span>
+      {% if row.is_active %}
+        <span class="t-badge t-badge-active">Active</span>
+      {% else %}
+        <span class="t-badge t-badge-inactive">Inactive</span>
+      {% endif %}
+    </h1>
+    <p>{{ row.kind|capitalize }} · Display order {{ row.sort_order }}</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-info-circle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="t-alert t-alert-info">
+      <i class="bi bi-eye me-1"></i>
+      Read-only view. Editing will arrive in a later release.
+    </div>
+
+    <!-- ── Description ─────────────────────────────────────────────── -->
+    <div class="t-card">
+      <div class="t-card-title"><i class="bi bi-card-text me-1"></i> Description</div>
+      {% if row.body %}
+        <div style="font-size:0.88rem;line-height:1.65;color:var(--text-main);white-space:pre-wrap;">{{ row.body }}</div>
+      {% else %}
+        <div style="font-size:0.85rem;color:var(--text-muted);">No description recorded.</div>
+      {% endif %}
+    </div>
+
+    <!-- ── Details ─────────────────────────────────────────────────── -->
+    {% if other_attrs %}
+      <div class="t-card">
+        <div class="t-card-title"><i class="bi bi-info-circle me-1"></i> Details</div>
+        <div class="t-table-wrap" style="margin-bottom:0;">
+          <table class="t-table">
+            <tbody>
+              {% for key, value in other_attrs.items() %}
+                <tr>
+                  <td style="width:40%;color:var(--text-muted);">{{ key.replace('_', ' ')|capitalize }}</td>
+                  <td style="font-weight:600;color:var(--text-main);">{{ value }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- ── Pricing ─────────────────────────────────────────────────── -->
+    <div class="t-card">
+      <div class="t-card-title"><i class="bi bi-cash-stack me-1"></i> Pricing</div>
+      {% if commercial.get('base_price') is not none or commercial.get('currency') %}
+        <div class="t-table-wrap" style="margin-bottom:0;">
+          <table class="t-table">
+            <tbody>
+              {% if commercial.get('currency') %}
+                <tr><td style="width:40%;color:var(--text-muted);">Currency</td>
+                    <td style="font-weight:600;color:var(--text-main);">{{ commercial.get('currency') }}</td></tr>
+              {% endif %}
+              {% if commercial.get('base_price') is not none %}
+                <tr><td style="color:var(--text-muted);">Customer price</td>
+                    <td style="font-weight:700;color:var(--green);font-size:0.95rem;">
+                      {% if commercial.get('currency') %}{{ commercial.get('currency') }} {% endif %}{{ commercial.get('base_price') }}
+                    </td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="font-size:0.85rem;color:var(--text-muted);">No pricing configured.</div>
+      {% endif %}
+    </div>
+
+    <!-- ── Fee components (regulatory) ─────────────────────────────── -->
+    {% if components %}
+      <div class="t-card">
+        <div class="t-card-title"><i class="bi bi-receipt me-1"></i> Fee Components</div>
+        {% if regulatory.get('source') %}
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.85rem;">
+            Reference: {{ regulatory.get('source') }}{% if regulatory.get('as_of') %} ({{ regulatory.get('as_of') }}){% endif %}
+          </div>
+        {% endif %}
+        <div class="t-table-wrap" style="margin-bottom:0;">
+          <table class="t-table">
+            <thead><tr><th>Component</th><th style="text-align:right;">Amount</th></tr></thead>
+            <tbody>
+              {% for c in components %}
+                {% if c is mapping %}
+                  <tr>
+                    <td>{{ c.get('label') or c.get('type') or '—' }}</td>
+                    <td style="text-align:right;font-weight:600;color:var(--text-main);">
+                      {% if c.get('amount') is not none %}{{ c.get('amount') }}{% else %}—{% endif %}
+                    </td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.75rem;">
+          These are reference figures. The customer price shown above is what your assistant quotes.
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- ── Offers ──────────────────────────────────────────────────── -->
+    <div class="t-card">
+      <div class="t-card-title"><i class="bi bi-tags me-1"></i> Offers</div>
+      {% if offers %}
+        <div class="t-table-wrap" style="margin-bottom:0;">
+          <table class="t-table">
+            <thead>
+              <tr><th>Offer</th><th>Price</th><th>Valid from</th><th>Valid until</th></tr>
+            </thead>
+            <tbody>
+              {% for o in offers %}
+                {% if o is mapping %}
+                  <tr>
+                    <td style="font-weight:600;color:var(--text-main);">{{ o.get('label') or o.get('id') or '—' }}</td>
+                    <td>{% if o.get('final_price') is not none %}{{ o.get('final_price') }}{% else %}—{% endif %}</td>
+                    <td style="color:var(--text-muted);">{{ o.get('valid_from') or '—' }}</td>
+                    <td style="color:var(--text-muted);">{{ o.get('valid_until') or '—' }}</td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="font-size:0.85rem;color:var(--text-muted);">No offers configured.</div>
+      {% endif %}
+    </div>
+
+    <!-- ── Payment link ────────────────────────────────────────────── -->
+    <div class="t-card">
+      <div class="t-card-title"><i class="bi bi-link-45deg me-1"></i> Payment Link</div>
+
+      <div class="t-field" style="margin-bottom:1rem;">
+        <label>Active payment link</label>
+        {% if commercial.get('payment_url') %}
+          <div style="font-size:0.85rem;color:var(--text-main);word-break:break-all;">{{ commercial.get('payment_url') }}</div>
+          <div style="font-size:0.75rem;color:var(--green);margin-top:0.3rem;">
+            <i class="bi bi-check-circle me-1"></i>This link can be shared with customers.
+          </div>
+        {% else %}
+          <div style="font-size:0.85rem;color:var(--text-muted);">Not configured.</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.3rem;">
+            No payment link is currently active for this entry.
+          </div>
+        {% endif %}
+      </div>
+
+      {% if commercial.get('legacy_payment_url') %}
+        <div class="t-field">
+          <label>Legacy link — internal reference only</label>
+          <div style="font-size:0.85rem;color:var(--text-muted);word-break:break-all;">{{ commercial.get('legacy_payment_url') }}</div>
+          <div class="t-alert t-alert-warning" style="margin-top:0.6rem;margin-bottom:0;">
+            <i class="bi bi-shield-lock me-1"></i>
+            <strong>Hidden from your AI assistant and from customers.</strong>
+            Kept for your reference only — it is never quoted in a conversation and is not an active checkout link.
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

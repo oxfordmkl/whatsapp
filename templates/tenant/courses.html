@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Courses &amp; Knowledge — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <h1><i class="bi bi-journal-text me-2" style="color:var(--blue);"></i>Courses &amp; Knowledge</h1>
+    <p>What your AI assistant knows about your business.</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-info-circle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="t-alert t-alert-info">
+      <i class="bi bi-eye me-1"></i>
+      This is a read-only view. Editing, adding and removing entries will arrive in a later release.
+    </div>
+
+    <!-- Filter by kind -->
+    <div class="t-card" style="margin-bottom:1.25rem;">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem;">
+        <span style="font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-right:0.25rem;">Filter</span>
+        {% set kinds = [('', 'All'), ('course', 'Courses'), ('faq', 'FAQs'), ('policy', 'Policies'), ('product', 'Products'), ('service', 'Services')] %}
+        {% for value, label in kinds %}
+          <a href="{{ url_for('tenant.tenant_courses') }}{% if value %}?kind={{ value }}{% endif %}"
+             style="font-size:0.78rem;font-weight:600;padding:0.3rem 0.75rem;border-radius:6px;text-decoration:none;border:1px solid var(--border);
+                    {% if (active_kind or '') == value %}background:rgba(88,166,255,0.12);color:var(--blue);border-color:rgba(88,166,255,0.35);{% else %}color:var(--text-muted);{% endif %}">
+            {{ label }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if result.total %}
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">
+        Showing {{ result.rows|length }} of {{ result.total }}
+        {% if active_kind %}<strong style="color:var(--text-main);">{{ active_kind }}</strong> {% endif %}entr{{ 'y' if result.total == 1 else 'ies' }}
+        {% if result.pages > 1 %}&nbsp;·&nbsp;Page {{ result.page }} of {{ result.pages }}{% endif %}
+      </div>
+
+      <div class="t-table-wrap">
+        <table class="t-table">
+          <thead>
+            <tr>
+              <th style="width:34%;">Title</th>
+              <th>Type</th>
+              <th>Duration</th>
+              <th>Price</th>
+              <th>Status</th>
+              <th style="text-align:center;">Order</th>
+              <th style="text-align:right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in rows %}
+              <tr>
+                <td>
+                  <div style="font-weight:600;color:var(--text-main);">{{ item.row.title }}</div>
+                </td>
+                <td><span style="font-size:0.73rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">{{ item.row.kind }}</span></td>
+                <td>{% if item.duration %}{{ item.duration }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}</td>
+                <td>
+                  {% if item.base_price is not none %}
+                    <span style="font-weight:600;color:var(--text-main);">{% if item.currency %}{{ item.currency }} {% endif %}{{ item.base_price }}</span>
+                  {% else %}
+                    <span style="color:var(--text-muted);">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if item.row.is_active %}
+                    <span class="t-badge t-badge-active">Active</span>
+                  {% else %}
+                    <span class="t-badge t-badge-inactive">Inactive</span>
+                  {% endif %}
+                </td>
+                <td style="text-align:center;color:var(--text-muted);">{{ item.row.sort_order }}</td>
+                <td style="text-align:right;">
+                  <a href="{{ url_for('tenant.tenant_course_detail', row_id=item.row.id) }}"
+                     style="font-size:0.78rem;font-weight:600;color:var(--blue);text-decoration:none;">
+                    View <i class="bi bi-chevron-right" style="font-size:0.7rem;"></i>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if result.pages > 1 %}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:2rem;">
+          <div>
+            {% if result.has_prev %}
+              <a href="{{ url_for('tenant.tenant_courses', page=result.page - 1, kind=active_kind or None) }}"
+                 style="font-size:0.8rem;font-weight:600;color:var(--blue);text-decoration:none;">
+                <i class="bi bi-chevron-left" style="font-size:0.7rem;"></i> Previous
+              </a>
+            {% endif %}
+          </div>
+          <div style="font-size:0.78rem;color:var(--text-muted);">Page {{ result.page }} of {{ result.pages }}</div>
+          <div>
+            {% if result.has_next %}
+              <a href="{{ url_for('tenant.tenant_courses', page=result.page + 1, kind=active_kind or None) }}"
+                 style="font-size:0.8rem;font-weight:600;color:var(--blue);text-decoration:none;">
+                Next <i class="bi bi-chevron-right" style="font-size:0.7rem;"></i>
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+    {% else %}
+      <div class="t-card" style="text-align:center;padding:3rem 1.5rem;">
+        <div style="font-size:2rem;color:var(--text-muted);margin-bottom:0.75rem;"><i class="bi bi-journal"></i></div>
+        <div style="font-weight:700;color:var(--text-main);margin-bottom:0.35rem;">
+          {% if active_kind %}No {{ active_kind }} entries yet{% else %}No knowledge entries yet{% endif %}
+        </div>
+        <div style="font-size:0.85rem;color:var(--text-muted);">
+          Your AI assistant will use the information added here when answering customers.
+        </div>
+      </div>
+    {% endif %}
+
+  </div>
+</div>
+
+</body>
+</html>
