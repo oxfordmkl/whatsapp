@@ -40,16 +40,23 @@ def verify_meta_signature() -> bool:
     Meta signs every POST with HMAC-SHA256 of the RAW body under the app
     secret, in X-Hub-Signature-256.
 
-    When META_APP_SECRET is unset this returns True and logs a warning: the
-    endpoint then behaves exactly as it does today, so shipping this cannot
-    break production. Setting the variable activates enforcement.
+    Phase RC2.5.5a. This check is now FAIL-CLOSED. Previously a missing
+    META_APP_SECRET returned True, so the endpoint silently accepted
+    unauthenticated payloads and only logged a WARNING. Production already had
+    the secret configured, so enforcement was live — but it rested on a
+    configuration value rather than on the code. A blank rotation, a dropped
+    variable or a fresh environment would have re-opened the endpoint with no
+    failure signal. That is what this closes: the guarantee is now structural.
+
+    Consequence, accepted deliberately: with no secret configured, inbound
+    WhatsApp processing STOPS rather than proceeding unauthenticated.
     """
     secret = current_app.config.get("META_APP_SECRET") or META_APP_SECRET
     if not secret:
-        logger.warning(
-            "⚠️ Webhook signature verification DISABLED (META_APP_SECRET unset) "
-            "— inbound payloads are unauthenticated")
-        return True
+        logger.error(
+            "❌ Webhook rejected: META_APP_SECRET is not configured — inbound "
+            "payloads cannot be authenticated and are refused (fail-closed)")
+        return False
 
     header = request.headers.get("X-Hub-Signature-256", "")
     if not header.startswith("sha256="):
@@ -106,18 +113,28 @@ def receive_message():
                 return jsonify({"status": "ok"}), 200
             tenant_id = tenant.id
         else:
-            # Grace-period fallback to primary Oxford tenant
-            if phone_number_id == current_app.config.get("PHONE_NUMBER_ID"):
-                env_phone_id = str(
-                current_app.config.get("PHONE_NUMBER_ID", "")
-                ).strip()
-                incoming_phone_id = str(phone_number_id).strip()    
-                if env_phone_id and incoming_phone_id == env_phone_id:
-                    tenant_id = current_app.config.get("PRIMARY_TENANT_ID")
-                    logger.warning(f"⚠️ Webhook warning: Unregistered WABA Phone ID {phone_number_id}, but matched primary tenant fallback")
-            else:
-                logger.warning(f"⚠️ Webhook dropped: Unknown WABA Phone ID {phone_number_id}")
-                return jsonify({"status": "ok"}), 200
+            # Phase RC2.5.5a: the PRIMARY_TENANT_ID grace fallback is REMOVED.
+            #
+            # It used to assign tenant_id = PRIMARY_TENANT_ID when an
+            # unregistered phone_number_id matched app.config["PHONE_NUMBER_ID"].
+            # That key is never written into app.config, so the branch was
+            # already unreachable — but it also had a fall-through: a payload
+            # with a MISSING phone_number_id could satisfy the outer guard
+            # ("" == "") and fail the inner one, leaving tenant_id = None and
+            # continuing into processing with no tenant at all.
+            #
+            # An unregistered phone_number_id must never resolve to a tenant.
+            # 200 is deliberate, not laziness: Meta retries on non-2xx and can
+            # disable a subscription after sustained failures, so a 4xx here
+            # would let a stale or forged ID degrade the real tenant's
+            # delivery. Drop silently, acknowledge, assign nothing.
+            #
+            # This removes ONLY the webhook tenant-resolution fallback. The
+            # outbound credential fallback in whatsapp_service and leg 2 of
+            # resolve_tenant_id() in log_service are separate mechanisms and
+            # are untouched.
+            logger.warning(f"⚠️ Webhook dropped: Unknown WABA Phone ID {phone_number_id}")
+            return jsonify({"status": "ok"}), 200
 
         # Phase 11-D1 Task C: Deduplication Protection
         if wamid:

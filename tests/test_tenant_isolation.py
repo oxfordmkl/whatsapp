@@ -48,6 +48,9 @@ carrying known defects are named test_KNOWN_DEFECT_*.
 
 NO PRODUCTION CODE IS MODIFIED BY THIS PHASE.
 """
+import hashlib
+import hmac
+import json
 import os
 import sys
 import tempfile
@@ -88,6 +91,11 @@ from app.services.sales_pipeline_seed import SalesPipelineSeeder        # noqa: 
 
 _APP = create_app()
 _APP.config["TESTING"] = True
+
+# Phase RC2.5.5a: webhook signature verification is fail-closed, so these
+# routing tests must present a real signature to reach the routing code.
+WA_SECRET = "tenant-isolation-webhook-secret"
+_APP.config["META_APP_SECRET"] = WA_SECRET
 
 # The same phone number, deliberately present in BOTH tenants. Legitimate in
 # reality — one person may be a lead at two institutes — and the sharpest probe
@@ -238,6 +246,25 @@ def wa_payload(phone_number_id, from_number, text, wamid):
     }}]}]}
 
 
+def wa_post(payload_dict):
+    """POST a CORRECTLY SIGNED webhook payload.
+
+    Phase RC2.5.5a. These routing tests used to post unsigned JSON, which the
+    endpoint accepted because signature verification was fail-open with no
+    META_APP_SECRET set (and CI sets none). Under fail-closed every one of
+    them would now get a 403 -- and only ONE would fail. The two that assert
+    "nothing was created" would still pass, vacuously, having been rejected at
+    the signature gate before reaching the tenant-routing code they exist to
+    test. Silent coverage loss is worse than a red test, so every webhook post
+    in this file is signed and reaches the routing logic for real.
+    """
+    body = json.dumps(payload_dict).encode()
+    sig = "sha256=" + hmac.new(WA_SECRET.encode(), body, hashlib.sha256).hexdigest()
+    return _APP.test_client().post(
+        "/webhook", data=body, content_type="application/json",
+        headers={"X-Hub-Signature-256": sig})
+
+
 # ═══ Preserved from the original script ══════════════════════════════════════
 
 class TestResolveTenantId:
@@ -345,9 +372,16 @@ class TestLogWritesAreTenantScoped:
 
 
 class TestWebhookRouting:
+    """Routing assertions unchanged by RC2.5.5a; only the transport is signed.
+
+    Each test now also asserts the response was 200, which is what proves the
+    request actually reached the routing logic rather than being turned away
+    at the signature gate.
+    """
+
     def test_message_to_known_waba_lands_under_that_tenant_only(self, iso):
-        _APP.test_client().post(
-            "/webhook", json=wa_payload("PHONE_B", "919111111111", "hi", "w.1"))
+        r = wa_post(wa_payload("PHONE_B", "919111111111", "hi", "w.1"))
+        assert r.status_code == 200
         with dbctx():
             assert ConversationState.query.filter_by(
                 phone="919111111111", tenant_id=B_ID).count() == 1
@@ -355,16 +389,118 @@ class TestWebhookRouting:
                 phone="919111111111", tenant_id=A_ID).count() == 0
 
     def test_unknown_waba_id_creates_nothing(self, iso):
-        _APP.test_client().post(
-            "/webhook", json=wa_payload("PHONE_UNKNOWN", "919222222222", "hi", "w.2"))
+        r = wa_post(wa_payload("PHONE_UNKNOWN", "919222222222", "hi", "w.2"))
+        assert r.status_code == 200, "unknown ID must be acknowledged, not refused"
         with dbctx():
             assert ConversationState.query.filter_by(phone="919222222222").count() == 0
 
     def test_suspended_tenants_message_is_dropped(self, iso):
-        _APP.test_client().post(
-            "/webhook", json=wa_payload("PHONE_S", "919333333333", "hi", "w.3"))
+        r = wa_post(wa_payload("PHONE_S", "919333333333", "hi", "w.3"))
+        assert r.status_code == 200
         with dbctx():
             assert ConversationState.query.filter_by(phone="919333333333").count() == 0
+
+    def test_an_unsigned_payload_no_longer_routes_at_all(self, iso):
+        """The transport half of the same guarantee: even a payload naming a
+        legitimately registered tenant creates nothing without a signature."""
+        r = _APP.test_client().post(
+            "/webhook", json=wa_payload("PHONE_B", "919444444444", "hi", "w.4"))
+        assert r.status_code == 403
+        with dbctx():
+            assert ConversationState.query.filter_by(phone="919444444444").count() == 0
+
+
+class TestUnregisteredPhoneIdNeverResolvesToPrimary:
+    """THE RC2.5.5a tripwire.
+
+    receive_message() used to carry a grace fallback: an unregistered
+    phone_number_id that matched app.config["PHONE_NUMBER_ID"] was assigned
+    tenant_id = PRIMARY_TENANT_ID. In production it was already unreachable,
+    because create_app() never writes PHONE_NUMBER_ID into app.config -- so
+    the guard compared a string against None and the branch was dead.
+
+    That is exactly why this test sets app.config["PHONE_NUMBER_ID"]
+    DELIBERATELY. Reproducing the one condition production does not currently
+    satisfy is the whole point: it is the only way to prove the fallback is
+    gone from the CODE rather than merely unreachable through config. Without
+    this setup, restoring the fallback would not fail any test.
+    """
+
+    ENV_PHONE_ID = "PHONE_PRIMARY_ENV"
+
+    @pytest.fixture()
+    def primary_env(self, monkeypatch):
+        monkeypatch.setitem(_APP.config, "PHONE_NUMBER_ID", self.ENV_PHONE_ID)
+        monkeypatch.setitem(_APP.config, "PRIMARY_TENANT_ID", A_ID)
+        yield
+
+    def test_precondition_no_tenant_owns_the_env_phone_id(self, iso, primary_env):
+        with dbctx():
+            assert Tenant.query.filter_by(
+                waba_phone_number_id=self.ENV_PHONE_ID).count() == 0, \
+                "fixture broken: the env phone id must be UNREGISTERED"
+
+    def test_env_matching_unregistered_id_is_dropped_not_assigned(self, iso, primary_env):
+        r = wa_post(wa_payload(self.ENV_PHONE_ID, "919555555555", "hi", "w.p1"))
+        assert r.status_code == 200
+        with dbctx():
+            assert ConversationState.query.filter_by(phone="919555555555").count() == 0
+
+    def test_it_never_lands_under_the_primary_tenant(self, iso, primary_env):
+        wa_post(wa_payload(self.ENV_PHONE_ID, "919555555556", "hi", "w.p2"))
+        with dbctx():
+            assert ConversationState.query.filter_by(
+                phone="919555555556", tenant_id=A_ID).count() == 0, \
+                "PRIMARY_TENANT_ID webhook fallback has been reintroduced"
+
+    def test_no_lead_event_or_message_is_filed_under_primary(self, iso, primary_env):
+        wa_post(wa_payload(self.ENV_PHONE_ID, "919555555557", "hi", "w.p3"))
+        with dbctx():
+            assert LeadEvent.query.filter_by(phone="919555555557").count() == 0
+            assert ConversationMessage.query.filter_by(
+                wa_message_id="w.p3").count() == 0
+
+    def test_nothing_is_created_under_any_tenant(self, iso, primary_env):
+        with dbctx():
+            before = ConversationState.query.count()
+        wa_post(wa_payload(self.ENV_PHONE_ID, "919555555558", "hi", "w.p4"))
+        with dbctx():
+            assert ConversationState.query.count() == before
+
+
+class TestMissingOrEmptyPhoneNumberId:
+    """The fall-through the removed branch made possible.
+
+    With PHONE_NUMBER_ID present in app.config as "", a payload carrying no
+    metadata.phone_number_id satisfied the outer guard ("" == "") and failed
+    the inner one, leaving tenant_id = None and CONTINUING into message
+    processing with no tenant. The unconditional drop closes it.
+    """
+
+    @pytest.fixture()
+    def blank_env(self, monkeypatch):
+        monkeypatch.setitem(_APP.config, "PHONE_NUMBER_ID", "")
+        monkeypatch.setitem(_APP.config, "PRIMARY_TENANT_ID", A_ID)
+        yield
+
+    def test_absent_metadata_phone_id_is_dropped(self, iso, blank_env):
+        p = wa_payload("", "919666666661", "hi", "w.m1")
+        del p["entry"][0]["changes"][0]["value"]["metadata"]
+        r = wa_post(p)
+        assert r.status_code == 200
+        with dbctx():
+            assert ConversationState.query.filter_by(phone="919666666661").count() == 0
+
+    def test_empty_string_phone_id_is_dropped(self, iso, blank_env):
+        r = wa_post(wa_payload("", "919666666662", "hi", "w.m2"))
+        assert r.status_code == 200
+        with dbctx():
+            assert ConversationState.query.filter_by(phone="919666666662").count() == 0
+
+    def test_no_row_is_created_with_a_null_tenant(self, iso, blank_env):
+        wa_post(wa_payload("", "919666666663", "hi", "w.m3"))
+        with dbctx():
+            assert ConversationState.query.filter_by(tenant_id=None).count() == 0
 
 
 # ═══ The seven isolation domains ═════════════════════════════════════════════

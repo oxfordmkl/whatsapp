@@ -2,7 +2,7 @@ import logging
 import requests
 import threading
 from dataclasses import dataclass
-from app.config import ACCESS_TOKEN, PHONE_NUMBER_ID, WHATSAPP_API_URL
+from app.config import ACCESS_TOKEN, PHONE_NUMBER_ID
 from app.bot.constants import BUTTON_PRESETS
 
 logger = logging.getLogger(__name__)

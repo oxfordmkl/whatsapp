@@ -363,9 +363,32 @@ class TestWebhookUnchanged:
         src = _fn_src(WEBHOOK_PY, "receive_message")
         assert "ACTIVE" in src and "TRIAL" in src
 
-    def test_env_fallback_guard_preserved(self):
+    def test_env_fallback_guard_removed_rc255a(self):
+        """INVERTED by Phase RC2.5.5a.
+
+        Was test_env_fallback_guard_preserved, which pinned the webhook
+        PRIMARY_TENANT_ID grace fallback IN PLACE: an unregistered
+        phone_number_id matching app.config["PHONE_NUMBER_ID"] was assigned to
+        the primary tenant. RC2.5.5a removed it -- an unregistered
+        phone_number_id must never resolve to a tenant at all.
+
+        Inverted rather than deleted, so the guarantee keeps a structural
+        tripwire. This test now fails if anyone reintroduces the fallback.
+
+        Mechanism unchanged: _fn_src() unparses the AST, which strips comments,
+        so this inspects the CODE of receive_message() and cannot be satisfied
+        by a comment or docstring that merely names these variables.
+
+        Scope note: this concerns ONLY the webhook tenant-resolution fallback.
+        The outbound credential fallback in whatsapp_service and leg 2 of
+        resolve_tenant_id() in log_service are separate mechanisms, still live,
+        and still pinned by their own tests.
+        """
         src = _fn_src(WEBHOOK_PY, "receive_message")
-        assert "PHONE_NUMBER_ID" in src and "PRIMARY_TENANT_ID" in src
+        assert "PRIMARY_TENANT_ID" not in src, \
+            "the PRIMARY_TENANT_ID webhook fallback has been reintroduced"
+        assert "PHONE_NUMBER_ID" not in src, \
+            "the env-phone-id guard that gated the fallback has been reintroduced"
 
     def test_hmac_verification_preserved(self):
         src = open(WEBHOOK_PY, encoding="utf-8").read()

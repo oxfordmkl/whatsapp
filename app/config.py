@@ -50,7 +50,11 @@ APP_URL              = os.environ.get("APP_URL", "http://localhost:5000")
 VERIFY_EMAIL_EXPIRY_SECONDS = int(os.environ.get("VERIFY_EMAIL_EXPIRY_SECONDS", "86400"))
 EMAIL_TIMEOUT_SECONDS = int(os.environ.get("EMAIL_TIMEOUT_SECONDS", "5"))
 
-WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+# Phase RC2.5.5a: WHATSAPP_API_URL removed. It pinned Graph v19.0 while every
+# live call in whatsapp_service.py targets v21.0, and nothing ever read it —
+# it was imported once and never dereferenced. Dead configuration built on a
+# stale API version is a trap for the next contributor, not a fallback.
+# Live Graph URLs are constructed per call; there is no shared constant.
 
 # ── PostgreSQL (Railway auto-sets DATABASE_URL) ────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")

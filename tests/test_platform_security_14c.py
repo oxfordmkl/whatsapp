@@ -7,12 +7,18 @@ Covers the four controls added in this phase:
   3. a startup warning when a secret is still its committed default
   4. billing webhook signature verification
 
-The webhook and billing controls are OPT-IN: with no secret configured they
-allow the request and warn, so shipping them cannot change production
-behaviour. Both halves of that contract are tested — the disabled path must
-stay permissive, and the enabled path must actually reject. A control that is
-only tested in its enabled state can ship silently broken for the default
-configuration, which is the one production is running.
+Phase RC2.5.5a changed the WhatsApp webhook half of this file. That control
+was OPT-IN: with no secret configured it allowed the request and warned. It is
+now FAIL-CLOSED — no secret means no inbound processing. The tests that pinned
+the permissive path are inverted in place (see
+TestWebhookSignatureMissingSecretFailsClosed) rather than deleted, so a
+regression to fail-open fails loudly instead of going unnoticed.
+
+The BILLING webhook controls below are unchanged and remain opt-in; RC2.5.5a
+did not touch them. Both halves of their contract are still tested.
+
+Either way the principle holds: a control tested only in its enabled state can
+ship silently broken for the default configuration.
 
 Import isolation follows test_pipeline_foundation_10_6.py.
 """
@@ -95,24 +101,128 @@ def leads():
 
 # ── 1. WhatsApp webhook HMAC ─────────────────────────────────────────────────
 
-class TestWebhookSignatureDisabled:
-    """Default configuration — must behave exactly as before this phase."""
+class TestWebhookSignatureMissingSecretFailsClosed:
+    """No secret configured — must REFUSE, not accept.
 
-    def test_unsigned_request_is_accepted_when_no_secret_configured(self, ctx):
+    INVERTED by Phase RC2.5.5a. These three assertions previously pinned the
+    opposite contract: with META_APP_SECRET unset the endpoint accepted
+    unsigned payloads, created leads, and verify_meta_signature() returned
+    True. That was the 14C opt-in design, chosen so the control could ship
+    without changing production behaviour.
+
+    They are inverted rather than deleted, deliberately. Deleting them would
+    leave the missing-secret path with no coverage at all, and a later change
+    could restore fail-open silently. Inverted, they now fail loudly if
+    anyone reinstates the permissive branch.
+    """
+
+    def test_unsigned_request_is_rejected_when_no_secret_configured(self, ctx):
         body = json.dumps(payload()).encode()
         r = _APP.test_client().post("/webhook", data=body,
                                     content_type="application/json")
-        assert r.status_code == 200, "shipping this must not change behaviour"
+        assert r.status_code == 403, "missing secret must fail closed"
 
-    def test_lead_is_still_created_when_verification_is_off(self, ctx):
+    def test_no_lead_is_created_when_the_secret_is_missing(self, ctx):
         before = leads()
         _APP.test_client().post("/webhook", json=payload(phone="919000000009",
                                                          wamid="w.off.1"))
-        assert leads() == before + 1
+        assert leads() == before, "unauthenticated payload created a lead"
 
-    def test_verifier_returns_true_with_no_secret(self, ctx):
+    def test_verifier_returns_false_with_no_secret(self, ctx):
         with _APP.test_request_context("/webhook", method="POST", data=b"{}"):
-            assert wh.verify_meta_signature() is True
+            assert wh.verify_meta_signature() is False
+
+    def test_a_correct_signature_cannot_rescue_a_missing_secret(self, ctx):
+        """Without a secret there is nothing to verify against — refuse even a
+        payload signed with what the caller claims is the right key."""
+        body = json.dumps(payload(wamid="w.off.2")).encode()
+        r = _APP.test_client().post("/webhook", data=body,
+                                    content_type="application/json",
+                                    headers={"X-Hub-Signature-256": sign(body)})
+        assert r.status_code == 403
+
+
+class TestEmptyOrWhitespaceSecretNeverAcceptsUnsignedTraffic:
+    """Config drift produces blank values more often than absent keys: a
+    Railway variable cleared rather than deleted, a .env line with nothing
+    after the "=". Whatever the shape, unsigned traffic must be refused.
+
+    Two DIFFERENT mechanisms produce that refusal, and the distinction is
+    recorded here rather than blurred:
+
+      - "" is falsy, so it takes the missing-secret branch and fails closed.
+      - "   " is TRUTHY. It is not treated as missing; it is used as a (weak)
+        HMAC key, and the request is refused because it carries no valid
+        signature over that key.
+
+    Both refuse. Only the first is the RC2.5.5a fail-closed branch. This class
+    asserts the outcome that matters — no unsigned payload is ever accepted —
+    without pretending the code strips whitespace, which it does not.
+    """
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t", "\n"])
+    def test_unsigned_is_refused_for_any_blank_config_secret(self, ctx, monkeypatch, blank):
+        monkeypatch.setitem(_APP.config, "META_APP_SECRET", blank)
+        monkeypatch.setattr(wh, "META_APP_SECRET", "")
+        body = json.dumps(payload(wamid=f"w.blank.{len(blank)}")).encode()
+        r = _APP.test_client().post("/webhook", data=body,
+                                    content_type="application/json")
+        assert r.status_code == 403, f"blank secret {blank!r} accepted unsigned traffic"
+
+    def test_empty_string_specifically_takes_the_fail_closed_branch(self, ctx, monkeypatch):
+        """Distinguishes the RC2.5.5a branch from a mere signature mismatch:
+        with an empty secret the verifier refuses even when a signature header
+        IS present and well-formed."""
+        monkeypatch.setitem(_APP.config, "META_APP_SECRET", "")
+        monkeypatch.setattr(wh, "META_APP_SECRET", "")
+        body = json.dumps(payload(wamid="w.blank.branch")).encode()
+        r = _APP.test_client().post("/webhook", data=body,
+                                    content_type="application/json",
+                                    headers={"X-Hub-Signature-256": sign(body, "")})
+        assert r.status_code == 403
+
+    @pytest.mark.parametrize("blank", ["", "\t"])
+    def test_blank_module_constant_refuses_unsigned(self, ctx, monkeypatch, blank):
+        monkeypatch.setitem(_APP.config, "META_APP_SECRET", "")
+        monkeypatch.setattr(wh, "META_APP_SECRET", blank)
+        with _APP.test_request_context("/webhook", method="POST", data=b"{}"):
+            assert wh.verify_meta_signature() is False
+
+
+class TestBothSecretLookupLegsFailClosed:
+    """verify_meta_signature() reads app.config FIRST, then the module
+    constant. Production populates only the module constant (create_app never
+    writes META_APP_SECRET into app.config), so the second leg is the one that
+    actually runs live. Each leg needs its own proof in both directions.
+    """
+
+    def test_config_leg_alone_enables_verification(self, ctx, monkeypatch):
+        monkeypatch.setitem(_APP.config, "META_APP_SECRET", SECRET)
+        monkeypatch.setattr(wh, "META_APP_SECRET", "")
+        body = json.dumps(payload(wamid="w.leg.1")).encode()
+        ok = _APP.test_client().post("/webhook", data=body,
+                                     content_type="application/json",
+                                     headers={"X-Hub-Signature-256": sign(body)})
+        bad = _APP.test_client().post("/webhook", data=body,
+                                      content_type="application/json")
+        assert (ok.status_code, bad.status_code) == (200, 403)
+
+    def test_module_leg_alone_enables_verification(self, ctx, monkeypatch):
+        monkeypatch.setitem(_APP.config, "META_APP_SECRET", "")
+        monkeypatch.setattr(wh, "META_APP_SECRET", SECRET)
+        body = json.dumps(payload(wamid="w.leg.2")).encode()
+        ok = _APP.test_client().post("/webhook", data=body,
+                                     content_type="application/json",
+                                     headers={"X-Hub-Signature-256": sign(body)})
+        bad = _APP.test_client().post("/webhook", data=body,
+                                      content_type="application/json")
+        assert (ok.status_code, bad.status_code) == (200, 403)
+
+    def test_neither_leg_configured_refuses(self, ctx, monkeypatch):
+        monkeypatch.setitem(_APP.config, "META_APP_SECRET", "")
+        monkeypatch.setattr(wh, "META_APP_SECRET", "")
+        with _APP.test_request_context("/webhook", method="POST", data=b"{}"):
+            assert wh.verify_meta_signature() is False
 
 
 class TestWebhookSignatureEnabled:
