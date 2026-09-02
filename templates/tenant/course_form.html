@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if row %}Edit{% else %}New{% endif %} Entry — Tenant Portal | Oxford CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+
+{% include 'tenant/sidebar.html' %}
+
+<div class="t-main">
+
+  <div class="t-page-header">
+    <a href="{% if row %}{{ url_for('tenant.tenant_course_detail', row_id=row.id) }}{% else %}{{ url_for('tenant.tenant_courses') }}{% endif %}"
+       style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;font-weight:600;color:var(--text-muted);text-decoration:none;margin-bottom:0.6rem;">
+      <i class="bi bi-chevron-left" style="font-size:0.7rem;"></i> Cancel
+    </a>
+    <h1>
+      <i class="bi bi-{% if row %}pencil-square{% else %}plus-circle{% endif %} me-2" style="color:var(--blue);"></i>
+      {% if row %}Edit Entry{% else %}New Entry{% endif %}
+    </h1>
+    <p>{% if row %}Update what your AI assistant knows.{% else %}Add something your AI assistant should know.{% endif %}</p>
+  </div>
+
+  <div class="t-page-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="t-alert t-alert-{{ category }}"><i class="bi bi-exclamation-triangle me-1"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST"
+          action="{% if row %}{{ url_for('tenant.tenant_course_edit', row_id=row.id) }}{% else %}{{ url_for('tenant.tenant_course_create') }}{% endif %}">
+
+      <!-- ── Basics ─────────────────────────────────────────────── -->
+      <div class="t-card">
+        <div class="t-card-title"><i class="bi bi-card-text me-1"></i> Basics</div>
+
+        <div class="t-field">
+          <label for="title">Title <span style="color:var(--red);">*</span></label>
+          <input type="text" id="title" name="title" maxlength="200"
+                 value="{{ values.get('title', '') }}"
+                 placeholder="e.g. Diploma in Computer Applications">
+        </div>
+
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="kind">Type <span style="color:var(--red);">*</span></label>
+            <select id="kind" name="kind">
+              {% for k in allowed_kinds %}
+                <option value="{{ k }}" {% if values.get('kind') == k %}selected{% endif %}>{{ k|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="t-field">
+            <label for="sort_order">Display order</label>
+            <input type="number" id="sort_order" name="sort_order" min="0" step="1"
+                   value="{{ values.get('sort_order', 0) }}">
+          </div>
+        </div>
+
+        <div class="t-field">
+          <label for="body">Description</label>
+          <textarea id="body" name="body" rows="4"
+                    placeholder="What should the assistant know about this?">{{ values.get('body', '') }}</textarea>
+        </div>
+
+        <div class="t-field">
+          <label for="duration">Duration</label>
+          <input type="text" id="duration" name="duration" maxlength="100"
+                 value="{{ values.get('duration', '') }}" placeholder="e.g. 12 Months">
+        </div>
+      </div>
+
+      <!-- ── Customer price ─────────────────────────────────────── -->
+      <div class="t-card">
+        <div class="t-card-title"><i class="bi bi-cash-stack me-1"></i> Customer Price</div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="currency">Currency</label>
+            <input type="text" id="currency" name="currency" maxlength="8"
+                   value="{{ values.get('currency', '') }}" placeholder="e.g. INR">
+          </div>
+          <div class="t-field">
+            <label for="base_price">Price</label>
+            <input type="text" id="base_price" name="base_price"
+                   value="{{ values.get('base_price', '') }}" placeholder="e.g. 19540">
+          </div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          This is the figure your assistant quotes to customers. It is stored exactly as entered —
+          it is never calculated from the fee components below.
+        </div>
+      </div>
+
+      <!-- ── Fee components ─────────────────────────────────────── -->
+      <div class="t-card">
+        <div class="t-card-title"><i class="bi bi-receipt me-1"></i> Fee Components <span style="font-weight:500;color:var(--text-muted);">(optional)</span></div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="registration_fee">Registration fee</label>
+            <input type="text" id="registration_fee" name="registration_fee"
+                   value="{{ values.get('registration_fee', '') }}">
+          </div>
+          <div class="t-field">
+            <label for="tuition_fee">Maximum tuition fee</label>
+            <input type="text" id="tuition_fee" name="tuition_fee"
+                   value="{{ values.get('tuition_fee', '') }}">
+          </div>
+        </div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="concession">Concession</label>
+            <input type="text" id="concession" name="concession"
+                   value="{{ values.get('concession', '') }}">
+          </div>
+          <div class="t-field">
+            <label for="net_tuition_fee">Net tuition fee</label>
+            <input type="text" id="net_tuition_fee" name="net_tuition_fee"
+                   value="{{ values.get('net_tuition_fee', '') }}">
+          </div>
+        </div>
+        <div class="t-field">
+          <label for="exam_fee">Examination fee</label>
+          <input type="text" id="exam_fee" name="exam_fee"
+                 value="{{ values.get('exam_fee', '') }}"
+                 placeholder="Leave blank if not applicable">
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          Each amount is recorded as a separate fact. Leave any field blank if it does not apply —
+          nothing is assumed or filled in for you.
+        </div>
+      </div>
+
+      <!-- ── Payment link ───────────────────────────────────────── -->
+      <div class="t-card">
+        <div class="t-card-title"><i class="bi bi-link-45deg me-1"></i> Payment Link <span style="font-weight:500;color:var(--text-muted);">(optional)</span></div>
+        <div class="t-field">
+          <label for="payment_url">Payment URL</label>
+          <input type="text" id="payment_url" name="payment_url" maxlength="500"
+                 value="{{ values.get('payment_url', '') }}"
+                 placeholder="https://...">
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          Your own payment page. Must start with http:// or https://. Leave blank to remove it.
+        </div>
+        {% if row %}
+          {% set stored = (row.attributes or '') %}
+          {% if 'legacy_payment_url' in stored %}
+            <div class="t-alert t-alert-warning" style="margin-top:0.9rem;margin-bottom:0;">
+              <i class="bi bi-shield-lock me-1"></i>
+              This entry also has a <strong>legacy link kept for internal reference</strong>.
+              It is not editable here, is never shown to customers, and is never used by your assistant.
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:2rem;">
+        <button type="submit" class="btn-t-primary">
+          <i class="bi bi-check-lg"></i>{% if row %}Save changes{% else %}Create entry{% endif %}
+        </button>
+        <a href="{% if row %}{{ url_for('tenant.tenant_course_detail', row_id=row.id) }}{% else %}{{ url_for('tenant.tenant_courses') }}{% endif %}"
+           style="font-size:0.85rem;font-weight:600;color:var(--text-muted);text-decoration:none;">Cancel</a>
+      </div>
+
+    </form>
+
+  </div>
+</div>
+
+</body>
+</html>

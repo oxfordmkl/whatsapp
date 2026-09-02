@@ -609,3 +609,179 @@ def tenant_course_detail(row_id):
         components=components,
         other_attrs=other_attrs,
     )
+
+
+# ── Phase RC2.5.4b: Courses & Knowledge CRUD ─────────────────────────────────
+#
+# Create, edit and activate/deactivate. There is deliberately NO hard-delete
+# route: deactivation is the only removal, and it is reversible.
+#
+# ISOLATION, restated because it is the whole game on a write path:
+# tenant_id ALWAYS comes from _get_current_tenant() -- the authenticated
+# session. It is never read from request.form, request.args, a hidden field
+# or the URL. The <int:row_id> in the path is the ROW id, and every mutation
+# resolves it via get_knowledge(tenant.id, row_id), i.e. by (id AND
+# tenant_id) together, so another tenant's row id yields an ordinary 404 that
+# does not reveal whether the row exists elsewhere.
+#
+# All DB mutation lives in knowledge_admin_service -- these routes resolve
+# the tenant, delegate, and translate the result into flash + redirect,
+# matching the POST-redirect-GET pattern every other tenant route uses.
+#
+# CSRF: this project has no CSRF mechanism (Flask-WTF is not installed and
+# CSRFProtect is never initialised), so these forms match the existing
+# posture of /tenant/profile, /tenant/staff, /tenant/ai and
+# /tenant/whatsapp/save rather than inventing a parallel one. Flagged in the
+# RC2.5.4b report as a real, pre-existing platform-wide gap.
+
+@tenant_bp.route('/courses/new', methods=['GET'])
+@login_required
+@tenant_admin_required
+def tenant_course_new():
+    """Phase RC2.5.4b: blank create form."""
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    from app.services import knowledge_admin_service
+    return render_template(
+        'tenant/course_form.html',
+        tenant=tenant,
+        row=None,
+        values={},
+        allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+    )
+
+
+@tenant_bp.route('/courses/create', methods=['POST'])
+@login_required
+@tenant_admin_required
+def tenant_course_create():
+    """Phase RC2.5.4b: create one knowledge row for the CURRENT tenant."""
+    from app.services import knowledge_admin_service
+
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    row, errors = knowledge_admin_service.create_knowledge(
+        tenant.id, request.form
+    )
+    if errors:
+        for message in errors:
+            flash(message, 'danger')
+        return render_template(
+            'tenant/course_form.html',
+            tenant=tenant,
+            row=None,
+            values=request.form,
+            allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+        ), 400
+
+    flash(f'"{row.title}" created.', 'success')
+    return redirect(url_for('tenant.tenant_course_detail', row_id=row.id))
+
+
+@tenant_bp.route('/courses/<int:row_id>/edit', methods=['GET', 'POST'])
+@login_required
+@tenant_admin_required
+def tenant_course_edit(row_id):
+    """Phase RC2.5.4b: edit one row owned by the current tenant."""
+    from app.services import knowledge_admin_service
+
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    row = knowledge_admin_service.get_knowledge(tenant.id, row_id)
+    if row is None:
+        abort(404)
+
+    if request.method == 'POST':
+        updated, errors = knowledge_admin_service.update_knowledge(
+            tenant.id, row_id, request.form
+        )
+        if errors is None:
+            abort(404)
+        if errors:
+            for message in errors:
+                flash(message, 'danger')
+            return render_template(
+                'tenant/course_form.html',
+                tenant=tenant,
+                row=row,
+                values=request.form,
+                allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+            ), 400
+
+        flash(f'"{updated.title}" updated.', 'success')
+        return redirect(url_for('tenant.tenant_course_detail', row_id=row_id))
+
+    # GET: prefill from the stored row.
+    attrs = knowledge_admin_service.parse_attributes(row)
+    commercial = attrs.get('commercial') or {}
+    components = (attrs.get('regulatory') or {}).get('components')
+    by_type = {}
+    if isinstance(components, list):
+        for c in components:
+            if isinstance(c, dict) and c.get('type') is not None:
+                by_type[c['type']] = c.get('amount')
+
+    values = {
+        'title': row.title,
+        'kind': row.kind,
+        'body': row.body or '',
+        'sort_order': row.sort_order,
+        'duration': attrs.get('duration') or '',
+        'currency': commercial.get('currency') or '',
+        'base_price': commercial.get('base_price')
+        if commercial.get('base_price') is not None else '',
+        'payment_url': commercial.get('payment_url') or '',
+        'registration_fee': by_type.get('registration_fee', ''),
+        'tuition_fee': by_type.get('max_tuition_fee', ''),
+        'concession': by_type.get('concession', ''),
+        'net_tuition_fee': by_type.get('net_tuition_fee', ''),
+        'exam_fee': by_type.get('exam_fee', ''),
+    }
+    return render_template(
+        'tenant/course_form.html',
+        tenant=tenant,
+        row=row,
+        values=values,
+        allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+    )
+
+
+@tenant_bp.route('/courses/<int:row_id>/toggle', methods=['POST'])
+@login_required
+@tenant_admin_required
+def tenant_course_toggle(row_id):
+    """Phase RC2.5.4b: deactivate or reactivate one row.
+
+    Soft only -- there is no hard-delete route anywhere in this blueprint.
+    """
+    from app.services import knowledge_admin_service
+
+    tenant = _get_current_tenant()
+    if not tenant:
+        flash('No tenant associated with your account.', 'danger')
+        return redirect(url_for('tenant.tenant_home'))
+
+    desired = (request.form.get('active') or '').strip().lower() in (
+        '1', 'true', 'yes', 'on'
+    )
+    row, errors = knowledge_admin_service.set_active(tenant.id, row_id, desired)
+    if row is None and errors is None:
+        abort(404)
+    if errors:
+        for message in errors:
+            flash(message, 'danger')
+    else:
+        flash(
+            f'"{row.title}" {"reactivated" if desired else "deactivated"}.',
+            'success',
+        )
+    return redirect(url_for('tenant.tenant_course_detail', row_id=row_id))

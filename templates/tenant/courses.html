@@ -29,9 +29,10 @@
       {% endif %}
     {% endwith %}
 
-    <div class="t-alert t-alert-info">
-      <i class="bi bi-eye me-1"></i>
-      This is a read-only view. Editing, adding and removing entries will arrive in a later release.
+    <div style="display:flex;justify-content:flex-end;margin-bottom:1.25rem;">
+      <a href="{{ url_for('tenant.tenant_course_new') }}" class="btn-t-primary">
+        <i class="bi bi-plus-lg"></i> Add Entry
+      </a>
     </div>
 
     <!-- Filter by kind -->
@@ -132,9 +133,12 @@
         <div style="font-weight:700;color:var(--text-main);margin-bottom:0.35rem;">
           {% if active_kind %}No {{ active_kind }} entries yet{% else %}No knowledge entries yet{% endif %}
         </div>
-        <div style="font-size:0.85rem;color:var(--text-muted);">
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
           Your AI assistant will use the information added here when answering customers.
         </div>
+        <a href="{{ url_for('tenant.tenant_course_new') }}" class="btn-t-primary">
+          <i class="bi bi-plus-lg"></i> Add your first entry
+        </a>
       </div>
     {% endif %}
 

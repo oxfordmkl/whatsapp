@@ -504,18 +504,32 @@ class TestDetailRendering:
 
 class TestReadOnly:
 
-    def test_admin_service_has_no_write_functions(self):
+    def test_admin_service_has_no_hard_delete_function(self):
+        """TRIPWIRE INVERTED BY RC2.5.4b (was: no write functions at all).
+
+        RC2.5.4a was read-only, so this pinned the ABSENCE of every mutation.
+        RC2.5.4b explicitly authorises create / update / activation-toggle,
+        so that blanket pin no longer describes the intended design.
+
+        Inverted rather than deleted: the property still worth guarding is
+        that DELETION never becomes possible here. Deactivation is the only
+        removal, and it is reversible. A hard-delete function appearing in
+        this module would still fail this test.
+        """
         tree = ast.parse(open(KAS_PY, encoding="utf-8").read())
         names = {n.name for n in ast.walk(tree)
                  if isinstance(n, ast.FunctionDef)}
-        for forbidden in ("create", "update", "delete", "save", "set_",
-                          "add_", "remove"):
-            assert not any(forbidden in n for n in names), names
+        for forbidden in ("delete", "destroy", "purge", "drop"):
+            assert not any(forbidden in n.lower() for n in names), names
+        # The authorised RC2.5.4b mutations must be present and named
+        # explicitly -- no mutation may hide behind a vague name.
+        assert {"create_knowledge", "update_knowledge", "set_active"} <= names
 
-    def test_admin_service_never_commits_or_adds(self):
+    def test_admin_service_never_hard_deletes(self):
+        """TRIPWIRE INVERTED BY RC2.5.4b (was: no db.session.add/commit at
+        all). Writes are now authorised; physical deletion still is not."""
         src = open(KAS_PY, encoding="utf-8").read()
-        for forbidden in ("db.session.add", "db.session.commit",
-                          "db.session.delete", ".update(", ".delete()"):
+        for forbidden in ("db.session.delete", ".delete()"):
             assert forbidden not in src
 
     def test_new_routes_are_get_only(self):

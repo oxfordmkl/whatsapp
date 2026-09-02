@@ -676,6 +676,12 @@ class TestScope:
             "tests/test_knowledge_nested_attrs_rc253a.py",
             "tests/test_knowledge_retrieval_rc253b.py",
             "tests/test_tenant_courses_admin_rc254a.py",
+            # WIDENED AGAIN BY RC2.5.4b (course CRUD). Same reasoning as the
+            # RC2.5.4a widening: knowledge_service.py stays out of scope and
+            # is separately pinned as zero-diff by dedicated RC2.5.4a and
+            # RC2.5.4b tests, so this does not loosen the prompt-path
+            # guarantee.
+            "tests/test_tenant_courses_crud_rc254b.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
