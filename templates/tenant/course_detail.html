@@ -193,6 +193,24 @@
       <div class="t-card-title"><i class="bi bi-link-45deg me-1"></i> Payment Link</div>
 
       <div class="t-field" style="margin-bottom:1rem;">
+        <label>Course code</label>
+        {% if commercial.get('code') %}
+          <div style="font-size:0.85rem;font-weight:600;color:var(--text-main);
+                      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">
+            {{ commercial.get('code') }}
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.3rem;">
+            The stable identifier this course's payment link is matched by.
+          </div>
+        {% else %}
+          <div style="font-size:0.85rem;color:var(--text-muted);">Not set.</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.3rem;">
+            Without a code, a payment link cannot be matched to this course.
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="t-field" style="margin-bottom:1rem;">
         <label>Active payment link</label>
         {% if commercial.get('payment_url') %}
           <div style="font-size:0.85rem;color:var(--text-main);word-break:break-all;">{{ commercial.get('payment_url') }}</div>

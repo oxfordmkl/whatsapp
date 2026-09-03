@@ -416,7 +416,14 @@ class TestRendererPropertiesPreserved:
             block = ks.render_knowledge_block(TA, query="PGDCA fee")
         assert "rzp.io/rzp/KAQ2C7t" not in block
 
-    def test_active_payment_url_still_renders_with_ranking_active(self, seeded):
+    def test_active_payment_url_is_excluded_with_ranking_active(self, seeded):
+        """INVERTED by RC2.5.5b-1 (was ..._still_renders_...).
+
+        The exclusion must hold on the query-aware path too, not only on the
+        unranked one -- ranking selects WHICH rows render, never WHICH KEYS
+        within a row. The price still renders, so this is not passing merely
+        because the row was ranked out.
+        """
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, {
                 "commercial": {"base_price": 19540,
@@ -424,7 +431,9 @@ class TestRendererPropertiesPreserved:
             }))
             db.session.commit()
             block = ks.render_knowledge_block(TA, query="PGDCA fee")
-        assert "rzp.io/rzp/ACTIVE" in block
+        assert "rzp.io/rzp/ACTIVE" not in block
+        assert "commercial.payment_url" not in block
+        assert "19540" in block, "the row was ranked out -- test is vacuous"
 
 
 # ═══ Scope ═══════════════════════════════════════════════════════════════

@@ -736,6 +736,8 @@ def tenant_course_edit(row_id):
         'body': row.body or '',
         'sort_order': row.sort_order,
         'duration': attrs.get('duration') or '',
+        # RC2.5.5b-1: the stable key the payment resolver matches on.
+        'code': commercial.get('code') or '',
         'currency': commercial.get('currency') or '',
         'base_price': commercial.get('base_price')
         if commercial.get('base_price') is not None else '',

@@ -79,6 +79,20 @@
         </div>
       </div>
 
+      <div class="t-field">
+        <label for="code">Course code</label>
+        <input type="text" id="code" name="code" maxlength="32"
+               value="{{ values.get('code', '') }}" placeholder="e.g. PGDCA"
+               style="text-transform:uppercase;">
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          A short, stable identifier for this course — letters, digits, hyphen
+          and underscore only. Saved in capitals. Unlike the title, it is meant
+          never to change: it is how your payment link is matched to this
+          course, so renaming the course keeps working, but changing the code
+          does not. Give each course a different code.
+        </div>
+      </div>
+
       <!-- ── Customer price ─────────────────────────────────────── -->
       <div class="t-card">
         <div class="t-card-title"><i class="bi bi-cash-stack me-1"></i> Customer Price</div>

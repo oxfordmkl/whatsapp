@@ -234,11 +234,17 @@ ALLOWED_KINDS = ("course", "faq", "policy", "product", "service")
 MAX_TITLE_LEN = 200
 MAX_DURATION_LEN = 100
 MAX_URL_LEN = 500
+MAX_CODE_LEN = 32
 
 # Anything not http/https is rejected outright. This is what stops
 # javascript:, data:, file: and similar from being stored and later rendered
 # to a tenant admin or fed to the AI.
 _URL_RE = re.compile(r"^https?://[^\s<>\"']+$", re.IGNORECASE)
+
+# Phase RC2.5.5b-1: course code charset. Deliberately narrow -- this value is
+# a lookup key, not prose, and anything that could collide after trimming or
+# case-folding would weaken the resolver's "exactly one match" guarantee.
+_CODE_RE = re.compile(r"^[A-Z0-9_-]+$")
 
 # NEVER writable through this module. See the module docstring.
 _NON_WRITABLE_ATTR_KEYS = frozenset({"legacy_payment_url"})
@@ -304,6 +310,21 @@ def validate_payload(form):
     currency = (get("currency") or "").strip() or None
     base_price = _clean_money(get("base_price"), "Price", errors)
 
+    # Phase RC2.5.5b-1: stable course code.
+    #
+    # This is the join key the tenant payment resolver matches on. Title is
+    # not usable for that: it is free text a tenant admin may reword at any
+    # time, and the deterministic bot flow needs a key that survives a rename.
+    # Uppercased on the way in so "pgdca" and "PGDCA" are the same course --
+    # case drift must never produce two rows that both look like a match.
+    code = (get("code") or "").strip().upper() or None
+    if code:
+        if len(code) > MAX_CODE_LEN:
+            errors.append(f"Course code must be {MAX_CODE_LEN} characters or fewer.")
+        elif not _CODE_RE.match(code):
+            errors.append("Course code may use only letters, digits, hyphen "
+                          "and underscore.")
+
     payment_url = (get("payment_url") or "").strip() or None
     if payment_url:
         if len(payment_url) > MAX_URL_LEN:
@@ -333,6 +354,7 @@ def validate_payload(form):
         "duration": duration,
         "currency": currency,
         "base_price": base_price,
+        "code": code,
         "payment_url": payment_url,
         "components": components,
     }
@@ -370,6 +392,14 @@ def _merge_attributes(existing, cleaned):
         commercial["base_price"] = cleaned["base_price"]
     else:
         commercial.pop("base_price", None)
+
+    # An empty submission CLEARS the code, exactly like payment_url. A stale
+    # code left behind after an admin blanked the field would keep matching in
+    # the resolver, which is the one outcome worse than not matching at all.
+    if cleaned["code"] is not None:
+        commercial["code"] = cleaned["code"]
+    else:
+        commercial.pop("code", None)
 
     # An empty submission clears the ACTIVE link; it never touches the legacy
     # one, which is preserved untouched below.

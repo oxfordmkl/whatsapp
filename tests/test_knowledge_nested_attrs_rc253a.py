@@ -157,7 +157,16 @@ class TestScalarRenderingUnchanged:
 
 class TestNestedRendering:
 
-    def test_commercial_base_price_currency_payment_url_render(self, seeded):
+    def test_commercial_base_price_and_currency_render(self, seeded):
+        """INVERTED IN PART by RC2.5.5b-1.
+
+        Was test_commercial_base_price_currency_payment_url_render, which also
+        asserted commercial.payment_url reached the block. payment_url is now
+        excluded from rendering: it is resolved deterministically by
+        payment_link_service and emitted in a fixed template, never handed to
+        the AI to paraphrase. The price/currency half of the original contract
+        is unchanged and still asserted; only the payment_url line flipped.
+        """
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, PRICING_ATTRS))
             db.session.commit()
@@ -165,7 +174,8 @@ class TestNestedRendering:
             line = ks._render_row(row)
         assert "commercial.base_price: 15999" in line
         assert "commercial.currency: INR" in line
-        assert "commercial.payment_url: https://rzp.io/rzp/KAQ2C7t" in line
+        assert "commercial.payment_url" not in line
+        assert "rzp.io/rzp/KAQ2C7t" not in line
 
     def test_offers_array_renders(self, seeded):
         with _APP.app_context():
@@ -452,7 +462,12 @@ class TestNoArithmetic:
 
 class TestLegacyPaymentUrlExclusion:
 
-    def test_active_payment_url_renders_when_populated(self, seeded):
+    def test_active_payment_url_is_excluded_too(self, seeded):
+        """INVERTED by RC2.5.5b-1 (was test_active_payment_url_renders_when
+        _populated). RC2.5.3a-K excluded only the ARCHIVAL url and deliberately
+        let the active one render. RC2.5.5b-1 excludes both: the active link is
+        the one a customer can actually pay through, so it is the one that must
+        not reach a generative model. The surrounding price still renders."""
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None, {
                 "commercial": {"base_price": 100,
@@ -461,7 +476,9 @@ class TestLegacyPaymentUrlExclusion:
             db.session.commit()
             row = TenantKnowledge.query.filter_by(tenant_id=TA).first()
             line = ks._render_row(row)
-        assert "commercial.payment_url: https://rzp.io/rzp/ACTIVE123" in line
+        assert "commercial.payment_url" not in line
+        assert "ACTIVE123" not in line
+        assert "commercial.base_price: 100" in line
 
     def test_legacy_payment_url_does_not_appear_in_rendered_block(self, seeded):
         """Reproduces the exact RC2.5.3a-K production finding: PGDCA's real
@@ -484,7 +501,7 @@ class TestLegacyPaymentUrlExclusion:
         assert "rzp.io/rzp/KAQ2C7t" not in line
         assert "legacy_payment_url" not in line
 
-    def test_row_with_both_fields_renders_active_excludes_legacy(self, seeded):
+    def test_row_with_both_fields_excludes_both(self, seeded):
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None, {
                 "commercial": {
@@ -496,9 +513,11 @@ class TestLegacyPaymentUrlExclusion:
             db.session.commit()
             row = TenantKnowledge.query.filter_by(tenant_id=TA).first()
             line = ks._render_row(row)
-        assert "commercial.payment_url: https://rzp.io/rzp/NEWLINK" in line
+        assert "rzp.io/rzp/NEWLINK" not in line, "active url leaked (RC2.5.5b-1)"
         assert "rzp.io/rzp/KAQ2C7t" not in line
         assert "legacy_payment_url" not in line
+        assert "commercial.payment_url" not in line
+        assert "commercial.base_price: 19540" in line
 
     def test_other_scalar_attributes_still_render_normally(self, seeded):
         """The exclusion is scoped to one key name -- everything else in the
@@ -547,9 +566,12 @@ class TestLegacyPaymentUrlExclusion:
         assert "rzp.io/rzp/KAQ2C7t" not in block
         assert "commercial.base_price: 19540" in block
 
-    def test_composed_prompt_has_no_legacy_url_but_keeps_active_one(self, seeded):
+    def test_composed_prompt_has_no_payment_url_of_either_kind(self, seeded):
         """End-to-end through prompt_composer: the exact property that
-        matters -- what actually reaches Gemini's system_instruction."""
+        matters -- what actually reaches Gemini's system_instruction.
+
+        INVERTED by RC2.5.5b-1 (was ..._but_keeps_active_one). Neither the
+        archival nor the active payment URL may reach the model."""
         from app.services import prompt_composer
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, {
@@ -562,7 +584,9 @@ class TestLegacyPaymentUrlExclusion:
             db.session.commit()
             out = prompt_composer.compose_system_prompt(TA)
         assert "rzp.io/rzp/KAQ2C7t" not in out
-        assert "rzp.io/rzp/CURRENTLINK" in out
+        assert "rzp.io/rzp/CURRENTLINK" not in out
+        assert "payment_url" not in out
+        assert "19540" in out, "the price must still reach the prompt"
 
     def test_malformed_attrs_still_fail_open_with_the_new_rule_present(self, seeded):
         """The exclusion check must not weaken the existing fail-open
@@ -599,13 +623,20 @@ class TestIsolationUnregressed:
 
     def test_cross_tenant_leakage_still_impossible_with_nested_data(self, seeded):
         with _APP.app_context():
+            # RC2.5.5b-1: the markers moved from commercial.payment_url to
+            # commercial.currency. payment_url is now excluded from rendering
+            # entirely, so a marker stored there would be absent from BOTH
+            # blocks and these assertions would pass without proving anything
+            # about isolation. A renderable field keeps the test honest.
             db.session.add(_k(OX, ks.KIND_COURSE, "Oxford Course", None,
-                              {"commercial": {"base_price": 1, "payment_url": "OXFORD-SECRET"}}))
+                              {"commercial": {"base_price": 1, "currency": "OXFORD-SECRET"}}))
             db.session.add(_k(TA, ks.KIND_COURSE, "Alpha Course", None,
-                              {"commercial": {"base_price": 2, "payment_url": "ALPHA-SECRET"}}))
+                              {"commercial": {"base_price": 2, "currency": "ALPHA-SECRET"}}))
             db.session.commit()
             oxford_block = ks.render_knowledge_block(OX)
             alpha_block = ks.render_knowledge_block(TA)
+        assert "OXFORD-SECRET" in oxford_block, "marker not renderable -- test is vacuous"
+        assert "ALPHA-SECRET" in alpha_block, "marker not renderable -- test is vacuous"
         assert "ALPHA-SECRET" not in oxford_block
         assert "OXFORD-SECRET" not in alpha_block
 

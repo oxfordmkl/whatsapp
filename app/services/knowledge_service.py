@@ -274,7 +274,23 @@ _MAX_LIST_ITEMS = 5
 # broader than "only under commercial", since nothing about the field's
 # sensitivity is specific to that one location) -- see
 # test_legacy_payment_url_excluded_regardless_of_nesting_location.
-_NON_RENDERABLE_KEYS = frozenset({"legacy_payment_url"})
+#
+# RC2.5.5b-1 adds `payment_url` for a related but distinct reason. That field
+# is the ACTIVE, tenant-authored payment link, and it exists to be resolved
+# DETERMINISTICALLY -- payment_link_service looks it up by (tenant_id, code)
+# and the bot emits it inside a fixed template. It is deliberately not
+# knowledge for the AI to paraphrase: a generative model that has a live
+# payment URL in context can surface it in the wrong conversation, for the
+# wrong course, or alongside a price it inferred rather than read. A payment
+# link is a financial instrument, not a fact about a course, and the two
+# consumers are separate by design -- the resolver reads
+# commercial.payment_url straight from storage and is entirely unaffected by
+# this exclusion, which applies only to _flatten_attrs() at rendering time.
+#
+# So the set now covers both the archival URL and the live one: no payment
+# URL of any kind reaches the prompt, while both remain fully readable by the
+# code paths that are supposed to read them.
+_NON_RENDERABLE_KEYS = frozenset({"legacy_payment_url", "payment_url"})
 
 
 def _is_renderable_scalar(v):
