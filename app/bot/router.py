@@ -235,7 +235,7 @@ def _try_navigation(raw: str, name: str, st,
         if action.kind == KIND_OFFER:
             # Offer logic lives in the offer handler layer, never here.
             from app.bot.offer_handlers import handle_offer
-            return handle_offer(action.value, st)
+            return handle_offer(action.value, st, tenant_id)
 
         if action.kind == KIND_COURSE:
             screen = _course_destination(screens, action.value, st, phone, tenant_id)
@@ -383,7 +383,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return offer_menu_reply()
 
     if low in {"pay", "payment", "enrol", "enroll", "seat", "fees pay", "reserve seat"}:
-        return handle_pay_intent(st)
+        return handle_pay_intent(st, tenant_id)
 
     if low in {"fees", "fee", "price", "cost", "ethra", "how much"}:
         return handle_cta(CTA_FEES, name, st, phone, tenant_id)
@@ -502,7 +502,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     # ── Offer stages — logic lives in the offer handler layer ──────────────
     if stage == "offer_menu":
-        _offer = handle_offer_number(low, st)
+        _offer = handle_offer_number(low, st, tenant_id)
         if _offer is not None:
             return _offer
 

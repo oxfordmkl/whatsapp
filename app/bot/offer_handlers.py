@@ -69,43 +69,73 @@ def payment_confirmed_reply(txn: str, course: str, name: str) -> tuple[str, str]
 
 # ── Handlers ─────────────────────────────────────────────────────────────────
 
-def handle_offer(code: str, st) -> tuple[str, None] | None:
+def handle_offer(code: str, st, tenant_id=None) -> tuple[str, None] | None:
     """Select an offer by its code and issue the payment link.
 
     Returns None for an unknown code so the caller falls through to legacy.
     No CRM write and no analytics event — identical to the legacy selection.
+
+    Phase RC2.5.5b-2: the URL is resolved from the tenant's own data. When the
+    tenant has no link for this code the offer is NOT issued -- returning None
+    lets the caller fall through exactly as it does for an unknown code, and
+    the state writes are skipped so no conversation enters payment_pending
+    without a link. There is no fallback to the catalogue's URL.
     """
     entry = OFFERS_BY_CODE.get((code or "").upper())
     if entry is None:
         return None
-    offer_code, full_name, price, dur, link = entry
+    # Index [4] -- the URL -- is deliberately not unpacked; OFFER_MENU stays
+    # the catalogue, and is no longer a source of payment links.
+    offer_code, full_name, price, dur = entry[:4]
+    # Imported lazily, matching the idiom already used in this
+    # module and in router.py. Several suites build a synthetic
+    # `app.services` module and inject only the members they stub,
+    # so a module-level import of a real sibling breaks collection
+    # in files that have nothing to do with payments.
+    from app.services.payment_link_service import resolve_payment_url
+    link = resolve_payment_url(tenant_id, offer_code)
+    if not link:
+        return None
     st["offer_course"] = offer_code
     st["stage"] = "payment_pending"
     return payment_link_reply(offer_code, full_name, price, dur, link)
 
 
-def handle_pay_intent(st) -> tuple[str, str | None]:
+def handle_pay_intent(st, tenant_id=None) -> tuple[str, str | None]:
     """"pay" / "enrol" / "seat" keyword intent.
 
     Issues the payment link when the chosen course has one, else opens the offer
     menu — identical branching and state writes to the legacy router.
+
+    Phase RC2.5.5b-2: the URL comes from the tenant's own data. Without one the
+    caller falls through to the offer menu, exactly as a course with no link
+    already did -- never to the catalogue's URL.
     """
     course = st.get("course") or ""
     if course and course in COURSE_PAYMENT_LINKS:
-        code, full_name, price, dur, link = COURSE_PAYMENT_LINKS[course]
-        st["stage"] = "payment_pending"
-        st["offer_course"] = code
-        return payment_link_reply(code, full_name, price, dur, link)
+        # Index [4] -- the URL -- deliberately not unpacked.
+        code, full_name, price, dur = COURSE_PAYMENT_LINKS[course][:4]
+        # Imported lazily, matching the idiom already used in this
+        # module and in router.py. Several suites build a synthetic
+        # `app.services` module and inject only the members they stub,
+        # so a module-level import of a real sibling breaks collection
+        # in files that have nothing to do with payments.
+        from app.services.payment_link_service import resolve_payment_url
+        link = resolve_payment_url(tenant_id, code)
+        if link:
+            st["stage"] = "payment_pending"
+            st["offer_course"] = code
+            return payment_link_reply(code, full_name, price, dur, link)
     st["stage"] = "offer_menu"
     return offer_menu_reply()
 
 
-def handle_offer_number(low: str, st) -> tuple[str, None] | None:
+def handle_offer_number(low: str, st, tenant_id=None) -> tuple[str, None] | None:
     """Legacy numeric offer reply at the offer_menu stage."""
     entry = OFFER_MENU.get(low)
     if entry is None:
         return None
-    return handle_offer(entry[0], st)
+    return handle_offer(entry[0], st, tenant_id)
 
 
 def handle_payment(raw: str, name: str, st, phone: str,

@@ -486,9 +486,16 @@ class TestPhaseBoundaryNotFlipped:
         assert OFFER_MENU["4"][4] == "https://rzp.io/rzp/KAQ2C7t"
 
     @pytest.mark.parametrize("mod", ["app/bot/cta_handlers.py",
-                                     "app/bot/offer_handlers.py",
-                                     "app/bot/router.py"])
-    def test_no_emission_path_imports_the_resolver_yet(self, mod):
+                                     "app/bot/offer_handlers.py"])
+    def test_emission_modules_now_import_the_resolver(self, mod):
+        """INVERTED by RC2.5.5b-2.
+
+        Was test_no_emission_path_imports_the_resolver_yet: b-1 deliberately
+        left the resolver unwired, so importing it was the tripwire. b-2 IS
+        the flip, so the import is now required. router.py is dropped from the
+        list because it only threads tenant_id through; it never resolves a
+        URL itself.
+        """
         tree = ast.parse(_src(mod))
         names = set()
         for n in ast.walk(tree):
@@ -496,8 +503,8 @@ class TestPhaseBoundaryNotFlipped:
                 names.add(n.module)
             elif isinstance(n, ast.Import):
                 names.update(a.name for a in n.names)
-        assert not any("payment_link_service" in m for m in names), \
-            f"{mod} was flipped to the resolver -- that is b-2, not b-1"
+        assert any("payment_link_service" in m for m in names), \
+            f"{mod} no longer imports the resolver"
 
     @pytest.mark.parametrize("fn_name,mod", [
         ("enroll_reply", "app/bot/cta_handlers.py"),
@@ -505,14 +512,46 @@ class TestPhaseBoundaryNotFlipped:
         ("handle_offer", "app/bot/offer_handlers.py"),
         ("handle_offer_number", "app/bot/offer_handlers.py"),
     ])
-    def test_emission_paths_still_read_the_constants(self, fn_name, mod):
-        """Inverted in b-2. Until then these prove nothing was flipped early."""
+    def test_no_path_reads_the_catalogue_url_column(self, fn_name, mod):
+        """INVERTED by RC2.5.5b-2.
+
+        Was test_emission_paths_still_read_the_constants, which pinned the
+        pre-flip state. Note what did NOT change: the constants are still
+        read, because they remain the catalogue supplying code, full_name,
+        price and duration. Asserting their absence would be wrong.
+
+        What changed is the URL column. It lives at tuple index [4]; reading
+        it again -- by index, or by unpacking all five fields -- would
+        reintroduce the constant as a payment source, which is the exact
+        defect this phase removes.
+        """
         tree = ast.parse(_src(mod))
         fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
                   and n.name == fn_name)
-        loaded = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
-        assert loaded & {"COURSE_PAYMENT_LINKS", "OFFERS_BY_CODE", "OFFER_MENU"}, \
-            f"{fn_name} no longer reads a constant -- b-2 happened early"
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant) \
+                    and n.slice.value == 4:
+                raise AssertionError(f"{fn_name} reads catalogue index [4]")
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Tuple) \
+                    and len(n.targets[0].elts) == 5:
+                raise AssertionError(f"{fn_name} unpacks all 5 catalogue fields")
+
+    @pytest.mark.parametrize("fn_name,mod", [
+        ("enroll_reply", "app/bot/cta_handlers.py"),
+        ("handle_pay_intent", "app/bot/offer_handlers.py"),
+        ("handle_offer", "app/bot/offer_handlers.py"),
+    ])
+    def test_emission_paths_resolve_the_url(self, fn_name, mod):
+        """Every path that emits a link must obtain it from the resolver.
+        handle_offer_number is excluded: it delegates to handle_offer rather
+        than resolving itself."""
+        tree = ast.parse(_src(mod))
+        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+                  and n.name == fn_name)
+        called = {n.func.id for n in ast.walk(fn)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        assert "resolve_payment_url" in called, \
+            f"{fn_name} does not resolve a tenant-owned URL"
 
     def test_payment_link_reply_signature_unchanged(self):
         tree = ast.parse(_src("app/bot/cta_handlers.py"))

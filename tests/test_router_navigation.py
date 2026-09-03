@@ -141,6 +141,35 @@ def env(monkeypatch):
     offers = _load("_rn_offers", "app/bot/offer_handlers.py",
                    register_as="app.bot.offer_handlers", monkeypatch=monkeypatch)
 
+    # ── payment resolver stub (Phase RC2.5.5b-2) ──────────────────────────
+    #
+    # Payment URLs are no longer read from COURSE_PAYMENT_LINKS/OFFER_MENU.
+    # The four emission paths now ask payment_link_service for a link owned by
+    # the conversation's tenant, and emit nothing when there is none.
+    #
+    # Stubbing is the right boundary HERE, not a real database: this file is a
+    # pure unit harness that stubs every service (ai, crm, log, whatsapp,
+    # state) and never opens a connection. Tenant-scoped resolution against
+    # real rows is proven in test_payment_link_isolation_rc255b.py and
+    # test_payment_flip_rc255b2.py, which do use a database.
+    #
+    # The stub mirrors the real contract closely enough to keep these tests
+    # honest: it returns the catalogue URL for a known code, and None without
+    # a tenant. Tests that need the "tenant owns no link" case override
+    # `env.payments.resolve_payment_url` (see no_payment_links).
+    _catalogue_urls = {entry[0]: entry[4]
+                       for entry in constants.OFFER_MENU.values()}
+
+    def _resolve_payment_url(tenant_id, code):
+        if not tenant_id:
+            return None
+        return _catalogue_urls.get((code or "").strip().upper())
+
+    payments = types.ModuleType("app.services.payment_link_service")
+    payments.resolve_payment_url = MagicMock(side_effect=_resolve_payment_url)
+    monkeypatch.setitem(sys.modules, "app.services.payment_link_service",
+                        payments)
+
     state_holder = {}
 
     state_mod = types.ModuleType("app.state")
@@ -181,7 +210,22 @@ def env(monkeypatch):
         state=lambda: state_holder["st"], gemini=gemini_reply,
         crm=crm.update_lead_status, events=log.log_lead_event_in_thread,
         cta=cta, booking=booking, offers=offers, ListMessage=ListMessage,
+        payments=payments,
     )
+
+
+@pytest.fixture
+def no_payment_links(env):
+    """A tenant that owns no payment link for any course.
+
+    The realistic second-tenant case, and the failure case for the first: a
+    course whose link was never authored, was deactivated, or could not be
+    read. Every emission path must decline rather than fall back.
+    """
+    env.payments.resolve_payment_url = MagicMock(return_value=None)
+    sys.modules["app.services.payment_link_service"].resolve_payment_url = \
+        env.payments.resolve_payment_url
+    return env
 
 
 def _list_text(reply):
@@ -314,10 +358,26 @@ class TestOfferFlow:
         assert env.state()["offer_course"] == "DCA"
 
     def test_offer_uses_the_single_catalogue(self, env):
-        """Price/link must come from constants.OFFER_MENU, not a copy."""
+        """Display copy must come from constants.OFFER_MENU, not a copy.
+
+        RC2.5.5b-2 note: the price/name/duration assertion is unchanged --
+        those still come from the catalogue. The LINK no longer does; it is
+        resolved per tenant. Here the stub returns the same URL the catalogue
+        holds, so the visible outcome for Oxford is identical, which is
+        exactly the parity this phase had to preserve.
+        """
         text, _ = self._offer(env, "PGDCA")
         _code, _name, price, _dur, link = env.constants.OFFER_MENU["4"]
         assert price in text and link in text
+
+    def test_the_link_is_resolved_per_tenant_not_read_from_the_catalogue(self, env):
+        """The URL in the message came from the resolver, called with this
+        conversation's tenant -- not from OFFER_MENU's fifth column."""
+        self._offer(env, "PGDCA")
+        env.payments.resolve_payment_url.assert_called()
+        args = env.payments.resolve_payment_url.call_args[0]
+        assert args[0] == "t1", "resolver was not called with the tenant"
+        assert args[1] == "PGDCA"
 
     def test_offer_selection_writes_no_crm_and_no_analytics(self, env):
         """Identical to legacy: selecting an offer records nothing."""
@@ -1035,3 +1095,78 @@ class TestBusinessProfile:
         """Phase 6.6 Maps enhancement: the Visit reply now carries the link."""
         text, _ = env.reply("visit")
         assert env.constants.INST_MAPS_URL in text
+
+
+# ── Tenant-owned payment links: the negative half ────────────────────────────
+class TestNoTenantOwnedPaymentLink:
+    """Phase RC2.5.5b-2. Every emission path must decline when the tenant owns
+    no link for the course, and must never substitute the catalogue's URL.
+
+    This is the realistic second-tenant case and the first tenant's failure
+    case alike: a link never authored, deactivated, ambiguous, or unreadable
+    because the database was down. The resolver collapses all of those to
+    None, so one stub covers them here; the distinctions are proven against
+    real rows in test_payment_link_isolation_rc255b.py.
+    """
+
+    def _offer(self, env, code, stage="offer_menu"):
+        env.make_state(stage=stage, course="")
+        return env.router.smart_reply(f"OFR:{code}", "Alice", "+911", False,
+                                      tenant_id="t1")
+
+    @pytest.mark.parametrize("code", ["CWPDE", "DCA", "AIDM", "PGDCA"])
+    def test_offer_selection_issues_no_link(self, no_payment_links, code):
+        env = no_payment_links
+        text, _preset = self._offer(env, code)
+        assert "Secure Payment Link" not in text
+        assert "rzp.io" not in text
+
+    @pytest.mark.parametrize("code", ["CWPDE", "DCA", "AIDM", "PGDCA"])
+    def test_offer_selection_writes_no_payment_state(self, no_payment_links, code):
+        """The state-safety property: never park a conversation in
+        payment_pending waiting for a transaction id against a link that was
+        never sent."""
+        env = no_payment_links
+        self._offer(env, code)
+        assert env.state()["stage"] != "payment_pending"
+        assert env.state()["offer_course"] == ""
+
+    @pytest.mark.parametrize("digit", ["1", "2", "3", "4"])
+    def test_legacy_offer_numbers_issue_no_link(self, no_payment_links, digit):
+        env = no_payment_links
+        env.make_state(stage="offer_menu", course="")
+        text, _ = env.router.smart_reply(digit, "Alice", "+911", False,
+                                         tenant_id="t1")
+        assert "Secure Payment Link" not in text and "rzp.io" not in text
+
+    def test_enroll_cta_falls_back_to_the_counselor_branch(self, no_payment_links):
+        """The ENROLL *button* (ACT:ENROLL) reaches enroll_reply, whose
+        no-link branch is the counselor handoff. Note this is a different path
+        from the typed word "enroll", which the router matches earlier as a
+        pay-intent keyword -- covered separately below."""
+        env = no_payment_links
+        env.make_state(stage="course_viewed", course="PGDCA")
+        text, preset = env.router.smart_reply("ACT:ENROLL", "Alice", "+911",
+                                              False, tenant_id="t1")
+        assert "rzp.io" not in text
+        assert "payment link prepare aavunnu" in text
+        assert preset == "COURSE"
+        assert env.state()["stage"] != "payment_pending"
+
+    @pytest.mark.parametrize("word", ["pay", "enroll", "enrol", "seat"])
+    def test_pay_intent_keywords_fall_back_to_the_offer_menu(self, no_payment_links, word):
+        env = no_payment_links
+        env.make_state(stage="course_viewed", course="PGDCA")
+        text, _ = env.router.smart_reply(word, "Alice", "+911", False,
+                                         tenant_id="t1")
+        assert "rzp.io" not in text
+        assert env.state()["stage"] == "offer_menu"
+
+    def test_the_catalogue_url_is_never_substituted(self, no_payment_links):
+        """The whole point of the phase: the catalogue still HOLDS a URL for
+        PGDCA, and it must not be used."""
+        env = no_payment_links
+        catalogue_url = env.constants.OFFER_MENU["4"][4]
+        assert catalogue_url, "precondition: the catalogue holds a URL"
+        text, _ = self._offer(env, "PGDCA")
+        assert catalogue_url not in text

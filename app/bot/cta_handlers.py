@@ -119,13 +119,36 @@ def payment_link_reply(code, full_name, price, dur, link) -> tuple[str, None]:
     return text, None
 
 
-def enroll_reply(name: str, course: str, st) -> tuple[str, str | None]:
-    """💳 Enrol / Admission — identical branching to the legacy handler."""
+def enroll_reply(name: str, course: str, st,
+                 tenant_id=None) -> tuple[str, str | None]:
+    """💳 Enrol / Admission — identical branching to the legacy handler.
+
+    Phase RC2.5.5b-2: the payment URL now comes from the tenant's own data,
+    never from COURSE_PAYMENT_LINKS. Everything else about this function is
+    unchanged, including both fallback branches and every state write.
+    """
     if course and course in COURSE_PAYMENT_LINKS:
-        code, full_name, price, dur, link = COURSE_PAYMENT_LINKS[course]
-        st["stage"] = "payment_pending"
-        st["offer_course"] = code
-        return payment_link_reply(code, full_name, price, dur, link)
+        # Index [4] -- the URL -- is deliberately NOT unpacked. The constant
+        # remains the CATALOGUE (display copy and the name -> code index);
+        # it is no longer a source of payment links.
+        code, full_name, price, dur = COURSE_PAYMENT_LINKS[course][:4]
+        # Imported lazily, matching the idiom already used in this
+        # module and in router.py. Several suites build a synthetic
+        # `app.services` module and inject only the members they stub,
+        # so a module-level import of a real sibling breaks collection
+        # in files that have nothing to do with payments.
+        from app.services.payment_link_service import resolve_payment_url
+        link = resolve_payment_url(tenant_id, code)
+        if link:
+            st["stage"] = "payment_pending"
+            st["offer_course"] = code
+            return payment_link_reply(code, full_name, price, dur, link)
+        # No tenant-owned link: fall through to the counselor branch below.
+        # There is deliberately no fallback to the constant's URL -- that is
+        # the entire point of the phase. A tenant that has not authored a
+        # payment URL has no payment URL, and the state writes above are
+        # skipped so the conversation never enters payment_pending without a
+        # link to pay through.
 
     if course:
         text = (
@@ -191,6 +214,6 @@ def handle_cta(cta: str, name: str, st, phone: str,
         return call_reply(name)
 
     if cta == CTA_ENROLL:
-        return enroll_reply(name, course, st)
+        return enroll_reply(name, course, st, tenant_id)
 
     return None
