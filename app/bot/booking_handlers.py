@@ -21,7 +21,6 @@ business literals.
 """
 import threading
 
-from app.bot.business_profile import INSTITUTE_NAME, LOCALITY, PHONE, WEBSITE
 from app.bot.screens import DEMO_SLOTS, slot_label
 from app.services.crm_service import update_lead_status
 
@@ -44,15 +43,27 @@ def date_ask_reply(batch_time: str) -> tuple[str, None]:
     return text, None
 
 
-def booked_reply(course: str, batch_time: str, date: str) -> tuple[str, str]:
+def _identity(tenant_id):
+    """This tenant's resolved business identity. See cta_handlers._identity
+    for why the import is lazy and why the fallback is per field."""
+    from app.services.tenant_identity_service import resolve_business_identity
+    return resolve_business_identity(tenant_id)
+
+
+def booked_reply(course: str, batch_time: str, date: str,
+                 tenant_id=None) -> tuple[str, str]:
+    """Phase RC2.5.5c-1: the venue and contact details in a booking
+    confirmation come from the tenant's resolved identity. A second tenant's
+    customer was previously told to turn up at Oxford's address."""
+    identity = _identity(tenant_id)
     text = (
         "🎉 *Demo Class Booked Successfully!*\n\n"
         f"📚 Course: {course or 'Course of your choice'}\n"
         f"⏰ Time: {batch_time}\n"
         f"📅 Date: {date}\n"
-        f"📍 {INSTITUTE_NAME}, {LOCALITY}\n\n"
+        f"📍 {identity.name}, {identity.address.locality}\n\n"
         "Naaḷe ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും! ✅\n"
-        f"📞 {PHONE} | 🌐 {WEBSITE}"
+        f"📞 {identity.contact.phone} | 🌐 {identity.contact.website}"
     )
     return text, "AFTER_BOOKING"
 
@@ -91,4 +102,4 @@ def handle_date(raw: str, st, phone: str, tenant_id=None) -> tuple[str, str]:
     threading.Thread(
         target=update_lead_status, args=(phone, status, "", tenant_id)
     ).start()
-    return booked_reply(course, batch_time, raw)
+    return booked_reply(course, batch_time, raw, tenant_id)

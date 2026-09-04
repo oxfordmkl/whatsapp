@@ -19,10 +19,11 @@ import threading
 
 from flask import current_app
 
-from app.bot.business_profile import (
-    ADDRESS, COUNSELLOR_HOURS, INSTITUTE_NAME, LOCALITY,
-    MAPS_URL, OFFICE_HOURS, PHONE, WEBSITE,
-)
+# RC2.5.5c-1: only the PAYMENT builders still read these module-level
+# constants. Every identity-only builder (visit_reply, call_reply) now resolves
+# the tenant's own identity instead. Retiring the last three is blocked on the
+# payment paths, which this phase is not authorised to touch.
+from app.bot.business_profile import INSTITUTE_NAME, LOCALITY, PHONE
 from app.bot.constants import (
     COURSE_FEES, COURSE_PAYMENT_LINKS, FEES_VALUE_LINES, FULL_FEE_TABLE,
     RUTRONIX_LABEL, TRUST_LINES, pick,
@@ -40,33 +41,64 @@ CTA_ENROLL = "ENROLL"
 
 # ── Reply builders (migrated from router.py) ─────────────────────────────────
 
-def visit_reply() -> tuple[str, str]:
+def _identity(tenant_id):
+    """This tenant's resolved business identity.
+
+    Lazy import for the same reason the payment resolver uses one: several
+    suites build a synthetic `app.services` module and inject only the members
+    they stub, so a module-level import of a real sibling breaks collection in
+    files unrelated to identity.
+
+    resolve_business_identity() never raises and falls back per field to the
+    platform defaults, which are derived from business_profile.py -- so an
+    unconfigured tenant resolves to exactly the values these builders used to
+    read directly, by construction.
+    """
+    from app.services.tenant_identity_service import resolve_business_identity
+    return resolve_business_identity(tenant_id)
+
+
+def visit_reply(tenant_id=None) -> tuple[str, str]:
     """🏢 Visit Institute.
 
-    Phase 1.6.6 Maps enhancement: now carries the institute name, the canonical
-    address, the Google Maps link and the phone number — all sourced from the
-    Business Profile, which is the only place those values exist.
+    Phase 1.6.6 Maps enhancement: carries the institute name, the canonical
+    address, the Google Maps link and the phone number.
+
+    Phase RC2.5.5c-1: those values now come from the TENANT's resolved
+    business identity rather than the module-level Oxford constants. A second
+    tenant's customer was previously told to visit Oxford's office and call
+    Oxford's phone number.
+
+    Fail-SAFE, not fail-closed: resolve_business_identity() never raises and
+    falls back per field to platform defaults. That is the right polarity
+    here -- this is address/contact CONTENT, not a payment instruction, so
+    degrading to a default beats showing the customer nothing. The payment
+    paths in this module keep the opposite, fail-closed contract.
     """
+    identity = _identity(tenant_id)
     text = (
         "🏢 *Office Visit — Always Welcome!*\n\n"
-        f"📍 *{INSTITUTE_NAME}*\n"
-        f"{ADDRESS}\n\n"
-        f"🗺️ Google Maps:\n{MAPS_URL}\n\n"
-        f"⏰ Office Hours: {OFFICE_HOURS}\n"
-        f"📞 {PHONE}\n\n"
+        f"📍 *{identity.name}*\n"
+        f"{identity.address.line}\n\n"
+        f"🗺️ Google Maps:\n{identity.location_url}\n\n"
+        f"⏰ Office Hours: {identity.hours.general}\n"
+        f"📞 {identity.contact.phone}\n\n"
         "Eppol varananu convenient?\n"
         "Morning / Afternoon / Evening? 😊"
     )
     return text, "COURSE"
 
 
-def call_reply(name: str) -> tuple[str, None]:
+def call_reply(name: str, tenant_id=None) -> tuple[str, None]:
+    """Phase RC2.5.5c-1: counsellor contact details come from the tenant's
+    resolved identity, not Oxford's constants."""
+    identity = _identity(tenant_id)
     text = (
         f"😊 Sure {name}!\n\n"
         "Nigalkkayi Oru nalla counselorne connect cheyyam.\n"
-        f"📞 *{PHONE}* — direct vilikkaamo!\n\n"
-        f"⏰ Available: {COUNSELLOR_HOURS}\n"
-        f"📍 {INSTITUTE_NAME}, {LOCALITY}\n\n"
+        f"📞 *{identity.contact.phone}* — direct vilikkaamo!\n\n"
+        f"⏰ Available: {identity.hours.extended}\n"
+        f"📍 {identity.name}, {identity.address.locality}\n\n"
         "Ivideyum message cheyyoo — ready aanu! 🙌"
     )
     return text, None
@@ -207,11 +239,11 @@ def handle_cta(cta: str, name: str, st, phone: str,
 
     if cta == CTA_VISIT:
         _crm(phone, "Office Visit Interested", tenant_id)
-        return visit_reply()
+        return visit_reply(tenant_id)
 
     if cta == CTA_CALL:
         _crm(phone, "Call Requested", tenant_id)
-        return call_reply(name)
+        return call_reply(name, tenant_id)
 
     if cta == CTA_ENROLL:
         return enroll_reply(name, course, st, tenant_id)

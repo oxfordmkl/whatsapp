@@ -95,7 +95,38 @@ def _load(dotted: str, relpath: str):
 # Load real pure modules (no Flask deps)
 # Phase 1.6.4: constants.py now sources institute facts from the canonical
 # Business Profile, so that module must be registered before constants loads.
-_load("app.bot.business_profile", "app/bot/business_profile.py")
+_bp = _load("app.bot.business_profile", "app/bot/business_profile.py")
+
+# app.services.tenant_identity_service (Phase RC2.5.5c-1)
+#
+# The deterministic VISIT / CALL / booking replies no longer read Oxford's
+# constants directly -- they resolve the tenant's business identity. This
+# harness registers a synthetic `app.services` package and injects only the
+# services it stubs, so without this entry those paths raise
+# ModuleNotFoundError.
+#
+# The stub returns Oxford's own values, which is what keeps every existing
+# assertion in this file meaningful: these tests check that institute facts
+# reach the reply, and they still do. Tenant-scoped resolution against real
+# rows is proven in test_business_identity_flow_rc255c1.py, which uses a
+# database; duplicating that here would only test the stub.
+_identity_ns = types.SimpleNamespace(
+    name=_bp.INSTITUTE_NAME,
+    legal_name=_bp.INSTITUTE_NAME,
+    description="", tagline="", brand_voice="",
+    address=types.SimpleNamespace(line=_bp.ADDRESS, locality=_bp.LOCALITY,
+                                  city=_bp.CITY, region="", country="",
+                                  postal_code=""),
+    location_url=_bp.MAPS_URL,
+    contact=types.SimpleNamespace(phone=_bp.PHONE, whatsapp=_bp.WHATSAPP,
+                                  email=_bp.EMAIL, website=_bp.WEBSITE),
+    hours=types.SimpleNamespace(general=_bp.OFFICE_HOURS,
+                                extended=_bp.COUNSELLOR_HOURS),
+    is_configured=False,
+)
+_tis = types.ModuleType("app.services.tenant_identity_service")
+_tis.resolve_business_identity = MagicMock(return_value=_identity_ns)
+sys.modules["app.services.tenant_identity_service"] = _tis
 _load("app.bot.constants", "app/bot/constants.py")
 _load("app.bot.objections", "app/bot/objections.py")
 # Phase 1.6.6: router imports the CTA handler layer.

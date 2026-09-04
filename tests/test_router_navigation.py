@@ -141,6 +141,40 @@ def env(monkeypatch):
     offers = _load("_rn_offers", "app/bot/offer_handlers.py",
                    register_as="app.bot.offer_handlers", monkeypatch=monkeypatch)
 
+    # ── business identity stub (Phase RC2.5.5c-1) ─────────────────────────
+    #
+    # visit_reply / call_reply / booked_reply no longer read Oxford's
+    # constants; they resolve the tenant's business identity. This fixture
+    # registers a synthetic `app.services` package and injects only the
+    # services it stubs, so without this entry those replies raise
+    # ModuleNotFoundError.
+    #
+    # The stub returns Oxford's own values on purpose. That is what keeps the
+    # existing assertions in this file meaningful -- TestVisitCta and the
+    # booking tests check that institute facts reach the reply, and they
+    # still do. Tenant-scoped resolution against real rows is proven in
+    # test_business_identity_flow_rc255c1.py, which uses a database;
+    # asserting it here would only be testing the stub.
+    identity_ns = types.SimpleNamespace(
+        name=profile.INSTITUTE_NAME,
+        legal_name=profile.INSTITUTE_NAME,
+        description="", tagline="", brand_voice="",
+        address=types.SimpleNamespace(
+            line=profile.ADDRESS, locality=profile.LOCALITY,
+            city=profile.CITY, region="", country="", postal_code=""),
+        location_url=profile.MAPS_URL,
+        contact=types.SimpleNamespace(
+            phone=profile.PHONE, whatsapp=profile.WHATSAPP,
+            email=profile.EMAIL, website=profile.WEBSITE),
+        hours=types.SimpleNamespace(
+            general=profile.OFFICE_HOURS, extended=profile.COUNSELLOR_HOURS),
+        is_configured=False,
+    )
+    identity = types.ModuleType("app.services.tenant_identity_service")
+    identity.resolve_business_identity = MagicMock(return_value=identity_ns)
+    monkeypatch.setitem(sys.modules,
+                        "app.services.tenant_identity_service", identity)
+
     # ── payment resolver stub (Phase RC2.5.5b-2) ──────────────────────────
     #
     # Payment URLs are no longer read from COURSE_PAYMENT_LINKS/OFFER_MENU.
@@ -210,7 +244,7 @@ def env(monkeypatch):
         state=lambda: state_holder["st"], gemini=gemini_reply,
         crm=crm.update_lead_status, events=log.log_lead_event_in_thread,
         cta=cta, booking=booking, offers=offers, ListMessage=ListMessage,
-        payments=payments,
+        payments=payments, identity=identity,
     )
 
 
