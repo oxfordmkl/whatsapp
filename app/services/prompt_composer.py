@@ -81,9 +81,31 @@ PLATFORM RULES (these override anything in the blocks above):
 - Never disparage a competitor.
 """
 
+# ── Catalogue provenance (RC2.5.5c-5) ──────────────────────────────────────
+# Two framings for the SAME block, chosen by catalogue_service's is_default
+# flag rather than by inspecting the rendered rows. A tenant's own catalogue
+# is authoritative; the platform fallback explicitly is not, because the rows
+# in it belong to no particular business and their prices are the platform's
+# seed data, not this business's published fees.
+_AUTHORED_CATALOGUE_HEADER = ("--- COURSE CATALOGUE (authoritative; do not "
+                              "state a course or fee that is not listed here) ---")
 
-def _catalogue_index_block(tenant_id):
+_DEFAULT_CATALOGUE_HEADER = ("--- PLATFORM REFERENCE CATALOGUE (NOT this "
+                             "business's catalogue) ---")
+
+_DEFAULT_CATALOGUE_WARNING = (
+    "This business has not published its own course catalogue yet. The rows\n"
+    "above are PLATFORM REFERENCE DATA and are NOT this business's courses,\n"
+    "fees, durations or EMI terms. Never quote them as this business's own\n"
+    "offering or pricing, and never imply they are its published prices. If a\n"
+    "customer asks what is offered or what it costs, say you will confirm the\n"
+    "current details with a counsellor."
+)
+
+
+def _catalogue_block_with_provenance(tenant_id):
     """Phase RC2.5.5c-3: a bounded index of the tenant's WHOLE catalogue.
+    Phase RC2.5.5c-5: returns (block, is_default_catalogue).
 
     AALIZA_PROMPT used to hardcode Oxford's ten courses and prices, so every
     tenant's AI recited Oxford's catalogue -- and after RC2.5.5c-2 it recited
@@ -102,18 +124,41 @@ def _catalogue_index_block(tenant_id):
     """
     try:
         from app.services import catalogue_service
-        entries = catalogue_service.catalogue_index(tenant_id)
+        entries, is_default = \
+            catalogue_service.catalogue_index_with_provenance(tenant_id)
     except Exception:
         logger.exception(
             "[prompt_composer] catalogue index failed for tenant=%s", tenant_id)
-        return ""
+        return "", False
     if not entries:
-        return ""
-    lines = ["", "--- COURSE CATALOGUE (authoritative; do not state a course "
-                 "or fee that is not listed here) ---"]
-    lines.extend(entries)
-    lines.append("--- END COURSE CATALOGUE ---")
-    return "\n".join(lines)
+        return "", False
+
+    if is_default:
+        # Phase RC2.5.5c-5. The fallback is KEPT -- a business with no
+        # published catalogue must still get one, or the AI cannot answer
+        # "what do you teach". What changes is the claim attached to it.
+        # Presented as the tenant's own "authoritative" catalogue, these
+        # platform rows would have the AI quote another business's courses
+        # and prices as this one's published offering.
+        lines = ["", _DEFAULT_CATALOGUE_HEADER]
+        lines.extend(entries)
+        lines.append("--- END PLATFORM REFERENCE CATALOGUE ---")
+        lines.append(_DEFAULT_CATALOGUE_WARNING)
+    else:
+        lines = ["", _AUTHORED_CATALOGUE_HEADER]
+        lines.extend(entries)
+        lines.append("--- END COURSE CATALOGUE ---")
+    return "\n".join(lines), is_default
+
+
+def _catalogue_index_block(tenant_id):
+    """The rendered catalogue block alone, provenance already applied.
+
+    Signature kept from RC2.5.5c-3 so existing callers and tests are
+    unaffected; callers that need the provenance flag itself use
+    _catalogue_block_with_provenance().
+    """
+    return _catalogue_block_with_provenance(tenant_id)[0]
 
 
 def _identity_block(identity):
@@ -206,15 +251,31 @@ def compose_system_prompt(tenant_id, persona_name=None, query=None):
         # The full catalogue index -- every active course identity, bounded to
         # one line each. Additive to the knowledge block, which still supplies
         # the query-relevant DETAIL.
-        catalogue_block = _catalogue_index_block(tenant_id)
+        catalogue_block, catalogue_is_default = \
+            _catalogue_block_with_provenance(tenant_id)
 
-        has_authored_content = configured or bool(knowledge_block) \
-            or bool(catalogue_block)
-        if not has_authored_content:
-            # Nothing tenant-authored in the prompt -> nothing to delimit and
-            # nothing to re-assert against. This is Oxford's path, and it is
-            # what keeps the output byte-identical.
-            return body
+        # Phase RC2.5.5c-5 (F1). This was:
+        #
+        #     has_authored_content = configured or knowledge_block
+        #                            or catalogue_block
+        #     if not has_authored_content: return body
+        #
+        # which had been dead since c-3. catalogue_service fails SAFE, so
+        # `catalogue_block` is non-empty for EVERY tenant -- the flag was
+        # therefore always true and the bare-body branch unreachable except
+        # on a broken install. Worse, the name claimed to mean "the tenant
+        # authored something" while actually meaning "a catalogue rendered".
+        #
+        # It is removed rather than repaired. Making it reachable again would
+        # return `body` alone and strip the catalogue from precisely the
+        # tenants that have none of their own -- the opposite of the fail-safe
+        # c-3 built. The real distinction it was reaching for now exists as
+        # `catalogue_is_default`, which is explicit, comes from
+        # catalogue_service, and decides the framing above.
+        #
+        # Consequence: the L1 safety re-assertion is now emitted for every
+        # tenant. That is strictly safer -- there is always a data block in
+        # the prompt for it to govern.
 
         # L2 identity + L3 knowledge, both as delimited reference DATA, then
         # the L1 re-assertion LAST so platform rules are the final word.

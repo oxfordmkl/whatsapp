@@ -172,12 +172,24 @@ class TestDualReadFallback:
         reappearance of the retired constants on an authored path; the c-2
         prices are pinned for a seeded tenant in
         test_authored_catalogue_replaces_the_default below.
+
+        HEADER EXPECTATION UPDATED BY RC2.5.5c-5a. The behavioural intent --
+        "a tenant with no rows is still given A catalogue" -- is unchanged and
+        still asserted. What changed is the CLAIM attached to that catalogue:
+        c-5 made provenance explicit, so this fallback is now headed PLATFORM
+        REFERENCE CATALOGUE and must NOT carry the authoritative framing that
+        belongs to a tenant's own rows. Asserted against the real header
+        rather than a generic "CATALOGUE" substring, so the two framings
+        cannot be confused for one another.
         """
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(OX)
             catalogue = prompt_composer._catalogue_index_block(OX)
         assert catalogue != "" and catalogue in out
-        assert "COURSE CATALOGUE" in catalogue
+        assert prompt_composer._DEFAULT_CATALOGUE_HEADER in catalogue
+        assert prompt_composer._AUTHORED_CATALOGUE_HEADER not in catalogue
+        assert "authoritative" not in catalogue
+        assert prompt_composer._DEFAULT_CATALOGUE_WARNING in catalogue
         assert "PGDCA" in catalogue
         assert "₹15,999" in catalogue          # platform default, not c-2 data
         # The prompt no longer recites a catalogue of its own.

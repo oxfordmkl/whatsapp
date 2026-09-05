@@ -746,6 +746,12 @@ class TestScope:
             "tests/test_memory_activation.py",
             "tests/test_tenant_identity_rc252.py",
             "tests/test_tenant_knowledge_rc253a.py",
+            # WIDENED BY RC2.5.5c-5a: the provenance suite added by
+            # RC2.5.5c-5, which pins that the platform fallback catalogue is
+            # no longer presented as the tenant's own authoritative one. A
+            # single named file -- no directory, no wildcard -- so the
+            # tripwire keeps rejecting everything else exactly as before.
+            "tests/test_catalogue_provenance_rc255c5.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

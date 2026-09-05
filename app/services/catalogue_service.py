@@ -373,9 +373,31 @@ def catalogue_index(tenant_id):
     untouched and detailed bodies remain query-aware.
 
     Never contains a payment URL of any kind.
+
+    Provenance-blind by design: prefer catalogue_index_with_provenance() when
+    the caller needs to know WHOSE catalogue this is. Kept as-is so existing
+    callers are unaffected.
     """
+    return catalogue_index_with_provenance(tenant_id)[0]
+
+
+def catalogue_index_with_provenance(tenant_id):
+    """(entries, is_default_catalogue) -- the index plus WHOSE it is.
+
+    Phase RC2.5.5c-5. `is_default` already existed on every CourseRecord but
+    was never surfaced past this module, so prompt_composer had no way to
+    tell a tenant's own catalogue from the platform fallback and labelled
+    both "authoritative". Provenance is returned EXPLICITLY here rather than
+    left to be inferred from the rendered text -- inferring it from titles,
+    prices or codes is exactly the guessing this phase removes.
+
+    One lookup serves both values, so making the prompt provenance-aware
+    costs no extra query.
+    """
+    courses = list_courses(tenant_id)
+    is_default = bool(courses) and all(c.is_default for c in courses)
     out = []
-    for c in list_courses(tenant_id):
+    for c in courses:
         bits = [c.code, c.title]
         if c.duration:
             bits.append(c.duration)
@@ -383,4 +405,4 @@ def catalogue_index(tenant_id):
             bits.append(f"Total fee {c.normal_total_fee}")
         bits.append("EMI available" if c.emi_available else "No EMI")
         out.append(" | ".join(str(b) for b in bits))
-    return tuple(out)
+    return tuple(out), is_default
