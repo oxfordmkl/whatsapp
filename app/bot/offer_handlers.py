@@ -20,9 +20,10 @@ import threading
 from datetime import datetime
 
 from app.bot.business_profile import CITY, INSTITUTE_NAME, LOCALITY, PHONE
-from app.bot.constants import (
-    COURSE_PAYMENT_LINKS, OFFER_MENU, RUTRONIX_LABEL, URGENCY_LINES, pick,
-)
+# RC2.5.5c-3: COURSE_PAYMENT_LINKS is gone. OFFER_MENU stays -- but only as
+# the offer SET and its 1-2-3-4 positions; its title/price/duration columns
+# are obsolete and are no longer read.
+from app.bot.constants import OFFER_MENU, RUTRONIX_LABEL, URGENCY_LINES, pick
 from app.bot.cta_handlers import payment_link_reply
 from app.services.crm_service import update_lead_status
 
@@ -32,19 +33,43 @@ OFFERS_BY_CODE = {entry[0]: entry for entry in OFFER_MENU.values()}
 
 # ── Reply builders ───────────────────────────────────────────────────────────
 
-def offer_menu_reply() -> tuple[str, str]:
+def offer_menu_reply(tenant_id=None) -> tuple[str, str]:
+    """Phase RC2.5.5c-3 (D2): these four rows hardcoded Oxford's old prices --
+    4,800 / 6,400 / 19,999 / 15,999 -- shown to every tenant's customer and
+    already obsolete against the tenant catalogue. OFFER_MENU still defines
+    WHICH courses are on offer and their menu position; title, price and
+    duration now come from the tenant's own catalogue row."""
+    from app.services import catalogue_service as _cat
+    rows = []
+    for digit, entry in sorted(OFFER_MENU.items()):
+        record = _cat.get_course(tenant_id, entry[0])
+        if record is None:
+            continue
+        rows.append(f"{digit}️⃣ {record.title}\n"
+                    f"   💰 {_cat.format_money(record.normal_total_fee)}"
+                    f" | ⏱ {record.duration}\n")
+
+    if not rows:
+        # No course in THIS tenant's catalogue is on offer. Before the D2 fix
+        # this branch could not be reached -- every tenant was answered with
+        # Oxford's four courses at Oxford's prices, which is the defect. Say
+        # so and point at the real catalogue rather than asking for a course
+        # number under an empty list.
+        return (
+            "🔥 *Special Offer*\n"
+            "━━━━━━━━━━━━━━━━\n"
+            f"{RUTRONIX_LABEL} courses.\n\n"
+            "Ippol offer batch onnum active alla.\n\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "Full course list kaanan *COURSES* reply cheyyoo 📚\n"
+            "Unsure aanenkil *DEMO* reply cheyyoo 🎓"
+        ), "OFFER"
+
     text = (
         "🔥 *Special Offer — This Batch Only!*\n"
         "━━━━━━━━━━━━━━━━\n"
         f"{RUTRONIX_LABEL} courses.\n\n"
-        "1️⃣ CWPDE — Word Processing & Data Entry\n"
-        "   💰 ₹4,800 | ⏱ 6 Months\n\n"
-        "2️⃣ DCA — Computer Applications\n"
-        "   💰 ₹6,400 | ⏱ 6 Months\n\n"
-        "3️⃣ AIDM — AI Digital Marketing\n"
-        "   💰 ₹19,999 | ⏱ 6 Months\n\n"
-        "4️⃣ PGDCA — Post Graduate Diploma\n"
-        "   💰 ₹15,999 | ⏱ 12 Months\n"
+        + "\n".join(rows) +
         "━━━━━━━━━━━━━━━━\n"
         f"⚠️ {pick(URGENCY_LINES)}\n\n"
         "Seat reserve cheyyan course number reply cheyyoo.\n"
@@ -84,21 +109,23 @@ def handle_offer(code: str, st, tenant_id=None) -> tuple[str, None] | None:
     entry = OFFERS_BY_CODE.get((code or "").upper())
     if entry is None:
         return None
-    # Index [4] -- the URL -- is deliberately not unpacked; OFFER_MENU stays
-    # the catalogue, and is no longer a source of payment links.
-    offer_code, full_name, price, dur = entry[:4]
-    # Imported lazily, matching the idiom already used in this
-    # module and in router.py. Several suites build a synthetic
-    # `app.services` module and inject only the members they stub,
-    # so a module-level import of a real sibling breaks collection
-    # in files that have nothing to do with payments.
+    offer_code = entry[0]
+    # Phase RC2.5.5c-3 (D2): OFFER_MENU defines the offer SET only. Title,
+    # price and duration come from the tenant catalogue -- the constant's
+    # price column is obsolete (PGDCA 15,999 vs the catalogue's 19,540).
+    from app.services import catalogue_service as _cat
+    record = _cat.get_course(tenant_id, offer_code)
+    if record is None:
+        return None
     from app.services.payment_link_service import resolve_payment_url
     link = resolve_payment_url(tenant_id, offer_code)
     if not link:
         return None
     st["offer_course"] = offer_code
     st["stage"] = "payment_pending"
-    return payment_link_reply(offer_code, full_name, price, dur, link)
+    return payment_link_reply(
+        record.code, record.title,
+        _cat.format_money(record.normal_total_fee), record.duration, link)
 
 
 def handle_pay_intent(st, tenant_id=None) -> tuple[str, str | None]:
@@ -112,22 +139,22 @@ def handle_pay_intent(st, tenant_id=None) -> tuple[str, str | None]:
     already did -- never to the catalogue's URL.
     """
     course = st.get("course") or ""
-    if course and course in COURSE_PAYMENT_LINKS:
-        # Index [4] -- the URL -- deliberately not unpacked.
-        code, full_name, price, dur = COURSE_PAYMENT_LINKS[course][:4]
-        # Imported lazily, matching the idiom already used in this
-        # module and in router.py. Several suites build a synthetic
-        # `app.services` module and inject only the members they stub,
-        # so a module-level import of a real sibling breaks collection
-        # in files that have nothing to do with payments.
+    # Phase RC2.5.5c-3 (D1/D2): resolved through the tenant catalogue, so a
+    # new-style title still finds its course and the price shown is current.
+    from app.services import catalogue_service as _cat
+    record = _cat.resolve_legacy_name(tenant_id, course) if course else None
+    if record is not None:
         from app.services.payment_link_service import resolve_payment_url
-        link = resolve_payment_url(tenant_id, code)
+        link = resolve_payment_url(tenant_id, record.code)
         if link:
             st["stage"] = "payment_pending"
-            st["offer_course"] = code
-            return payment_link_reply(code, full_name, price, dur, link)
+            st["offer_course"] = record.code
+            return payment_link_reply(
+                record.code, record.title,
+                _cat.format_money(record.normal_total_fee),
+                record.duration, link)
     st["stage"] = "offer_menu"
-    return offer_menu_reply()
+    return offer_menu_reply(tenant_id)
 
 
 def handle_offer_number(low: str, st, tenant_id=None) -> tuple[str, None] | None:

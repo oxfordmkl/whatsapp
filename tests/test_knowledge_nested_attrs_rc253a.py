@@ -26,6 +26,7 @@ in the implementation report via a fresh read-only production check.
 import ast
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -51,6 +52,9 @@ from app import create_app                                              # noqa: 
 from app.extensions import db                                           # noqa: E402
 from app.models import Tenant, TenantKnowledge                          # noqa: E402
 from app.services import knowledge_service as ks                        # noqa: E402
+# RC2.5.5c-3d: the AALIZA_PROMPT zero-diff tripwire became a content
+# contract, so the prompt itself is now read rather than its git status.
+from app.bot.prompts import AALIZA_PROMPT                                # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KS_PY = os.path.join(ROOT, "app", "services", "knowledge_service.py")
@@ -713,6 +717,35 @@ class TestScope:
             # RC2.5.4b tests, so this does not loosen the prompt-path
             # guarantee.
             "tests/test_tenant_courses_crud_rc254b.py",
+            # WIDENED AGAIN BY RC2.5.5c-3c/3d. RC2.5.5c de-Oxfordised the
+            # deterministic runtime: the bot reads the TENANT catalogue
+            # instead of Oxford's hardcoded courses, fees and payment table.
+            # Every path below was modified under an explicit c-3, c-3a or
+            # c-3b authorisation; none is a new application change.
+            #
+            # Same reasoning as every widening above: this only stops the
+            # tripwire firing on files a later authorised phase legitimately
+            # owns. It does NOT loosen the prompt-path guarantee --
+            # knowledge_service.py stays out of those phases' scope and is
+            # still pinned zero-diff by the dedicated RC2.5.4a and RC2.5.4b
+            # tests, and app/models.py plus migrations/ remain pinned
+            # zero-diff by test_models_untouched and
+            # test_no_migration_files_touched in this very class.
+            #
+            # c-3 -- the runtime catalogue read path:
+            "app/bot/cta_handlers.py",
+            "app/bot/offer_handlers.py",
+            "app/bot/prompts.py",
+            "app/bot/router.py",
+            "app/services/catalogue_service.py",
+            "tests/test_catalogue_runtime_rc255c3.py",
+            # c-3a -- the b-2 payment tripwires, inverted to the c-3 contract:
+            "tests/test_payment_flip_rc255b2.py",
+            # c-3b -- composed-prompt tripwires and one synthetic harness:
+            "tests/test_ai_tenant_persona_rc251.py",
+            "tests/test_memory_activation.py",
+            "tests/test_tenant_identity_rc252.py",
+            "tests/test_tenant_knowledge_rc253a.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
@@ -746,13 +779,91 @@ class TestScope:
         from app.bot.constants import COURSE_PAYMENT_LINKS
         assert COURSE_PAYMENT_LINKS["PGDCA"][4] == "https://rzp.io/rzp/KAQ2C7t"
 
-    def test_aaliza_prompt_still_untouched(self):
-        """TRIPWIRE NARROWED BY RC2.5.3b (was: prompt_composer.py + prompts.py
-        both pinned as zero-diff). prompt_composer.py is explicitly authorised
-        to change this phase (threading `query` through to the knowledge
-        layer) -- prompts.py/AALIZA_PROMPT carries no such authorisation and
-        keeps the original absolute guarantee."""
-        import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "app/bot/prompts.py"],
-                             cwd=ROOT, capture_output=True, text=True).stdout
-        assert out.strip() == "", "app/bot/prompts.py unexpectedly changed"
+    # ── AALIZA_PROMPT: zero-diff pin -> content contract ────────────────────
+    #
+    # INVERTED BY RC2.5.5c-3d. This was
+    # `test_aaliza_prompt_still_untouched`, a git-status zero-diff pin.
+    # RC2.5.3b narrowed the tripwire to prompts.py alone and kept it absolute
+    # because no phase then had authorisation to touch AALIZA_PROMPT.
+    # RC2.5.5c does: the prompt hardcoded Oxford's ten courses and prices, so
+    # every tenant's AI recited Oxford's catalogue -- and after RC2.5.5c-2 it
+    # recited one that contradicted the tenant's own data. The zero-diff pin
+    # therefore asserted the opposite of the approved contract.
+    #
+    # It is replaced by a CONTENT contract, not deleted and not softened into
+    # "the file exists". Each assertion below fails if the retired catalogue
+    # is reintroduced, and the non-catalogue persona/identity guarantees the
+    # original protected are asserted explicitly rather than implied by a
+    # clean diff.
+
+    # The exact ten rows RC2.5.5c-3 deleted from the prompt.
+    _RETIRED_PRICES = ("₹15,999", "₹19,999", "₹15,000", "₹4,499", "₹18,999",
+                       "₹6,400", "₹11,999", "₹40,000", "₹4,800", "₹8,800")
+    _RETIRED_COURSE_LABELS = ("AI Digital Mktg", "GST & Payroll Diploma",
+                              "Corporate Biz Accounting",
+                              "Word Processing & Entry", "DCA Fast Track",
+                              "Computer Teacher Training")
+
+    def test_aaliza_prompt_carries_no_hardcoded_catalogue(self):
+        """No course price from the retired table may reappear."""
+        for price in self._RETIRED_PRICES:
+            assert price not in AALIZA_PROMPT, f"retired price back: {price}"
+        for label in self._RETIRED_COURSE_LABELS:
+            assert label not in AALIZA_PROMPT, f"retired course back: {label}"
+
+    def test_aaliza_prompt_has_no_numbered_course_rows(self):
+        """Shape guard, so a REWORDED catalogue is caught too -- a literal
+        list of `N. <name> — <n> Months — <price>` rows in any form."""
+        rows = re.findall(r"^\s*\d{1,2}\.\s+.*(?:Months|₹).*$",
+                          AALIZA_PROMPT, re.MULTILINE)
+        assert rows == [], f"a course table is back in the prompt: {rows}"
+
+    def test_aaliza_prompt_defers_to_the_supplied_catalogue(self):
+        """The replacement mechanism must still be the instruction: the AI is
+        told to use ONLY the catalogue composed into its context, which is
+        what prompt_composer._catalogue_index_block() supplies per tenant."""
+        assert "COURSES & FEES:" in AALIZA_PROMPT
+        assert ("Use ONLY the course catalogue supplied in this "
+                "conversation's context.") in AALIZA_PROMPT
+        assert ("Never state a course name, fee, duration or EMI "
+                "availability from memory.") in AALIZA_PROMPT
+
+    def test_aaliza_prompt_emi_claim_is_conditional(self):
+        """The unconditional "EMI option und" promise was retired with the
+        table: EMI is per-course data now, not a blanket claim."""
+        assert "EMI option und" not in AALIZA_PROMPT
+        assert ("when the supplied catalogue marks that course as "
+                "EMI-available") in AALIZA_PROMPT
+
+    def test_aaliza_prompt_keeps_its_persona_and_identity(self):
+        """The half of the original guarantee that is UNCHANGED: everything
+        in the prompt that is not the catalogue must still be there."""
+        for fragment in (
+            "You are Oxford Nova, Senior Admission Counselor at "
+            "The Oxford Computers",
+            'NEVER say "job guarantee" — always say "placement assistance".',
+            "NEVER badmouth any competitor.",
+            "Kerala State Rutronix is a Government undertaking/body.",
+            "NORKA Attestation is available for eligible certificates.",
+            "Name: The Oxford Computers",
+            "Website: theoxfordedu.com | Phone: 9447329972",
+        ):
+            assert fragment in AALIZA_PROMPT, f"lost from the prompt: {fragment!r}"
+
+    def test_aaliza_prompt_carries_no_payment_url(self):
+        """RC2.5.5b-1 containment, restated at the prompt boundary: a payment
+        link must never be reachable by the model."""
+        assert "rzp.io" not in AALIZA_PROMPT
+        assert "razorpay" not in AALIZA_PROMPT.lower()
+        assert "http://" not in AALIZA_PROMPT and "https://" not in AALIZA_PROMPT
+
+    def test_prompts_module_defines_nothing_but_the_two_prompts(self):
+        """Structural pin replacing the zero-diff one: prompts.py may hold
+        AALIZA_PROMPT and the template derived from it, and must not grow a
+        second course/price table under another name."""
+        tree = ast.parse(open(os.path.join(ROOT, "app", "bot", "prompts.py"),
+                              encoding="utf-8").read())
+        assigned = {t.id for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                    for t in n.targets if isinstance(t, ast.Name)}
+        assert assigned == {"AALIZA_PROMPT", "EDUCATION_PROMPT_TEMPLATE"}, \
+            f"prompts.py defines unexpected names: {assigned}"

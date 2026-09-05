@@ -24,10 +24,12 @@ from flask import current_app
 # the tenant's own identity instead. Retiring the last three is blocked on the
 # payment paths, which this phase is not authorised to touch.
 from app.bot.business_profile import INSTITUTE_NAME, LOCALITY, PHONE
-from app.bot.constants import (
-    COURSE_FEES, COURSE_PAYMENT_LINKS, FEES_VALUE_LINES, FULL_FEE_TABLE,
-    RUTRONIX_LABEL, TRUST_LINES, pick,
-)
+# RC2.5.5c-3: COURSE_FEES, COURSE_PAYMENT_LINKS, FEES_VALUE_LINES and
+# FULL_FEE_TABLE are gone from this import. Nothing in this module reads a
+# course price or a course name from a constant any more -- the catalogue is
+# the tenant's. Dropping the import makes that structural rather than a
+# property of the current function bodies.
+from app.bot.constants import RUTRONIX_LABEL, TRUST_LINES, pick
 from app.services.crm_service import update_lead_status
 from app.services.log_service import log_lead_event_in_thread
 
@@ -116,20 +118,46 @@ def demo_time_reply():
     return screen.body, screen.as_buttons()
 
 
-def fees_reply(course: str) -> tuple[str, str]:
-    if course and course in COURSE_FEES:
-        fee, duration = COURSE_FEES[course]
-        text = (
-            f"💰 *{course} — Fee Details*\n\n"
-            f"Fee: {fee} | Duration: {duration}\n\n"
-            f"{pick(FEES_VALUE_LINES)}\n"
-            f"{pick(TRUST_LINES)}\n\n"
-            "Demo kaanumbo full clarity varum.\n"
-            "Book cheyyatte? 🎓"
-        )
+def fees_reply(course: str, tenant_id=None) -> tuple[str, str]:
+    """Phase RC2.5.5c-3: pricing comes from the TENANT catalogue.
+
+    FULL_FEE_TABLE is retired as a customer-facing pricing source -- it
+    hardcoded Oxford's ten old prices and the institute name, so a second
+    tenant's customer was quoted Oxford's fees. The whole-catalogue listing is
+    now rendered from the tenant's own rows.
+    """
+    from app.services import catalogue_service as cat
+    record = cat.resolve_legacy_name(tenant_id, course) if course else None
+
+    if record is not None:
+        lines = [f"💰 *{record.title} — Fee Details*"]
+        if record.normal_total_fee is not None:
+            lines.append(f"Total Fee: *{cat.format_money(record.normal_total_fee)}*")
+        if record.registration_fee is not None and record.net_tuition_fee is not None:
+            lines.append(f"Registration {cat.format_money(record.registration_fee)}"
+                         f" + Tuition {cat.format_money(record.net_tuition_fee)}")
+        if record.exam_fee is not None:
+            lines.append(f"Exam Fee (separate): {cat.format_money(record.exam_fee)}")
+        if record.duration:
+            lines.append(f"Duration: {record.duration}")
+        lines.append("EMI Available (on tuition)" if record.emi_available
+                     else "EMI not available for this course")
+        text = ("\n".join(lines) + "\n\n"
+                f"{pick(TRUST_LINES)}\n\n"
+                "Demo kaanumbo full clarity varum.\n"
+                "Book cheyyatte? 🎓")
         return text, "FEES"
-    return (FULL_FEE_TABLE +
-            "\n\nExact course select cheythal EMI/monthly idea paranjutharam."), "FEES"
+
+    rows = []
+    for c in cat.list_courses(tenant_id):
+        bits = [f"• *{c.title}*"]
+        if c.normal_total_fee is not None:
+            bits.append(cat.format_money(c.normal_total_fee))
+        if c.duration:
+            bits.append(f"({c.duration})")
+        rows.append("  ".join(bits))
+    return ("💰 *Course Fees*\n\n" + "\n".join(rows) +
+            "\n\nExact course select cheythal fee details paranjutharam."), "FEES"
 
 
 
@@ -159,22 +187,30 @@ def enroll_reply(name: str, course: str, st,
     never from COURSE_PAYMENT_LINKS. Everything else about this function is
     unchanged, including both fallback branches and every state write.
     """
-    if course and course in COURSE_PAYMENT_LINKS:
-        # Index [4] -- the URL -- is deliberately NOT unpacked. The constant
-        # remains the CATALOGUE (display copy and the name -> code index);
-        # it is no longer a source of payment links.
-        code, full_name, price, dur = COURSE_PAYMENT_LINKS[course][:4]
-        # Imported lazily, matching the idiom already used in this
-        # module and in router.py. Several suites build a synthetic
-        # `app.services` module and inject only the members they stub,
-        # so a module-level import of a real sibling breaks collection
-        # in files that have nothing to do with payments.
+    # Phase RC2.5.5c-3 (D1/D2): identity, title, price and duration come from
+    # the TENANT catalogue, resolved through the stored course name -- which
+    # may be a legacy title from a conversation predating c-3.
+    #
+    # D1: the migrated router writes the NEW title into state, which no longer
+    # matched COURSE_PAYMENT_LINKS' old keys, so NO link was issued at all.
+    # D2: when a legacy name did match, the CTA quoted the constant's obsolete
+    # price (PGDCA 15,999) while fees_reply quoted the catalogue's 19,540 --
+    # two different prices for one course inside one conversation.
+    #
+    # The payment URL boundary is untouched: resolve_payment_url(tenant, code),
+    # fail-closed, keyed by the stable code.
+    from app.services import catalogue_service as _cat
+    record = _cat.resolve_legacy_name(tenant_id, course) if course else None
+    if record is not None:
         from app.services.payment_link_service import resolve_payment_url
-        link = resolve_payment_url(tenant_id, code)
+        link = resolve_payment_url(tenant_id, record.code)
         if link:
             st["stage"] = "payment_pending"
-            st["offer_course"] = code
-            return payment_link_reply(code, full_name, price, dur, link)
+            st["offer_course"] = record.code
+            return payment_link_reply(
+                record.code, record.title,
+                _cat.format_money(record.normal_total_fee),
+                record.duration, link)
         # No tenant-owned link: fall through to the counselor branch below.
         # There is deliberately no fallback to the constant's URL -- that is
         # the entire point of the phase. A tenant that has not authored a
@@ -191,11 +227,20 @@ def enroll_reply(name: str, course: str, st,
         )
         return text, "COURSE"
 
+    # Phase RC2.5.5c-3 (D2): these two example rows hardcoded PGDCA at
+    # Rs.15,999 and DCA Fast Track at Rs.6,400 -- the same obsolete Oxford
+    # prices the payment branch above used to quote, inside the same CTA and
+    # shown to every tenant. They come from the tenant's own catalogue now.
+    # The digits stay decorative, exactly as they were: this reply sets no
+    # stage, so nothing consumed them; the affordance is the COURSES keyword.
+    examples = "".join(
+        f"{i}️⃣ {c.title} — {_cat.format_money(c.normal_total_fee)}"
+        f" | {c.duration}\n"
+        for i, c in enumerate(_cat.list_courses(tenant_id)[:2], start=1))
     return (
         f"😊 {name}, enroll cheyyan ready aano — super! 🎉\n\n"
         "Aadhyam oru course select cheyyoo:\n\n"
-        "1️⃣ PGDCA — ₹15,999 | 12 Months\n"
-        "2️⃣ DCA Fast Track — ₹6,400 | 6 Months\n\n"
+        f"{examples}\n"
         "Full list kaanan: *COURSES* reply cheyyoo 📚"
     ), "GOAL"
 
@@ -235,7 +280,7 @@ def handle_cta(cta: str, name: str, st, phone: str,
 
     if cta == CTA_FEES:
         _event(phone, "FEES_REQUESTED", tenant_id, event_data=course or None)
-        return fees_reply(course)
+        return fees_reply(course, tenant_id)
 
     if cta == CTA_VISIT:
         _crm(phone, "Office Visit Interested", tenant_id)

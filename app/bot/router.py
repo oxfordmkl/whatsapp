@@ -2,10 +2,11 @@ import threading
 from datetime import datetime
 from flask import current_app
 from app.state import get_or_create_state
+# RC2.5.5c-3: the catalogue names are gone from this import -- course data now
+# comes from catalogue_service, scoped to the conversation's tenant. What
+# remains is copy (CTA/close/trust lines) and platform accreditation facts.
 from app.bot.constants import (
-    ALL_COURSES, COURSE_FEES, KEYWORD_TO_COURSE, GOAL_COURSES,
-    OFFER_MENU, COURSE_PAYMENT_LINKS, FULL_FEE_TABLE,
-    DEMO_CTA, COURSE_CLOSE, URGENCY_LINES, TRUST_LINES, FEES_VALUE_LINES, pick,
+    DEMO_CTA, COURSE_CLOSE, TRUST_LINES, pick,
     RUTRONIX_FULL, PSC_NOTE, NORKA_NOTE, LEARNING_MODES,
 )
 from app.bot.objections import detect_objection, handle_objection
@@ -59,7 +60,14 @@ def _state(phone: str, name: str, tenant_id: str = None):
     return get_or_create_state(phone, name, tenant_id=tenant_id)
 
 
-def _category_destination(screens, category: str, st):
+def _catalogue():
+    """Lazy import -- several suites stub app.services with only the members
+    they need, so a module-level import breaks unrelated collection."""
+    from app.services import catalogue_service
+    return catalogue_service
+
+
+def _category_destination(screens, category: str, st, tenant_id=None):
     """Phase 1.6.4 — resolve a chosen career category to its screen.
 
     Sets the same canonical stage/goal the legacy numeric goal handler sets, so
@@ -70,7 +78,7 @@ def _category_destination(screens, category: str, st):
         st["stage"] = "not_sure"
         return screens.help_me_choose()
 
-    screen = screens.course_list(category)
+    screen = screens.course_list(category, tenant_id)
     if screen is None:                      # no mapping → nearest valid menu
         st["stage"] = "goal_selection"
         return screens.category_menu()
@@ -88,13 +96,21 @@ def _course_destination(screens, course_index: str, st, phone: str, tenant_id):
     CRM and analytics are identical whether the user tapped a course row or
     replied with a legacy number.
 
-    Returns None for an unknown index so the caller falls through to legacy.
+    Returns None for an unknown code so the caller falls through to legacy.
+
+    Phase RC2.5.5c-3: `course_index` is now a STABLE commercial.code, not a
+    menu position. st["course"] still stores the display title because the
+    persisted column does and no migration is authorised -- but identity
+    travels as the code.
     """
-    screen = screens.course_details(course_index)
+    screen = screens.course_details(course_index, tenant_id)
     if screen is None:
         return None
 
-    c_name = ALL_COURSES[course_index][0]
+    course = _catalogue().get_course(tenant_id, course_index)
+    if course is None:
+        return None
+    c_name = course.title
     st["course"] = c_name
     st["stage"] = "course_viewed"
     threading.Thread(
@@ -111,7 +127,7 @@ def _course_destination(screens, course_index: str, st, phone: str, tenant_id):
     return screen
 
 
-def _nearest_menu(screens, action, name: str, st):
+def _nearest_menu(screens, action, name: str, st, tenant_id=None):
     """Phase 1.6.4 — resolve NAV:BACK to the NEAREST VALID menu.
 
     Rather than always dropping to the Main Menu, walk one level up the
@@ -133,7 +149,7 @@ def _nearest_menu(screens, action, name: str, st):
     if target in ("LIST", "COURSE"):
         # Prefer the category named in the id, else the one already chosen.
         category = action.target_arg or goal
-        screen = screens.course_list(category) if category else None
+        screen = screens.course_list(category, tenant_id) if category else None
         if screen is not None:
             st["goal"] = category
             st["stage"] = "course_recommendation"
@@ -144,7 +160,7 @@ def _nearest_menu(screens, action, name: str, st):
     # No explicit target — infer the parent level from where the user is now.
     stage = st.get("stage") or ""
     if stage == "course_viewed":            # in course details → back to its list
-        screen = screens.course_list(goal) if goal else None
+        screen = screens.course_list(goal, tenant_id) if goal else None
         if screen is not None:
             st["stage"] = "course_recommendation"
             return screen
@@ -242,9 +258,9 @@ def _try_navigation(raw: str, name: str, st,
             if screen is None:
                 return None          # unknown course id → legacy handling
         elif action.kind == KIND_CATEGORY:
-            screen = _category_destination(screens, action.value, st)
+            screen = _category_destination(screens, action.value, st, tenant_id)
         elif action.kind == KIND_BACK:
-            screen = _nearest_menu(screens, action, name, st)
+            screen = _nearest_menu(screens, action, name, st, tenant_id)
         else:  # KIND_MENU
             screen = screens.main_menu(name)
             st["stage"] = "goal_selection"
@@ -290,17 +306,35 @@ def msg_website_lead() -> tuple[str, str]:
     return text, "GOAL"
 
 
-def msg_goal_courses(goal: str, name: str) -> tuple[str, str]:
-    courses = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
+def msg_goal_courses(goal: str, name: str, tenant_id=None) -> tuple[str, str]:
+    """Phase RC2.5.5c-3: courses come from the tenant catalogue."""
+    cat = _catalogue()
+    courses = cat.courses_for_category(tenant_id, goal) \
+        or cat.courses_for_category(tenant_id, "job")
     lines = [f"📚 *{name}-kku best ആയ courses:*\n"]
-    for i, (_, display, dur, fee) in enumerate(courses, 1):
-        lines.append(f"{i}️⃣ {display}\n   ⏱ {dur} | 💰 {fee}")
+    for i, c in enumerate(courses, 1):
+        lines.append(f"{i}️⃣ {c.title}\n   ⏱ {c.duration} | 💰 "
+                     f"{cat.format_money(c.normal_total_fee)}")
     lines.append("\nNumber reply cheyyoo! 🎓")
     return "\n".join(lines), None
 
 
-def msg_course_detail(course_idx: str) -> tuple[str, str]:
-    c_name, card = ALL_COURSES[course_idx]
+def msg_course_detail(course_idx: str, tenant_id=None):
+    """Phase RC2.5.5c-3: keyed by stable code, content from the tenant
+    catalogue. Returns None for an unknown/inactive course rather than
+    substituting a different one."""
+    cat = _catalogue()
+    course = cat.get_course(tenant_id, course_idx)
+    if course is None:
+        return None
+    c_name = course.title
+    card = course.body or ""
+    if course.duration:
+        card += f"\n⏱ Duration: {course.duration}"
+    if course.normal_total_fee is not None:
+        card += f"\n💰 Course Fee: *{cat.format_money(course.normal_total_fee)}*"
+    if course.emi_available:
+        card += "\n✅ EMI Available (on tuition)"
     text = (
         f"✅ *{c_name}* — nalla choice aanu! 🎯\n\n"
         f"{card}\n\n"
@@ -380,7 +414,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     if low in {"offer", "today offer", "offer undo", "discount"} or ("offer" in low and "discount" in low):
         st["stage"] = "offer_menu"
-        return offer_menu_reply()
+        return offer_menu_reply(tenant_id)
 
     if low in {"pay", "payment", "enrol", "enroll", "seat", "fees pay", "reserve seat"}:
         return handle_pay_intent(st, tenant_id)
@@ -451,7 +485,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
             goal = goal_map[low]
             st["goal"]  = goal
             st["stage"] = "course_recommendation"
-            return msg_goal_courses(goal, name)
+            return msg_goal_courses(goal, name, tenant_id)
 
         if low == "5":
             st["stage"] = "not_sure"
@@ -472,12 +506,16 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     if stage == "course_recommendation":
         goal   = st.get("goal", "job")
-        crecs  = GOAL_COURSES.get(goal, GOAL_COURSES["job"])
+        _cat = _catalogue()
+        crecs = (_cat.courses_for_category(tenant_id, goal)
+                 or _cat.courses_for_category(tenant_id, "job"))
         if low.isdigit():
             idx = int(low) - 1
             if 0 <= idx < len(crecs):
-                c_idx, c_display, c_dur, c_fee = crecs[idx]
-                c_name = ALL_COURSES[c_idx][0]
+                # The NUMBER is only a position within the message just sent;
+                # identity is the stable code it resolves to.
+                c_idx = crecs[idx].code
+                c_name = crecs[idx].title
                 st["course"] = c_name
                 st["stage"]  = "course_viewed"
                 threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}", "", tenant_id)).start()
@@ -489,7 +527,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                                 event_data=c_name, tenant_id=tenant_id),
                     daemon=True,
                 ).start()
-                return msg_course_detail(c_idx)
+                return msg_course_detail(c_idx, tenant_id)
 
     # ── Booking stages — logic lives in the booking handler layer ───────────
     if stage == "demo_time_ask":
@@ -509,9 +547,23 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     if stage == "payment_pending":
         return handle_payment(raw, name, st, phone, tenant_id)
 
-    for kw, idx in KEYWORD_TO_COURSE.items():
-        if kw in low:
-            c_name = ALL_COURSES[idx][0]
+    # Phase RC2.5.5c-3: discovery uses the TENANT catalogue's keywords, and a
+    # genuinely ambiguous term asks rather than guessing. "dca" names both the
+    # Fast Track and the Regular diploma at different prices; silently picking
+    # one would quote the wrong fee.
+    _cat = _catalogue()
+    _match = _cat.match_keyword(tenant_id, low)
+    if _match.kind == "ambiguous":
+        opts = "\n".join(
+            f"• *{c.title}* — {c.duration} | {_cat.format_money(c.normal_total_fee)}"
+            for c in _match.candidates)
+        return (f"Ethu course aanu udheshichath? 🤔\n\n{opts}\n\n"
+                "Full name reply cheyyoo 😊"), "COURSE"
+    if _match.kind == "exact":
+        _course = _match.course
+        idx = _course.code
+        if True:
+            c_name = _course.title
             st["course"] = c_name
             st["stage"]  = "course_viewed"
             # ── Phase 6A: COURSE_VIEWED event (keyword path) ──
@@ -525,7 +577,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
             # Phase 1.1: if the message is a question, answer it conversationally.
             # Bare keywords (e.g. "pgdca", "dca") keep the deterministic fast-path.
             if _is_question(low):
-                _, card = ALL_COURSES[idx]
+                card = _course.body or _course.title
                 from app.context.assembler import ContextAssembler
                 context = ContextAssembler.assemble(
                     tenant_id=tenant_id,
@@ -536,10 +588,12 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                 ai = gemini_reply(raw, name, context=context, tenant_id=tenant_id)
                 if ai:
                     return ai, "COURSE"
-            return msg_course_detail(idx)
+            return msg_course_detail(idx, tenant_id)
 
-    if low in ALL_COURSES:
-        c_name = ALL_COURSES[low][0]
+    # Direct hit on a course code or a (possibly legacy) display name.
+    _direct = _cat.resolve_legacy_name(tenant_id, low)
+    if _direct is not None:
+        c_name = _direct.title
         st["course"] = c_name
         st["stage"]  = "course_viewed"
         threading.Thread(target=update_lead_status, args=(phone, f"Viewed: {c_name}", "", tenant_id)).start()
@@ -551,7 +605,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                         event_data=c_name, tenant_id=tenant_id),
             daemon=True,
         ).start()
-        return msg_course_detail(low)
+        return msg_course_detail(_direct.code, tenant_id)
 
     # Phase 1.3B: context assembly delegated to ContextAssembler.
     from app.context.assembler import ContextAssembler

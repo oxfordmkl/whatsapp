@@ -107,6 +107,26 @@ def _load(dotted, relpath):
 # Profile, so that module must be registered before constants loads.
 _load("app.bot.business_profile", "app/bot/business_profile.py")
 _load("app.bot.constants", "app/bot/constants.py")
+
+# Phase RC2.5.5c-3: the router, screens and the CTA layer read the tenant
+# catalogue through `from app.services import catalogue_service`. This file
+# registers a SYNTHETIC `app.services` package (a bare ModuleType, not a real
+# package), so that import fails unless the submodule is registered here --
+# the same reason ai_service, crm_service and log_service are injected above.
+#
+# The REAL module is loaded rather than a fake: it is pure (json/logging/re
+# only) and it already fails SAFE. `app.models` is a bare ModuleType here, so
+# its lazy `from app.models import TenantKnowledge` raises, catalogue_service
+# catches it and serves the platform default catalogue built from
+# app.bot.constants -- which is exactly the ALL_COURSES content this file's
+# assertions were written against. Stubbing a fake catalogue instead would
+# invent data and change what the tests actually exercise.
+_catalogue = _load("app.services.catalogue_service",
+                   "app/services/catalogue_service.py")
+# `from app.services import catalogue_service` resolves the attribute on the
+# parent first, so bind it there too rather than relying on the sys.modules
+# fallback alone.
+setattr(sys.modules["app.services"], "catalogue_service", _catalogue)
 _load("app.bot.objections", "app/bot/objections.py")
 # Phase 1.6.6: router imports the CTA handler layer.
 _load("app.bot.cta_handlers", "app/bot/cta_handlers.py")

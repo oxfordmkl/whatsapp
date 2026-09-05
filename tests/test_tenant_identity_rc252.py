@@ -170,35 +170,119 @@ class TestOxfordByteIdentical:
         assert AALIZA_PROMPT.count("{") == 0
         assert AALIZA_PROMPT.count("}") == 0
 
-    def test_oxford_composed_prompt_is_byte_identical(self, seeded):
-        """THE backward-compatibility proof for this phase."""
+    def test_oxford_education_body_is_byte_identical(self, seeded):
+        """INVERTED BY RC2.5.5c-3b (was:
+        test_oxford_composed_prompt_is_byte_identical).
+
+        WHY, PRECISELY -- and it is NOT the reason it first looks like.
+
+        RC2.5.5c-3 removed Oxford's ten hardcoded courses and prices from
+        AALIZA_PROMPT and re-added them as a COMPUTED catalogue block, so the
+        AI stops reciting one tenant's catalogue at every other tenant. That
+        block is built by catalogue_service, which fails SAFE: a tenant with
+        no course rows still gets A catalogue -- the platform default, built
+        from app.bot.constants.
+
+        The consequence is what breaks the old assertion. `catalogue_block` is
+        therefore NEVER empty, for any tenant, so
+        `has_authored_content = configured or knowledge_block or
+        catalogue_block` is now unconditionally true and EVERY prompt takes
+        the composed path. Oxford seeds no knowledge rows in this file, so it
+        is not "Oxford now has authored content" that changed this -- it is the
+        fail-safe default catalogue counting as content. See
+        test_the_composed_path_is_now_universal below, which pins that
+        directly so the reason cannot quietly drift.
+
+        The original guarantee is preserved exactly where it still holds: the
+        EDUCATION BODY is byte-identical, and is now a PREFIX rather than the
+        whole prompt. The decomposition is asserted byte-for-byte, so any
+        drift in the body, the block order, or the trailing safety rules
+        fails here.
+        """
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(OX)
-        assert out == AALIZA_PROMPT
+            catalogue = prompt_composer._catalogue_index_block(OX)
+        assert out.startswith(AALIZA_PROMPT)
+        assert out == (AALIZA_PROMPT + catalogue
+                       + prompt_composer._L1_SAFETY_REASSERTION)
+        # No identity block: Oxford still configures nothing.
+        assert "BUSINESS PROFILE (reference data" not in out
 
-    def test_no_tenant_id_composed_prompt_is_byte_identical(self, seeded):
+    def test_no_tenant_id_composed_prompt_keeps_the_same_body(self, seeded):
         with _APP.app_context():
-            assert prompt_composer.compose_system_prompt(None) == AALIZA_PROMPT
+            out = prompt_composer.compose_system_prompt(None)
+            catalogue = prompt_composer._catalogue_index_block(None)
+        assert out.startswith(AALIZA_PROMPT)
+        assert out == (AALIZA_PROMPT + catalogue
+                       + prompt_composer._L1_SAFETY_REASSERTION)
 
-    def test_unconfigured_tenant_is_byte_identical_despite_different_name(self, seeded):
-        """THE lazy-adoption guarantee. Tenant.name is free-text CRM data
-        (Oxford's own production row is not guaranteed to read "The Oxford
-        Computers"), so it must NOT leak into the prompt until the tenant
-        explicitly authors a business_profile section. Any unconfigured
-        tenant -- whatever its name -- keeps today's exact prompt."""
+    def test_the_composed_path_is_now_universal(self, seeded):
+        """Pins the CAUSE of the inversion above, not just its effect.
+
+        If a later phase makes the default catalogue stop counting as authored
+        content -- so an unconfigured tenant returns the bare body again --
+        this test fails and forces the decision to be explicit rather than
+        letting the four assertions above rot into always-true.
+        """
+        with _APP.app_context():
+            assert prompt_composer._catalogue_index_block(OX) != ""
+            assert prompt_composer._catalogue_index_block(None) != ""
+            # ...while genuinely tenant-authored content is still absent.
+            from app.services import knowledge_service
+            assert knowledge_service.render_knowledge_block(OX) == ""
+            assert ident.resolve_business_identity(OX).is_configured is False
+
+    def test_unconfigured_tenant_keeps_its_name_out_of_the_prompt(self, seeded):
+        """THE lazy-adoption guarantee, UNCHANGED IN INTENT. Tenant.name is
+        free-text CRM data (Oxford's own production row is not guaranteed to
+        read "The Oxford Computers"), so it must NOT leak into the prompt
+        until the tenant explicitly authors a business_profile section.
+
+        Only the byte-identity clause is relaxed, for the reason documented
+        above. The identity-leak clause -- the actual point of this test -- is
+        asserted unchanged, and tightened: the check is now for the identity
+        BLOCK's own header, because the phrase "BUSINESS PROFILE" also occurs
+        in the platform safety rules, where it is not a leak.
+        """
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(TE)
-        assert out == AALIZA_PROMPT
+        assert out.startswith(AALIZA_PROMPT)
         assert "Epsilon Learning" not in out
-        assert "PLATFORM RULES" not in out      # no authored content
-        assert "BUSINESS PROFILE" not in out
+        assert "BUSINESS PROFILE (reference data" not in out
+        # INVERTED: the safety re-assertion IS emitted now. It follows the
+        # catalogue block, which is reference data like any other, so this is
+        # the safety contract holding rather than loosening.
+        assert "PLATFORM RULES" in out
+        assert out.endswith(prompt_composer._L1_SAFETY_REASSERTION)
 
-    def test_oxford_still_reuses_the_module_level_config_object(self, seeded):
-        """Not merely equal text -- the SAME object, proving the unconfigured
-        path allocates nothing extra and RC2.5.1's fast path is intact."""
+    def test_no_tenant_id_still_reuses_the_module_level_config_object(self, seeded):
+        """INVERTED BY RC2.5.5c-3b (was:
+        test_oxford_still_reuses_the_module_level_config_object).
+
+        RC2.5.1's fast path returns the module-level config object without
+        composing anything. That path is keyed on a FALSY tenant_id and is
+        untouched -- so it is asserted here, unchanged, by object identity.
+
+        For a real tenant the composed instruction no longer equals
+        AALIZA_PROMPT, so ai_service builds a fresh config. That is the
+        documented `else` branch, not a regression; the test below pins that
+        the fresh config carries the same generation parameters.
+        """
+        with _APP.app_context():
+            _, cfg = ai_service._resolve_persona(None)
+        assert cfg is ai_service._DEFAULT_GENERATION_CONFIG
+
+    def test_oxfords_fresh_config_keeps_the_original_parameters(self, seeded):
+        """The half of the original assertion that still has to hold: only the
+        system_instruction may differ, never the generation parameters."""
+        default = ai_service._DEFAULT_GENERATION_CONFIG
         with _APP.app_context():
             _, cfg = ai_service._resolve_persona(OX)
-        assert cfg is ai_service._DEFAULT_GENERATION_CONFIG
+        assert cfg is not default
+        assert cfg.max_output_tokens == default.max_output_tokens
+        assert cfg.thinking_config.thinking_budget == \
+            default.thinking_config.thinking_budget
+        assert cfg.system_instruction.startswith(AALIZA_PROMPT)
 
     def test_oxford_identity_equals_business_profile_field_for_field(self, seeded):
         with _APP.app_context():
@@ -369,12 +453,17 @@ class TestFailOpen:
             i = ident.resolve_business_identity(TB)
             assert i.contact.phone == BUSINESS_PROFILE["phone"]
             assert i.is_configured is False
-            # A malformed blob means "unconfigured" -> byte-identical baseline,
-            # with no partial identity leaking into the prompt.
+            # A malformed blob means "unconfigured" -> the unconfigured
+            # baseline, with no partial identity leaking into the prompt.
+            # RC2.5.5c-3b: that baseline is now body + catalogue + safety
+            # rather than the bare body; the no-leak clause is what this test
+            # is actually for and is unchanged.
             out = prompt_composer.compose_system_prompt(TB)
-            assert out == AALIZA_PROMPT
+            assert out == (AALIZA_PROMPT
+                           + prompt_composer._catalogue_index_block(TB)
+                           + prompt_composer._L1_SAFETY_REASSERTION)
             assert "Beta Institute" not in out
-            assert "BUSINESS PROFILE" not in out
+            assert "BUSINESS PROFILE (reference data" not in out
 
     def test_db_error_falls_back_and_does_not_raise(self, seeded, monkeypatch):
         class _Boom:
@@ -392,7 +481,13 @@ class TestFailOpen:
             # still reported True and made the composer emit a tenant
             # identity block built entirely from Oxford's defaults.
             assert i.is_configured is False
-            assert prompt_composer.compose_system_prompt(TB) == AALIZA_PROMPT
+            out = prompt_composer.compose_system_prompt(TB)
+            # RC2.5.5c-3b: the identity lookup is what failed here, so the
+            # identity block must be absent -- the catalogue block is resolved
+            # independently and legitimately survives a Tenant-table outage.
+            assert out.startswith(AALIZA_PROMPT)
+            assert "BUSINESS PROFILE (reference data" not in out
+            assert "Beta Institute" not in out
 
     def test_composer_failure_falls_back_to_baseline(self, seeded, monkeypatch):
         def _boom(*a, **k):

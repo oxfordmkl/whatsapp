@@ -119,26 +119,98 @@ def seeded():
 
 class TestDualReadFallback:
 
-    def test_oxford_prompt_is_byte_identical(self, seeded):
-        with _APP.app_context():
-            assert prompt_composer.compose_system_prompt(OX) == AALIZA_PROMPT
+    def test_oxford_prompt_body_is_byte_identical(self, seeded):
+        """INVERTED BY RC2.5.5c-3b (was: test_oxford_prompt_is_byte_identical).
 
-    def test_no_tenant_id_prompt_is_byte_identical(self, seeded):
+        The knowledge guarantee this class exists for is UNCHANGED and is
+        asserted below: a tenant with no knowledge rows contributes no
+        knowledge block. What changed is elsewhere in the prompt --
+        RC2.5.5c-3 appends a computed catalogue block, and catalogue_service
+        fails safe, so that block is non-empty even here. The education body
+        is still byte-identical and is now a prefix.
+        """
         with _APP.app_context():
-            assert prompt_composer.compose_system_prompt(None) == AALIZA_PROMPT
+            out = prompt_composer.compose_system_prompt(OX)
+            catalogue = prompt_composer._catalogue_index_block(OX)
+            assert ks.render_knowledge_block(OX) == ""      # the actual claim
+        assert out.startswith(AALIZA_PROMPT)
+        assert out == (AALIZA_PROMPT + catalogue
+                       + prompt_composer._L1_SAFETY_REASSERTION)
+
+    def test_no_tenant_id_prompt_body_is_byte_identical(self, seeded):
+        with _APP.app_context():
+            out = prompt_composer.compose_system_prompt(None)
+            catalogue = prompt_composer._catalogue_index_block(None)
+            assert ks.render_knowledge_block(None) == ""
+        assert out.startswith(AALIZA_PROMPT)
+        assert out == (AALIZA_PROMPT + catalogue
+                       + prompt_composer._L1_SAFETY_REASSERTION)
 
     def test_tenant_with_no_knowledge_gets_empty_block(self, seeded):
         with _APP.app_context():
             assert ks.render_knowledge_block(OX) == ""
 
-    def test_hardcoded_catalog_still_serves_oxford(self, seeded):
-        """The fallback is not a second code path -- it is the existing L4
-        body, which still carries the course list and fee table."""
+    def test_catalog_still_serves_a_tenant_with_no_rows(self, seeded):
+        """RE-POINTED BY RC2.5.5c-3b (was:
+        test_hardcoded_catalog_still_serves_oxford).
+
+        Its original claim -- "the fallback is the existing L4 body, which
+        still carries the course list and fee table" -- is no longer true:
+        RC2.5.5c-3 removed that list from AALIZA_PROMPT and replaced it with
+        a directive to use only the supplied catalogue. The test kept passing
+        only because the same course names and figures now arrive from the
+        computed block instead, which is exactly the kind of accident this
+        re-point removes.
+
+        The guarantee worth keeping is that a tenant with no rows is still
+        given A catalogue rather than none, so the AI is not left blind. It is
+        asserted against the block that actually produces it.
+
+        NOTE the figures below are the PLATFORM DEFAULT catalogue, derived from
+        app.bot.constants -- deliberately NOT the RC2.5.5c-2 authored prices.
+        This is the fail-safe path for a tenant with nothing of its own, not a
+        reappearance of the retired constants on an authored path; the c-2
+        prices are pinned for a seeded tenant in
+        test_authored_catalogue_replaces_the_default below.
+        """
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(OX)
-        assert "COURSES & FEES:" in out
-        assert "PGDCA" in out
-        assert "₹15,999" in out
+            catalogue = prompt_composer._catalogue_index_block(OX)
+        assert catalogue != "" and catalogue in out
+        assert "COURSE CATALOGUE" in catalogue
+        assert "PGDCA" in catalogue
+        assert "₹15,999" in catalogue          # platform default, not c-2 data
+        # The prompt no longer recites a catalogue of its own.
+        assert "₹15,999" not in AALIZA_PROMPT
+        assert "Use ONLY the course catalogue supplied" in out
+        # A payment URL must never reach the prompt (RC2.5.5b-1 containment).
+        assert "rzp.io" not in out
+
+    def test_authored_catalogue_replaces_the_default(self, seeded):
+        """The other half: once a tenant authors an RC2.5.5c-2-shaped course
+        row, its OWN catalogue is what reaches the prompt and the platform
+        default -- with the retired Oxford figures -- disappears entirely."""
+        with _APP.app_context():
+            db.session.add(_k(TA, ks.KIND_COURSE, "Alpha Data Science", "Body.",
+                              {"duration": "9 Months",
+                               "commercial": {"code": "ALPHA-DS",
+                                              "normal_total_fee": 42000,
+                                              "payment_url": "https://rzp.io/x"}},
+                              order=9))
+            db.session.commit()
+            catalogue = prompt_composer._catalogue_index_block(TA)
+            out = prompt_composer.compose_system_prompt(TA)
+        assert "ALPHA-DS" in catalogue
+        # NOTE the raw integer, not "₹42,000": catalogue_index() interpolates
+        # normal_total_fee directly instead of going through format_money(),
+        # so an authored row renders "Total fee 42000" while the platform
+        # default -- whose fees are pre-formatted strings -- renders
+        # "Total fee ₹15,999". Pinned as observed rather than as preferred;
+        # RC2.5.5c-3b is not authorised to change app/ code.
+        assert "Total fee 42000" in catalogue
+        assert "PGDCA" not in catalogue and "₹15,999" not in catalogue
+        # commercial.payment_url exists on the row but must not reach the AI.
+        assert "rzp.io" not in out
 
 
 # ═══ ISOLATION — the most important class in this file ═════════════════════
@@ -315,7 +387,16 @@ class TestFailOpen:
         monkeypatch.setattr(ks, "_base_query", _boom)
         with _APP.app_context():
             assert ks.fetch_knowledge(TA) == ()
-            assert prompt_composer.compose_system_prompt(TA) == AALIZA_PROMPT
+            out = prompt_composer.compose_system_prompt(TA)
+            # RC2.5.5c-3b: the KNOWLEDGE block is what must vanish on a
+            # knowledge outage -- that is this test's claim, and it holds.
+            # The catalogue block resolves independently and legitimately
+            # survives, so the assertion is on the body plus the absence of
+            # any knowledge content rather than on whole-prompt equality.
+            assert out.startswith(AALIZA_PROMPT)
+            assert ks.render_knowledge_block(TA) == ""
+            assert "Alpha Python Bootcamp" not in out
+            assert "ALPHA-FEE-9999" not in out
 
     def test_malformed_attributes_json_is_survivable(self, seeded):
         with _APP.app_context():

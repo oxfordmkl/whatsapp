@@ -1,53 +1,70 @@
-"""Phase RC2.5.5b-2: flip the four payment emission paths to the resolver.
+"""Phase RC2.5.5b-2, tripwires INVERTED by RC2.5.5c-3a.
 
-WHAT CHANGED, PRECISELY
-------------------------
+WHAT b-2 PINNED, AND WHY IT NO LONGER HOLDS
+--------------------------------------------
+b-2 flipped ONE thing and pinned everything else:
+
     URL                        -> resolve_payment_url(tenant_id, code)
     code/full_name/price/dur   -> COURSE_PAYMENT_LINKS / OFFER_MENU, unchanged
 
-The constants remain the CATALOGUE. They still supply the display copy and,
-for the two name-keyed paths, the course-name -> code index. Only the URL
-column (tuple index [4]) stops being read.
-
-WHY NOT SOURCE THE PRICE FROM TENANTKNOWLEDGE TOO
---------------------------------------------------
-Because it would silently re-price Oxford. The b-2 audit compared the two
-sources on the four monetised courses:
-
-    PGDCA   constant Rs.15,999   TenantKnowledge 19540   (+22%)
-    AIDM    constant Rs.19,999   TenantKnowledge 30900   (+55%)
-    DCA     constant Rs. 6,400   TenantKnowledge  8350   (+30%)
-    CWPDE   constant Rs. 4,800   TenantKnowledge  6250   (+30%)
-
-Those TenantKnowledge figures are the RC2.5.3a-K "FORMULA A" Rutronix
-REGULATORY amounts (registration + net tuition to ATC), stored deliberately
-as regulatory facts. They were never Oxford's customer-facing selling price.
+That was right for b-2. Sourcing the price from TenantKnowledge *at that time*
+would have silently re-priced Oxford by 22-55%, because the only figures then
+in the rows were the RC2.5.3a-K "FORMULA A" Rutronix REGULATORY amounts
+(registration + net tuition to ATC) -- never a customer-facing selling price.
 What a business charges is a commercial decision, not something a refactor
-gets to change on the way past -- so this phase moves the URL and nothing
-else. TestOxfordPriceParity below pins that.
+gets to change on the way past.
 
-FAIL-CLOSED EVERYWHERE
------------------------
+RC2.5.5c-2 then AUTHORED the real tenant catalogue: customer-facing titles,
+durations and `commercial.normal_total_fee` per course. RC2.5.5c-3 made the
+deterministic runtime read it. So the premise behind b-2's parity pins is gone
+-- the constants are no longer the catalogue, and the prices they carry are
+obsolete:
+
+    code    obsolete constant   current tenant catalogue
+    PGDCA   Rs.15,999           Rs.19,540
+    AIDM    Rs.19,999           Rs.30,900
+    DCA     Rs. 6,400           Rs. 8,350
+    CWPDE   Rs. 4,800           Rs. 6,250
+
+Those figures are no longer "the regulatory total wearing a price tag": c-2
+authored them AS the customer-facing normal price. The 26 failures this file
+produced against c-3 were therefore obsolete EXPECTATIONS, not application
+regressions.
+
+WHAT THIS FILE PINS NOW
+------------------------
+Every assertion below was converted, not deleted. Same paths, same shapes,
+same count of guarantees -- the expected SOURCE and VALUES moved to the c-3
+contract:
+
+    identity/title/price/dur   -> catalogue_service -> CourseRecord
+    URL                        -> resolve_payment_url(tenant_id, code)   (as before)
+
+The two boundaries stay independent, and the URL boundary is byte-for-byte the
+one b-2 built: the four payable courses must still emit exactly the URLs in
+COURSE_PAYMENT_LINKS, which this file still reads -- as a fixture INDEX, never
+as display copy.
+
+FAIL-CLOSED EVERYWHERE (unchanged from b-2)
+--------------------------------------------
 No resolver result means NO LINK: no tenant, no row, inactive, blank URL,
 ambiguous match, DB error, foreign tenant. Each path falls through to the
-branch it already had for a course without a link -- the counselor handoff,
-or the offer menu -- and critically does NOT write st["stage"] =
-"payment_pending", so no conversation waits for a transaction id against a
-link that was never sent.
+branch it already had -- the counselor handoff, or the offer menu -- and
+critically does NOT write st["stage"] = "payment_pending", so no conversation
+waits for a transaction id against a link that was never sent.
 
-TENANT #2 SCOPE, STATED HONESTLY
----------------------------------
-st["course"] is still populated from Oxford's hardcoded ALL_COURSES catalogue,
-so a second tenant's customer browses Oxford's course names, which match none
-of their own codes. They therefore always reach the counselor branch. That is
-SAFE -- no money can be misrouted, which is what this phase is for -- but it
-is not yet FUNCTIONAL. De-Oxfordising the catalogue is RC2.5.5c.
+TENANT #2 (b-2 said "safe but not yet functional" -- c-3 finished it)
+----------------------------------------------------------------------
+st["course"] no longer comes from Oxford's hardcoded ALL_COURSES; the router
+writes the tenant's own catalogue title. A second tenant's customer now
+browses their OWN courses. Isolation is unchanged and still pinned here.
 
 Import isolation follows test_platform_security_14c.py.
 """
 import ast
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -74,6 +91,7 @@ from app.extensions import db                                           # noqa: 
 from app.models import Tenant, TenantKnowledge                          # noqa: E402
 from app.bot import cta_handlers as cta                                 # noqa: E402
 from app.bot import offer_handlers as oh                                # noqa: E402
+from app.services import catalogue_service as cat                       # noqa: E402
 from app.bot.constants import COURSE_PAYMENT_LINKS, OFFER_MENU          # noqa: E402
 
 OX = "t-ox"
@@ -83,8 +101,32 @@ URL_B = "https://pay.example.com/b/pgdca"
 _APP = create_app()
 _APP.config["TESTING"] = True
 
-# course name -> (code, live url), straight from the catalogue.
-OXFORD = {name: (e[0], e[4]) for name, e in COURSE_PAYMENT_LINKS.items()}
+# ── the constants, used ONLY as fixture indexes ─────────────────────────────
+#
+# Reading them here is not a contract violation, it is the proof: this file
+# derives the EXPECTED URLS from the same constant b-2 used, so "the four
+# payable courses still emit the same links" is asserted against the original
+# source of truth rather than against a number retyped by hand. Their title,
+# price and duration columns are read only to assert they are ABSENT from
+# customer-facing output.
+
+# stored course NAME a pre-c-3 conversation still holds -> stable code.
+LEGACY_NAME = {name: e[0] for name, e in COURSE_PAYMENT_LINKS.items()}
+# code -> live payment URL. Unchanged by c-3; that is the point.
+URL = {e[0]: e[4] for e in COURSE_PAYMENT_LINKS.values()}
+# code -> the obsolete display copy c-3 retired.
+OBSOLETE_TITLE = {e[0]: e[1] for e in COURSE_PAYMENT_LINKS.values()}
+OBSOLETE_PRICE = {e[0]: e[2] for e in COURSE_PAYMENT_LINKS.values()}
+
+# ── the RC2.5.5c-2 tenant catalogue this suite now seeds ────────────────────
+# code -> (title, duration, normal_total_fee, rendered price)
+CATALOGUE = {
+    "PGDCA": ("PGDCA – Computer Applications", "12 Months", 19540, "₹19,540"),
+    "AIDM": ("AIDM – Digital Marketing", "6 Months", 30900, "₹30,900"),
+    "DCA": ("DCA Fast Track – Computer Applications", "6 Months", 8350, "₹8,350"),
+    "CWPDE": ("CWPDE – Word Processing & Data Entry", "6 Months", 6250, "₹6,250"),
+}
+CODES = sorted(CATALOGUE)
 
 
 def _src(rel):
@@ -93,6 +135,13 @@ def _src(rel):
 
 
 def krow(tenant_id, code, url, *, title=None, active=True, kind="course"):
+    """A MINIMAL row: a code and a payment URL, nothing else.
+
+    Kept exactly as b-2 wrote it. The fail-closed and isolation cases below
+    are about URL resolution, and a row with no catalogue content is the
+    sharpest way to test that -- it cannot accidentally satisfy a display
+    assertion.
+    """
     commercial = {"code": code}
     if url is not None:
         commercial["payment_url"] = url
@@ -102,10 +151,27 @@ def krow(tenant_id, code, url, *, title=None, active=True, kind="course"):
                            is_active=active, sort_order=0)
 
 
+def catrow(tenant_id, code, url, *, fee=None, sort=0):
+    """A full RC2.5.5c-2-shaped catalogue row: the customer-facing title,
+    duration and normal_total_fee alongside the payment URL."""
+    title, duration, normal_fee, _money = CATALOGUE[code]
+    return TenantKnowledge(
+        tenant_id=tenant_id, kind="course", title=title,
+        body=f"About {title}.",
+        attributes=json.dumps({
+            "duration": duration,
+            "commercial": {"code": code, "currency": "INR",
+                           "normal_total_fee": fee if fee is not None else normal_fee,
+                           "emi_available": True, "offers": [],
+                           "payment_url": url},
+        }),
+        is_active=True, sort_order=sort)
+
+
 @pytest.fixture()
 def seeded():
-    """Oxford's four monetised courses carry exactly the catalogue's URLs, so
-    the flip is expected to be output-invisible for Oxford."""
+    """Oxford's four monetised courses, as RC2.5.5c-2 authored them: the
+    catalogue content AND the same payment URLs b-2 pinned."""
     with _APP.app_context():
         db.session.remove()
         db.drop_all()
@@ -114,8 +180,8 @@ def seeded():
                               status="ACTIVE", billing_exempt=True))
         db.session.add(Tenant(id=B, name="Beta", slug="beta",
                               status="ACTIVE", billing_exempt=True))
-        for name, (code, url) in OXFORD.items():
-            db.session.add(krow(OX, code, url, title=name))
+        for i, code in enumerate(CODES, start=1):
+            db.session.add(catrow(OX, code, URL[code], sort=i))
         db.session.commit()
     yield
     with _APP.app_context():
@@ -126,84 +192,168 @@ def state(course=""):
     return {"course": course, "stage": "start", "offer_course": ""}
 
 
-# ── Oxford parity: the central proof ────────────────────────────────────────
+def expected(code):
+    """The payment CTA text the c-3 contract requires, assembled from the
+    tenant catalogue plus the independently-resolved URL."""
+    title, duration, _fee, money = CATALOGUE[code]
+    return cta.payment_link_reply(code, title, money, duration, URL[code])
 
-class TestOxfordByteIdenticalOutput:
-    """For every monetised course, each path must produce EXACTLY the text it
-    produced before the flip. The pre-flip text is reconstructed here from the
-    catalogue -- the same five values the old code unpacked."""
 
-    def expected(self, name):
-        code, full, price, dur, link = COURSE_PAYMENT_LINKS[name]
-        return cta.payment_link_reply(code, full, price, dur, link)
+def legacy_of(code):
+    """The pre-c-3 display name still sitting in persisted ConversationState."""
+    return next(n for n, c in LEGACY_NAME.items() if c == code)
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_enroll_reply_output_unchanged(self, seeded, name):
+
+# ── Oxford output parity: the central proof, re-pointed at the catalogue ────
+
+class TestOxfordPaymentOutputIsCatalogueSourced:
+    """WAS TestOxfordByteIdenticalOutput.
+
+    b-2 asserted each path reproduced the CONSTANT's text byte-for-byte. The
+    assertion is still byte-for-byte -- the strongest form, deliberately kept
+    -- but `expected()` is now assembled from the tenant catalogue. Anything
+    that reads a display value from the constants again fails here.
+    """
+
+    @pytest.mark.parametrize("code", CODES)
+    def test_enroll_reply_output_is_catalogue_sourced(self, seeded, code):
+        """A conversation persisted BEFORE c-3 still holds the old name."""
+        name = legacy_of(code)
         with _APP.app_context():
             got = cta.enroll_reply("Alice", name, state(name), OX)
-        assert got == self.expected(name)
+        assert got == expected(code)
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_handle_pay_intent_output_unchanged(self, seeded, name):
+    @pytest.mark.parametrize("code", CODES)
+    def test_enroll_reply_output_from_the_current_catalogue_title(self, seeded, code):
+        """D1: the migrated router writes the CATALOGUE title into state. That
+        title matches no COURSE_PAYMENT_LINKS key, which is why the pre-fix
+        code issued no link at all on this path."""
+        title = CATALOGUE[code][0]
+        with _APP.app_context():
+            got = cta.enroll_reply("Alice", title, state(title), OX)
+        assert got == expected(code)
+
+    @pytest.mark.parametrize("code", CODES)
+    def test_handle_pay_intent_output_is_catalogue_sourced(self, seeded, code):
+        name = legacy_of(code)
         with _APP.app_context():
             got = oh.handle_pay_intent(state(name), OX)
-        assert got == self.expected(name)
+        assert got == expected(code)
 
     @pytest.mark.parametrize("digit", sorted(OFFER_MENU))
-    def test_handle_offer_output_unchanged(self, seeded, digit):
-        code, full, price, dur, link = OFFER_MENU[digit]
+    def test_handle_offer_output_is_catalogue_sourced(self, seeded, digit):
+        code = OFFER_MENU[digit][0]
         with _APP.app_context():
             got = oh.handle_offer(code, state(), OX)
-        assert got == cta.payment_link_reply(code, full, price, dur, link)
+        assert got == expected(code)
 
     @pytest.mark.parametrize("digit", sorted(OFFER_MENU))
-    def test_handle_offer_number_output_unchanged(self, seeded, digit):
-        code, full, price, dur, link = OFFER_MENU[digit]
+    def test_handle_offer_number_output_is_catalogue_sourced(self, seeded, digit):
+        code = OFFER_MENU[digit][0]
         with _APP.app_context():
             got = oh.handle_offer_number(digit, state(), OX)
-        assert got == cta.payment_link_reply(code, full, price, dur, link)
+        assert got == expected(code)
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_the_live_url_is_actually_present(self, seeded, name):
-        """Guards against parity passing because both sides are equally
-        broken -- the real Razorpay URL must appear in the emitted text."""
-        _code, url = OXFORD[name]
+    @pytest.mark.parametrize("code", CODES)
+    def test_the_live_url_is_actually_present(self, seeded, code):
+        """UNCHANGED FROM b-2. Guards against parity passing because both
+        sides are equally broken -- the real Razorpay URL must appear."""
+        name = legacy_of(code)
         with _APP.app_context():
             text, _ = cta.enroll_reply("Alice", name, state(name), OX)
-        assert url in text
+        assert URL[code] in text
+
+    @pytest.mark.parametrize("code", CODES)
+    def test_the_url_is_the_same_one_b2_pinned(self, seeded, code):
+        """c-3 moved the display copy and NOTHING about payment routing: each
+        payable course must still reach exactly the URL it always did."""
+        assert URL[code] == COURSE_PAYMENT_LINKS[legacy_of(code)][4]
+        with _APP.app_context():
+            text, _ = oh.handle_offer(code, state(), OX)
+        assert URL[code] in text
 
 
-class TestOxfordPriceParity:
-    """The audit's blocking finding, pinned. Sourcing price from
-    TenantKnowledge would have changed what Oxford charges by 22-55%."""
+class TestOxfordPriceIsTheTenantCatalogues:
+    """WAS TestOxfordPriceParity.
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_price_comes_from_the_catalogue(self, seeded, name):
-        price = COURSE_PAYMENT_LINKS[name][2]
+    b-2's blocking finding was "do not let TenantKnowledge re-price Oxford".
+    RC2.5.5c-2 authored deliberate customer-facing prices into those rows and
+    c-3 made them the source, so the guarantee INVERTS: the emitted price must
+    be the tenant catalogue's, and the constant's must not appear.
+    """
+
+    @pytest.mark.parametrize("code", CODES)
+    def test_price_comes_from_the_tenant_catalogue(self, seeded, code):
+        money = CATALOGUE[code][3]
+        name = legacy_of(code)
         with _APP.app_context():
             text, _ = cta.enroll_reply("Alice", name, state(name), OX)
-        assert f"Fee: *{price}*" in text
+        assert f"Fee: *{money}*" in text
+        assert OBSOLETE_PRICE[code] not in text
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_display_fields_all_come_from_the_catalogue(self, seeded, name):
-        code, full, price, dur, _ = COURSE_PAYMENT_LINKS[name]
+    @pytest.mark.parametrize("code", CODES)
+    def test_display_fields_all_come_from_the_tenant_catalogue(self, seeded, code):
+        title, duration, _fee, money = CATALOGUE[code]
+        name = legacy_of(code)
         with _APP.app_context():
             text, _ = cta.enroll_reply("Alice", name, state(name), OX)
-        assert code in text and full in text and price in text and dur in text
+        assert code in text and title in text and money in text and duration in text
+        assert OBSOLETE_TITLE[code] not in text
+        assert OBSOLETE_PRICE[code] not in text
 
-    def test_a_different_tenant_price_never_leaks_into_oxfords_message(self, seeded):
-        """Even with a TenantKnowledge row carrying a different price, the
-        emitted price is the catalogue's."""
+    @pytest.mark.parametrize("code", CODES)
+    def test_the_rendered_price_is_the_catalogues_own_formatting(self, seeded, code):
+        """Pins the literal customer-visible string against the formatter, so
+        a change to either side has to be deliberate."""
         with _APP.app_context():
-            row = TenantKnowledge.query.filter_by(tenant_id=OX,
-                                                  title="PGDCA").first()
+            record = cat.get_course(OX, code)
+            rendered = cat.format_money(record.normal_total_fee)
+        assert rendered == CATALOGUE[code][3]
+        assert record.normal_total_fee == CATALOGUE[code][2]
+
+    def test_the_tenant_row_is_the_price_source(self, seeded):
+        """INVERTED FROM test_a_different_tenant_price_never_leaks_into_oxfords_message.
+
+        b-2 pinned the opposite: a TenantKnowledge price had to be IGNORED.
+        c-3 makes the row authoritative, so editing it must move the quoted
+        price. Written as an edit rather than a constant so it fails if the
+        CTA ever goes back to reading a hardcoded table.
+        """
+        with _APP.app_context():
+            row = TenantKnowledge.query.filter_by(
+                tenant_id=OX, title=CATALOGUE["PGDCA"][0]).first()
             attrs = json.loads(row.attributes)
-            attrs["commercial"]["base_price"] = 19540
+            attrs["commercial"]["normal_total_fee"] = 21000
             row.attributes = json.dumps(attrs)
             db.session.commit()
             text, _ = cta.enroll_reply("Alice", "PGDCA", state("PGDCA"), OX)
-        assert "19540" not in text
-        assert "₹15,999" in text
+        assert "₹21,000" in text
+        assert CATALOGUE["PGDCA"][3] not in text
+        assert OBSOLETE_PRICE["PGDCA"] not in text
+
+    def test_another_tenants_price_never_leaks_into_oxfords_message(self, seeded):
+        """The isolation half of the original test, kept: a foreign row for
+        the same code must not change what Oxford quotes."""
+        with _APP.app_context():
+            db.session.add(catrow(B, "PGDCA", URL_B, fee=999))
+            db.session.commit()
+            text, _ = cta.enroll_reply("Alice", "PGDCA", state("PGDCA"), OX)
+        assert CATALOGUE["PGDCA"][3] in text
+        assert "₹999" not in text and URL_B not in text
+
+    @pytest.mark.parametrize("code", CODES)
+    def test_no_obsolete_price_reaches_any_payment_path(self, seeded, code):
+        """One assertion across all four emission paths, so a regression in
+        any single one of them is caught here too."""
+        name = legacy_of(code)
+        with _APP.app_context():
+            texts = [cta.enroll_reply("Alice", name, state(name), OX)[0],
+                     oh.handle_pay_intent(state(name), OX)[0],
+                     oh.handle_offer(code, state(), OX)[0],
+                     oh.offer_menu_reply(OX)[0]]
+        for text in texts:
+            assert OBSOLETE_PRICE[code] not in text
+            assert CATALOGUE[code][3] in text
 
 
 # ── state transitions ───────────────────────────────────────────────────────
@@ -228,6 +378,16 @@ class TestStateTransitionsUnchanged:
             oh.handle_offer("AIDM", st, OX)
         assert st["stage"] == "payment_pending" and st["offer_course"] == "AIDM"
 
+    @pytest.mark.parametrize("code", CODES)
+    def test_offer_course_is_the_code_never_the_display_name(self, seeded, code):
+        """The state key downstream CRM writes read. It must stay the stable
+        code even though the title the customer sees has changed."""
+        title = CATALOGUE[code][0]
+        st = state(title)
+        with _APP.app_context():
+            cta.enroll_reply("Alice", title, st, OX)
+        assert st["offer_course"] == code
+
     def test_no_payment_pending_without_a_link(self, seeded):
         """THE state-safety property: a conversation must never wait for a
         transaction id against a link that was never sent."""
@@ -244,35 +404,69 @@ class TestStateTransitionsUnchanged:
         assert st["stage"] != "payment_pending" and st["offer_course"] == ""
 
     def test_pay_intent_falls_through_to_the_offer_menu(self, seeded):
-        """offer_menu_reply() interpolates a RANDOM urgency line, so two calls
-        are not comparable; assert the stable parts instead."""
+        """INVERTED. b-2 asserted the fall-through menu ended with "reply with
+        a course number" -- which it could always do, because every tenant was
+        answered with Oxford's four courses at Oxford's prices. That IS the
+        defect c-3 removed: tenant B has no course in OFFER_MENU, so the menu
+        now says so instead of asking for a number under an empty list.
+
+        offer_menu_reply() interpolates a RANDOM urgency line, so two calls
+        are not comparable; assert the stable parts instead.
+        """
         st = state("PGDCA")
         with _APP.app_context():
             text, preset = oh.handle_pay_intent(st, B)
         assert st["stage"] == "offer_menu"
         assert preset == "OFFER"
         assert "*Special Offer" in text
-        assert "Seat reserve cheyyan course number reply cheyyoo." in text
         assert "rzp.io" not in text
+        # No Oxford course, price or obsolete price reaches another tenant.
+        for code in CODES:
+            assert CATALOGUE[code][0] not in text
+            assert CATALOGUE[code][3] not in text
+            assert OBSOLETE_PRICE[code] not in text
+        # Not a dead end: it points at the real catalogue instead.
+        assert "COURSES" in text
+        assert "course number reply cheyyoo" not in text
+
+    def test_oxford_offer_menu_still_asks_for_a_number(self, seeded):
+        """The other half of the same branch: a tenant that DOES have the
+        offered courses keeps the original affordance and copy."""
+        with _APP.app_context():
+            text, preset = oh.offer_menu_reply(OX)
+        assert preset == "OFFER"
+        assert "Seat reserve cheyyan course number reply cheyyoo." in text
+        for code in CODES:
+            assert CATALOGUE[code][0] in text and CATALOGUE[code][3] in text
+            assert OBSOLETE_PRICE[code] not in text
 
 
 # ── isolation ───────────────────────────────────────────────────────────────
 
 class TestForeignTenantCannotReceiveOxfordUrls:
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_enroll_reply_gives_tenant_b_no_oxford_url(self, seeded, name):
-        _code, url = OXFORD[name]
+    @pytest.mark.parametrize("code", CODES)
+    def test_enroll_reply_gives_tenant_b_no_oxford_url(self, seeded, code):
+        name = legacy_of(code)
         with _APP.app_context():
             text, _ = cta.enroll_reply("Bob", name, state(name), B)
-        assert url not in text and "rzp.io" not in text
+        assert URL[code] not in text and "rzp.io" not in text
 
-    @pytest.mark.parametrize("name", sorted(COURSE_PAYMENT_LINKS))
-    def test_pay_intent_gives_tenant_b_no_oxford_url(self, seeded, name):
-        _code, url = OXFORD[name]
+    @pytest.mark.parametrize("code", CODES)
+    def test_enroll_reply_gives_tenant_b_no_oxford_price(self, seeded, code):
+        """c-3 addition: the price is now tenant data too, so it needs the
+        same isolation guarantee the URL has always had."""
+        name = legacy_of(code)
+        with _APP.app_context():
+            text, _ = cta.enroll_reply("Bob", name, state(name), B)
+        assert CATALOGUE[code][3] not in text
+
+    @pytest.mark.parametrize("code", CODES)
+    def test_pay_intent_gives_tenant_b_no_oxford_url(self, seeded, code):
+        name = legacy_of(code)
         with _APP.app_context():
             text, _ = oh.handle_pay_intent(state(name), B)
-        assert url not in text and "rzp.io" not in text
+        assert URL[code] not in text and "rzp.io" not in text
 
     @pytest.mark.parametrize("digit", sorted(OFFER_MENU))
     def test_offer_paths_give_tenant_b_nothing(self, seeded, digit):
@@ -287,14 +481,24 @@ class TestForeignTenantCannotReceiveOxfordUrls:
             db.session.commit()
             text, _ = cta.enroll_reply("Bob", "PGDCA", state("PGDCA"), B)
         assert URL_B in text
-        assert OXFORD["PGDCA"][1] not in text
+        assert URL["PGDCA"] not in text
+
+    def test_tenant_b_with_its_own_catalogue_gets_only_that(self, seeded):
+        """c-3 addition: B's own title and price, never Oxford's."""
+        with _APP.app_context():
+            db.session.add(catrow(B, "PGDCA", URL_B, fee=1234))
+            db.session.commit()
+            text, _ = cta.enroll_reply("Bob", "PGDCA", state("PGDCA"), B)
+        assert URL_B in text and "₹1,234" in text
+        assert URL["PGDCA"] not in text and CATALOGUE["PGDCA"][3] not in text
 
     def test_oxford_is_unaffected_by_tenant_b_rows(self, seeded):
         with _APP.app_context():
             db.session.add(krow(B, "PGDCA", URL_B, title="B PGDCA"))
             db.session.commit()
             text, _ = cta.enroll_reply("Alice", "PGDCA", state("PGDCA"), OX)
-        assert OXFORD["PGDCA"][1] in text and URL_B not in text
+        assert URL["PGDCA"] in text and URL_B not in text
+        assert CATALOGUE["PGDCA"][3] in text
 
 
 class TestTenantIdIsRequired:
@@ -304,6 +508,23 @@ class TestTenantIdIsRequired:
         with _APP.app_context():
             text, _ = cta.enroll_reply("Alice", "PGDCA", state("PGDCA"), bad)
         assert "rzp.io" not in text
+
+    @pytest.mark.parametrize("bad", [None, "", 0, False])
+    def test_no_tenant_means_no_payment_cta_at_all(self, seeded, bad):
+        """c-3 addition, and the reason the previous test is not enough.
+
+        Catalogue content fails SAFE: a falsy tenant degrades to the platform
+        default catalogue, which is built from app.bot.constants and therefore
+        still carries the obsolete prices. That is allowed -- it is a browse
+        fallback -- but it must never become a payment CTA. No link, no
+        payment_pending, no "Seat Reserve" screen.
+        """
+        st = state("PGDCA")
+        with _APP.app_context():
+            text, preset = cta.enroll_reply("Alice", "PGDCA", st, bad)
+        assert "Seat Reserve Cheyyam" not in text
+        assert st["stage"] != "payment_pending" and st["offer_course"] == ""
+        assert preset == "COURSE"
 
     def test_default_argument_does_not_leak_a_link(self, seeded):
         """Signatures default tenant_id to None for call-site compatibility;
@@ -362,18 +583,44 @@ class TestFailsClosedToTheCounselorBranch:
         assert self._counselor("PGDCA") in text
         assert "rzp.io" not in text
 
-    def test_link_less_oxford_course_is_unchanged(self, seeded):
-        """One of the six catalogue courses that never had a link."""
+    def test_link_less_course_reaches_the_counselor_branch(self, seeded):
+        """A catalogue course the tenant never authored a payment URL for.
+        Catalogue resolution succeeds; payment resolution fails closed, and
+        the CTA must not fall back to the constant's URL for that code."""
+        st = state("PGDCA")
+        with _APP.app_context():
+            row = TenantKnowledge.query.filter_by(
+                tenant_id=OX, title=CATALOGUE["PGDCA"][0]).one()
+            attrs = json.loads(row.attributes)
+            attrs["commercial"].pop("payment_url")
+            row.attributes = json.dumps(attrs)
+            db.session.commit()
+            assert cat.get_course(OX, "PGDCA") is not None   # still catalogued
+            text, preset = cta.enroll_reply("Alice", "PGDCA", st, OX)
+        assert "rzp.io" not in text and preset == "COURSE"
+        assert st["stage"] != "payment_pending"
+
+    def test_unknown_course_name_reaches_the_counselor_branch(self, seeded):
+        """WAS test_link_less_oxford_course_is_unchanged. A name that resolves
+        to no course at all must never be guessed into one."""
         with _APP.app_context():
             text, preset = cta.enroll_reply("Alice", "Python Programming",
                                             state("Python Programming"), OX)
         assert self._counselor("Python Programming") in text
-        assert preset == "COURSE"
+        assert preset == "COURSE" and "rzp.io" not in text
 
     def test_no_course_selected_is_unchanged(self, seeded):
         with _APP.app_context():
             text, preset = cta.enroll_reply("Alice", "", state(), OX)
         assert preset == "GOAL" and "course select cheyyoo" in text
+
+    def test_no_course_selected_lists_no_obsolete_price(self, seeded):
+        """c-3 addition: that branch used to hardcode PGDCA at Rs.15,999 and
+        DCA Fast Track at Rs.6,400 as example rows."""
+        with _APP.app_context():
+            text, _ = cta.enroll_reply("Alice", "", state(), OX)
+        for code in CODES:
+            assert OBSOLETE_PRICE[code] not in text
 
     def test_unknown_offer_code_still_returns_none(self, seeded):
         with _APP.app_context():
@@ -381,24 +628,52 @@ class TestFailsClosedToTheCounselorBranch:
             assert oh.handle_offer_number("9", state(), OX) is None
 
 
-# ── no constant URL fallback anywhere ───────────────────────────────────────
+# ── no constant fallback anywhere ───────────────────────────────────────────
 
-class TestNoConstantUrlFallback:
+_EMITTERS = [("enroll_reply", "app/bot/cta_handlers.py"),
+             ("handle_pay_intent", "app/bot/offer_handlers.py"),
+             ("handle_offer", "app/bot/offer_handlers.py"),
+             ("handle_offer_number", "app/bot/offer_handlers.py")]
 
-    @pytest.mark.parametrize("fn_name,mod", [
-        ("enroll_reply", "app/bot/cta_handlers.py"),
-        ("handle_pay_intent", "app/bot/offer_handlers.py"),
-        ("handle_offer", "app/bot/offer_handlers.py"),
-        ("handle_offer_number", "app/bot/offer_handlers.py"),
-    ])
-    def test_no_path_reads_index_four(self, fn_name, mod):
+
+def _fn(mod, name):
+    tree = ast.parse(_src(mod))
+    return next(n for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef) and n.name == name)
+
+
+class TestNoConstantFallback:
+
+    @pytest.mark.parametrize("fn_name,mod", _EMITTERS)
+    def test_no_path_reads_a_display_or_url_column(self, fn_name, mod):
+        """WIDENED. b-2 forbade index [4] (the URL). c-3 also retires columns
+        [1] title, [2] price and [3] duration, so only [0] -- the stable code,
+        which is what makes OFFER_MENU still usable as the offer SET -- may be
+        read from a catalogue tuple.
+        """
+        bad = [n.slice.value for n in ast.walk(_fn(mod, fn_name))
+               if isinstance(n, ast.Subscript)
+               and isinstance(n.slice, ast.Constant)
+               and isinstance(n.slice.value, int)
+               and n.slice.value != 0]
+        assert bad == [], f"{fn_name} reads catalogue column(s) {bad}"
+
+    @pytest.mark.parametrize("fn_name,mod", _EMITTERS)
+    def test_no_path_names_a_retired_price_constant(self, fn_name, mod):
+        loaded = {n.id for n in ast.walk(_fn(mod, fn_name))
+                  if isinstance(n, ast.Name)}
+        for gone in ("COURSE_PAYMENT_LINKS", "COURSE_FEES", "FULL_FEE_TABLE"):
+            assert gone not in loaded, f"{fn_name} reads {gone}"
+
+    @pytest.mark.parametrize("mod", ["app/bot/cta_handlers.py",
+                                     "app/bot/offer_handlers.py"])
+    def test_module_does_not_import_the_payment_link_catalogue(self, mod):
+        """Structural: the constant is not even in scope, so no future edit
+        inside these modules can reach for it without also changing this."""
         tree = ast.parse(_src(mod))
-        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
-                  and n.name == fn_name)
-        for n in ast.walk(fn):
-            if isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant) \
-                    and n.slice.value == 4:
-                raise AssertionError(f"{fn_name} reads the catalogue URL column")
+        imported = {a.asname or a.name for n in ast.walk(tree)
+                    if isinstance(n, ast.ImportFrom) for a in n.names}
+        assert "COURSE_PAYMENT_LINKS" not in imported
 
     @pytest.mark.parametrize("mod", ["app/bot/cta_handlers.py",
                                      "app/bot/offer_handlers.py"])
@@ -409,16 +684,23 @@ class TestNoConstantUrlFallback:
                     and ("rzp.io" in n.value or "razorpay" in n.value.lower()):
                 raise AssertionError(f"{mod} hardcodes a payment URL")
 
+    @pytest.mark.parametrize("fn_name,mod", _EMITTERS)
+    def test_no_hardcoded_price_literal(self, fn_name, mod):
+        """c-3 addition. The obsolete prices did not only live in the
+        constants -- two of them were typed straight into enroll_reply."""
+        bad = [n.value for n in ast.walk(_fn(mod, fn_name))
+               if isinstance(n, ast.Constant) and isinstance(n.value, str)
+               and re.search(r"₹\s?\d", n.value)]
+        assert bad == [], f"{fn_name} hardcodes price literal(s) {bad}"
+
     def test_link_variable_originates_only_from_the_resolver(self):
-        """In each emitting function `link` must be assigned from the resolver
-        call and from nothing else."""
+        """UNCHANGED FROM b-2. In each emitting function `link` must be
+        assigned from the resolver call and from nothing else."""
         for mod, fns in [("app/bot/cta_handlers.py", ["enroll_reply"]),
                          ("app/bot/offer_handlers.py",
                           ["handle_pay_intent", "handle_offer"])]:
-            tree = ast.parse(_src(mod))
             for fname in fns:
-                fn = next(n for n in ast.walk(tree)
-                          if isinstance(n, ast.FunctionDef) and n.name == fname)
+                fn = _fn(mod, fname)
                 sources = []
                 for n in ast.walk(fn):
                     if isinstance(n, ast.Assign) and any(
@@ -431,7 +713,33 @@ class TestNoConstantUrlFallback:
                         getattr(v.func, "id", None) == "resolve_payment_url", \
                         f"{fname}: `link` assigned from something else"
 
+    @pytest.mark.parametrize("fn_name,mod", _EMITTERS[:3])
+    def test_the_resolver_is_keyed_by_the_stable_code(self, fn_name, mod):
+        """c-3 addition, and the D1 guard: keying payment by the display name
+        broke silently the moment the title changed."""
+        calls = [n for n in ast.walk(_fn(mod, fn_name)) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", None) == "resolve_payment_url"]
+        assert len(calls) == 1, f"{fn_name}: expected one resolver call"
+        arg = calls[0].args[1]
+        assert (isinstance(arg, ast.Attribute) and arg.attr == "code") or \
+               (isinstance(arg, ast.Name) and arg.id.endswith("code")), \
+               f"{fn_name}: payment keyed by something other than the code"
+
+    @pytest.mark.parametrize("fn_name,mod", [_EMITTERS[0], _EMITTERS[1]])
+    def test_the_stored_course_name_goes_through_the_catalogue(self, fn_name, mod):
+        """The two name-keyed paths must resolve st["course"] through
+        resolve_legacy_name, or a pre-c-3 conversation loses its course."""
+        called = {n.func.attr for n in ast.walk(_fn(mod, fn_name))
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+        assert "resolve_legacy_name" in called, \
+            f"{fn_name}: stored course name not resolved through the catalogue"
+
     def test_catalogue_constants_are_untouched(self):
+        """UNCHANGED FROM b-2, and it matters more now: the constants are
+        retired as a customer-facing source but must not be EDITED either --
+        they remain the historical record and OFFER_MENU still defines the
+        offer set and its 1-2-3-4 positions.
+        """
         assert len(COURSE_PAYMENT_LINKS) == 4 and len(OFFER_MENU) == 4
         assert COURSE_PAYMENT_LINKS["PGDCA"][4] == "https://rzp.io/rzp/KAQ2C7t"
         assert OFFER_MENU["4"][4] == "https://rzp.io/rzp/KAQ2C7t"
@@ -442,8 +750,13 @@ class TestNoConstantUrlFallback:
 class TestRouterThreadsTenantId:
 
     @pytest.mark.parametrize("callee", ["handle_offer", "handle_pay_intent",
-                                        "handle_offer_number"])
+                                        "handle_offer_number",
+                                        "offer_menu_reply"])
     def test_router_passes_tenant_id(self, callee):
+        """WIDENED by c-3a: offer_menu_reply now takes a tenant too -- without
+        it the menu falls back to the platform default for every tenant, which
+        is the defect D2 described.
+        """
         tree = ast.parse(_src("app/bot/router.py"))
         calls = [n for n in ast.walk(tree)
                  if isinstance(n, ast.Call)
@@ -464,26 +777,53 @@ class TestRouterThreadsTenantId:
 
 
 class TestOutOfScopeUnchanged:
-    """b-2 touches three bot modules. Nothing else."""
+    """b-2 touched three bot modules; c-3 touched the same three plus the
+    catalogue read path. The payment BOUNDARY is out of scope for both."""
 
     def test_payment_link_reply_signature_unchanged(self):
-        tree = ast.parse(_src("app/bot/cta_handlers.py"))
-        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
-                  and n.name == "payment_link_reply")
+        fn = _fn("app/bot/cta_handlers.py", "payment_link_reply")
         assert [a.arg for a in fn.args.args] == \
             ["code", "full_name", "price", "dur", "link"]
 
-    def test_resolver_module_not_modified_by_this_phase(self):
+    def test_resolver_module_not_modified(self):
+        """UNCHANGED FROM b-2. The payment boundary carries no authorisation
+        to change in b-2, c-3 or c-3a."""
         import subprocess
         out = subprocess.run(
             ["git", "status", "--porcelain", "--",
              "app/services/payment_link_service.py"],
             cwd=_ROOT, capture_output=True, text=True).stdout
-        assert out.strip() == "", "payment_link_service.py changed in b-2"
+        assert out.strip() == "", "payment_link_service.py changed"
 
-    def test_constants_not_modified_by_this_phase(self):
+    def test_resolver_semantics_are_untouched(self):
+        """c-3a addition alongside the zero-diff pin above: that pin only says
+        the working tree is clean, so it also passes for a file whose changes
+        were committed. This pins the contract itself -- keyed by tenant and
+        code, never returning a literal URL.
+        """
+        fn = _fn("app/services/payment_link_service.py", "resolve_payment_url")
+        assert [a.arg for a in fn.args.args][:2] == ["tenant_id", "code"]
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) \
+                    and isinstance(n.value.value, str):
+                assert not n.value.value.startswith("http"), \
+                    "resolver returns a hardcoded URL"
+
+    def test_resolver_does_not_import_bot_modules(self):
+        tree = ast.parse(_src("app/services/payment_link_service.py"))
+        mods = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom) and n.module:
+                mods.add(n.module)
+            elif isinstance(n, ast.Import):
+                mods.update(a.name for a in n.names)
+        assert not any(m.startswith("app.bot") for m in mods)
+
+    def test_constants_file_is_not_edited(self):
+        """Kept as a working-tree pin: constants.py carries no authorisation
+        to change in b-2, c-3 or c-3a, and this is the cheapest proof."""
         import subprocess
         out = subprocess.run(
             ["git", "status", "--porcelain", "--", "app/bot/constants.py"],
             cwd=_ROOT, capture_output=True, text=True).stdout
-        assert out.strip() == "", "constants.py changed in b-2"
+        assert out.strip() == "", "constants.py changed"

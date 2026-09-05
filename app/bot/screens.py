@@ -224,7 +224,19 @@ def category_menu() -> Screen:
     )
 
 
-def course_list(category: str) -> Screen | None:
+def _catalogue():
+    """Lazy import: several suites stub app.services with only the members
+    they need, so a module-level import breaks unrelated collection."""
+    from app.services import catalogue_service
+    return catalogue_service
+
+
+def _identity(tenant_id):
+    from app.services.tenant_identity_service import resolve_business_identity
+    return resolve_business_identity(tenant_id)
+
+
+def course_list(category: str, tenant_id=None) -> Screen | None:
     """Course List for a career category — a List Message.
 
     Returns None for a category with no course mapping (e.g. "unsure", which the
@@ -232,7 +244,9 @@ def course_list(category: str) -> Screen | None:
     destination travels with the button and needs no navigation stack.
     Phase 7.0 UX Polish: copy updated only. IDs and routing unchanged.
     """
-    recommendations = GOAL_COURSES.get(category)
+    # Phase RC2.5.5c-3: the tenant's own catalogue, not Oxford's constants.
+    cat = _catalogue()
+    recommendations = cat.courses_for_category(tenant_id, category)
     if not recommendations:
         return None
 
@@ -242,13 +256,15 @@ def course_list(category: str) -> Screen | None:
         "ivayil ninnum select cheyyoo 👇\n"
         "Full details + fee — oru tap mathram!"
     )
+    # Rows are keyed by the STABLE code, never by menu position -- a course
+    # added, removed or reordered must not change what a tapped row means.
     course_rows = tuple(
         Row(
-            id=course_id(index),
-            title=_fit_title(display),
-            description=f"⏱ {duration}  💰 {fee}",
+            id=course_id(c.code),
+            title=_fit_title(c.title),
+            description=f"⏱ {c.duration}  💰 {cat.format_money(c.normal_total_fee)}",
         )
-        for index, display, duration, fee in recommendations
+        for c in recommendations
     )
     nav = Section(
         title="Navigation",
@@ -341,28 +357,53 @@ def help_me_choose() -> Screen:
     )
 
 
-def course_details(course_index: str) -> Screen | None:
+def course_details(course_code: str, tenant_id=None) -> Screen | None:
     """Course Details — Reply Buttons (conversion-critical screen).
 
     The three primary actions use the full 3-button budget, so main-menu
     navigation is offered as a text command (MENU_HINT) — the documented
     fallback for WhatsApp's reply-button limit.
 
-    Returns None for an unknown course index.
-    Phase 7.0 UX Polish: copy updated only. Button IDs and routing unchanged.
+    Returns None for an unknown or inactive course code -- the caller takes
+    its not-found path. It must never fall back to a different course.
+
+    Phase RC2.5.5c-3: content, pricing and EMI come from the tenant catalogue,
+    and the institute facts from the tenant's resolved identity.
     """
-    entry = ALL_COURSES.get(course_index)
-    if not entry:
+    cat = _catalogue()
+    course = cat.get_course(tenant_id, course_code)
+    if course is None:
         return None
 
-    _name, card = entry
-    # Institute facts come from the Business Profile — never literals here.
+    identity = _identity(tenant_id)
+    lines = [f"📚 *{course.title}*"]
+    if course.body:
+        lines.append(course.body)
+    if course.duration:
+        lines.append(f"⏱ Duration: {course.duration}")
+    if course.normal_total_fee is not None:
+        lines.append(f"💰 Course Fee: *{cat.format_money(course.normal_total_fee)}*")
+        if course.registration_fee is not None and course.net_tuition_fee is not None:
+            lines.append(
+                f"   (Registration {cat.format_money(course.registration_fee)}"
+                f" + Tuition {cat.format_money(course.net_tuition_fee)})")
+    if course.exam_fee is not None:
+        lines.append(f"📝 Exam Fee (separate): {cat.format_money(course.exam_fee)}")
+    for offer in course.offers:
+        label = offer.get("name") or "Special Offer"
+        price = offer.get("price")
+        if price is not None:
+            lines.append(f"🔥 {label}: {cat.format_money(price)}")
+    # EMI is a per-course fact now, not a blanket claim.
+    if course.emi_available:
+        lines.append("✅ EMI Available (on tuition)")
+
     body = (
-        f"{card}\n\n"
-        "━━━━━━━━━━━━━━━━\n"
-        f"🏫 *{INSTITUTE_NAME}*\n"
-        f"📞 {PHONE} · 🌐 theoxfordedu.com\n"
-        f"\n{MENU_HINT}"
+        "\n".join(lines)
+        + "\n\n━━━━━━━━━━━━━━━━\n"
+        + f"🏫 *{identity.name}*\n"
+        + f"📞 {identity.contact.phone} · 🌐 {identity.contact.website}\n"
+        + f"\n{MENU_HINT}"
     )
     return Screen(
         kind=KIND_BUTTONS,

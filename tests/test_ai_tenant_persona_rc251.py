@@ -147,18 +147,69 @@ class TestOxfordRegressionUnchanged:
             ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
         assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
 
-    def test_oxford_uses_the_original_default_config_object(self, seeded, fake_client):
-        """Not just equal content -- the SAME config object, proving no
-        override branch was taken for Oxford."""
+    def test_no_tenant_id_uses_the_original_default_config_object(self, seeded, fake_client):
+        """INVERTED BY RC2.5.5c-3b (was:
+        test_oxford_uses_the_original_default_config_object).
+
+        RC2.5.5c-3 made the system instruction carry a COMPUTED catalogue
+        block. catalogue_service fails safe, so that block is non-empty even
+        for a tenant with no rows -- which means compose_system_prompt() no
+        longer returns AALIZA_PROMPT for ANY tenant, and ai_service's
+        "reuse the module-level object" fast path no longer fires for one.
+
+        That fast path is not gone: it is keyed on a falsy tenant_id and is
+        asserted here by object identity, unchanged. The Oxford case moves to
+        the two tests below, which pin what actually has to hold for it --
+        that no OVERRIDE branch was taken and that only the system_instruction
+        differs from the default config.
+        """
         with _APP.app_context():
-            ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
+            ai_service.gemini_reply("Hi", "Student")
         assert fake_client["config"] is ai_service._DEFAULT_GENERATION_CONFIG
 
-    def test_oxford_system_instruction_is_still_aaliza_prompt(self, seeded, fake_client):
+    def test_oxford_takes_no_override_branch(self, seeded, fake_client):
+        """The original intent, re-pointed: Oxford sets no persona and no
+        prompt override, so its instruction must be the composed BASELINE --
+        never an override, and never another tenant's."""
         from app.bot.prompts import AALIZA_PROMPT
         with _APP.app_context():
             ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
-        assert fake_client["config"].system_instruction == AALIZA_PROMPT
+        si = fake_client["config"].system_instruction
+        assert si.startswith(AALIZA_PROMPT)          # baseline body, verbatim
+        assert "You are Oxford Nova," in si
+        assert "Beta Institute" not in si
+        assert "You are Priya" not in si
+
+    def test_oxfords_config_differs_only_in_the_system_instruction(self, seeded, fake_client):
+        from app.services import prompt_composer
+        default = ai_service._DEFAULT_GENERATION_CONFIG
+        with _APP.app_context():
+            ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
+            expected = prompt_composer.compose_system_prompt(OX, "Oxford Nova")
+        cfg = fake_client["config"]
+        assert cfg is not default
+        assert cfg.system_instruction == expected
+        assert cfg.max_output_tokens == default.max_output_tokens
+        assert cfg.thinking_config.thinking_budget == \
+            default.thinking_config.thinking_budget
+
+    def test_oxford_system_instruction_still_opens_with_aaliza_prompt(self, seeded, fake_client):
+        """INVERTED BY RC2.5.5c-3b (was:
+        test_oxford_system_instruction_is_still_aaliza_prompt).
+
+        Byte-equality becomes a byte-identical PREFIX plus an asserted
+        decomposition, so drift in the body -- the thing this test exists to
+        catch -- still fails it.
+        """
+        from app.bot.prompts import AALIZA_PROMPT
+        from app.services import prompt_composer
+        with _APP.app_context():
+            ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
+            catalogue = prompt_composer._catalogue_index_block(OX)
+        si = fake_client["config"].system_instruction
+        assert si.startswith(AALIZA_PROMPT)
+        assert si == (AALIZA_PROMPT + catalogue
+                      + prompt_composer._L1_SAFETY_REASSERTION)
 
     def test_prompt_prefix_and_suffix_unchanged(self, seeded, fake_client):
         """Only the trailing persona name may vary; everything else in the
@@ -246,8 +297,17 @@ class TestPersonaOverrideOnly:
         assert "You are Rahul," in cfg.system_instruction
         assert "You are Oxford Nova," not in cfg.system_instruction
         # Everything except the persona is still the baseline body.
-        assert cfg.system_instruction == AALIZA_PROMPT.replace(
-            "Oxford Nova", "Rahul")
+        # RC2.5.5c-3b: the body is now followed by the computed catalogue
+        # block and the platform safety re-assertion, so the equality is
+        # asserted against that decomposition rather than the body alone.
+        # The persona-substitution clause -- the point of this test -- is
+        # unchanged and still byte-exact.
+        from app.services import prompt_composer
+        with _APP.app_context():
+            catalogue = prompt_composer._catalogue_index_block(TB)
+        assert cfg.system_instruction == (
+            AALIZA_PROMPT.replace("Oxford Nova", "Rahul")
+            + catalogue + prompt_composer._L1_SAFETY_REASSERTION)
         assert fake_client["contents"].rstrip().endswith("Reply as Rahul:")
 
 
@@ -388,7 +448,16 @@ class TestSmartReplyEndToEnd:
                 "5", "Student", phone, is_new_lead=False, tenant_id=OX)
         assert preset == "GOAL"
         assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
-        assert fake_client["config"] is ai_service._DEFAULT_GENERATION_CONFIG
+        # RC2.5.5c-3b: Oxford now takes the composed path (see
+        # test_no_tenant_id_uses_the_original_default_config_object), so the
+        # module-level object is no longer reused. What this end-to-end test
+        # is for -- that the router reaches Gemini with Oxford's own baseline
+        # and no override -- is asserted directly instead.
+        from app.bot.prompts import AALIZA_PROMPT
+        cfg = fake_client["config"]
+        assert cfg.system_instruction.startswith(AALIZA_PROMPT)
+        assert cfg.max_output_tokens == \
+            ai_service._DEFAULT_GENERATION_CONFIG.max_output_tokens
 
 
 # ═══ scope: nothing else touched ═══════════════════════════════════════════
