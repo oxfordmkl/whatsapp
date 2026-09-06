@@ -79,6 +79,116 @@
           <input type="email" id="billing_email" name="billing_email" value="{{ tenant.billing_email or '' }}" placeholder="billing@yourcompany.com">
         </div>
 
+    {#
+      Phase RC2.5.4c — Business Profile.
+
+      Every value below comes from the tenant's STORED business_profile
+      section, never from the resolved identity. A blank field therefore
+      means "nothing saved", not "no value in use": the platform default
+      applies at runtime. Prefilling these with the resolved defaults would
+      show one business another's address and phone as if they were its own,
+      and saving would then copy them in for real.
+    #}
+        <div class="t-card-title" style="margin-top:2rem;">Business Profile</div>
+        <p style="margin:-0.25rem 0 1.25rem;opacity:0.75;font-size:0.9rem;">
+          These details are used by your AI assistant and in replies to your
+          customers. <strong>Leave any field blank to use the platform
+          default.</strong>
+        </p>
+
+        <div class="t-card-title" style="font-size:0.95rem;">Business Information</div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_legal_name">Legal Name</label>
+            <input type="text" id="bp_legal_name" name="bp_legal_name" value="{{ profile.legal_name or '' }}" placeholder="Registered legal entity name">
+          </div>
+          <div class="t-field">
+            <label for="bp_tagline">Tagline</label>
+            <input type="text" id="bp_tagline" name="bp_tagline" value="{{ profile.tagline or '' }}" placeholder="A short line about your business">
+          </div>
+        </div>
+        <div class="t-field" style="margin-bottom:1.25rem;">
+          <label for="bp_description">About Your Business</label>
+          <textarea id="bp_description" name="bp_description" rows="3" placeholder="What you do, who you serve">{{ profile.description or '' }}</textarea>
+        </div>
+
+        <div class="t-card-title" style="font-size:0.95rem;">Address</div>
+        <div class="t-field" style="margin-bottom:1.25rem;">
+          <label for="bp_address_line">Street Address</label>
+          <input type="text" id="bp_address_line" name="bp_address_line" value="{{ bp_address.line or '' }}" placeholder="Building, street">
+        </div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_address_locality">Locality / Area</label>
+            <input type="text" id="bp_address_locality" name="bp_address_locality" value="{{ bp_address.locality or '' }}">
+          </div>
+          <div class="t-field">
+            <label for="bp_address_city">City</label>
+            <input type="text" id="bp_address_city" name="bp_address_city" value="{{ bp_address.city or '' }}">
+          </div>
+        </div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_address_region">State / Region</label>
+            <input type="text" id="bp_address_region" name="bp_address_region" value="{{ bp_address.region or '' }}">
+          </div>
+          <div class="t-field">
+            <label for="bp_address_country">Country</label>
+            <input type="text" id="bp_address_country" name="bp_address_country" value="{{ bp_address.country or '' }}">
+          </div>
+        </div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_address_postal_code">Postal Code</label>
+            <input type="text" id="bp_address_postal_code" name="bp_address_postal_code" value="{{ bp_address.postal_code or '' }}">
+          </div>
+          <div class="t-field">
+            <label for="bp_location_url">Map Link</label>
+            <input type="text" id="bp_location_url" name="bp_location_url" value="{{ profile.location_url or '' }}" placeholder="https://maps.example/your-place">
+          </div>
+        </div>
+
+        <div class="t-card-title" style="font-size:0.95rem;">Contact</div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_contact_phone">Phone</label>
+            <input type="text" id="bp_contact_phone" name="bp_contact_phone" value="{{ bp_contact.phone or '' }}">
+          </div>
+          <div class="t-field">
+            <label for="bp_contact_whatsapp">WhatsApp Number</label>
+            <input type="text" id="bp_contact_whatsapp" name="bp_contact_whatsapp" value="{{ bp_contact.whatsapp or '' }}">
+          </div>
+        </div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_contact_email">Email</label>
+            <input type="text" id="bp_contact_email" name="bp_contact_email" value="{{ bp_contact.email or '' }}" placeholder="hello@yourbusiness.com">
+          </div>
+          <div class="t-field">
+            <label for="bp_contact_website">Website</label>
+            <input type="text" id="bp_contact_website" name="bp_contact_website" value="{{ bp_contact.website or '' }}" placeholder="yourbusiness.com">
+          </div>
+        </div>
+
+        <div class="t-card-title" style="font-size:0.95rem;">Business Hours</div>
+        <div class="t-field-row">
+          <div class="t-field">
+            <label for="bp_hours_general">Office Hours</label>
+            <input type="text" id="bp_hours_general" name="bp_hours_general" value="{{ bp_hours.general or '' }}" placeholder="9 AM – 5 PM (Mon–Sat)">
+          </div>
+          <div class="t-field">
+            <label for="bp_hours_extended">Extended / Counsellor Hours</label>
+            <input type="text" id="bp_hours_extended" name="bp_hours_extended" value="{{ bp_hours.extended or '' }}" placeholder="9 AM – 7 PM (Mon–Sat)">
+          </div>
+        </div>
+
+        <div class="t-card-title" style="font-size:0.95rem;">Communication Style</div>
+        <div class="t-field" style="margin-bottom:1.25rem;">
+          <label for="bp_brand_voice">Preferred Tone</label>
+          <input type="text" id="bp_brand_voice" name="bp_brand_voice" value="{{ profile.brand_voice or '' }}" placeholder="Warm, concise, professional.">
+          <small style="opacity:0.7;">Guides how your AI assistant speaks to customers.</small>
+        </div>
+
         <button type="submit" class="btn-t-primary" id="profile-save-btn">
           <i class="bi bi-check-lg"></i> Save Changes
         </button>

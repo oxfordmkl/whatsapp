@@ -752,6 +752,12 @@ class TestScope:
             # single named file -- no directory, no wildcard -- so the
             # tripwire keeps rejecting everything else exactly as before.
             "tests/test_catalogue_provenance_rc255c5.py",
+            # WIDENED BY RC2.5.4c-a: the Business Profile UI suite added by
+            # RC2.5.4c. app/routes/tenant.py is already listed above (widened
+            # by RC2.5.4a) and templates/ falls outside this tripwire's
+            # app//tests//migrations/ scope, so this new suite was the only
+            # gap. A single named file -- no directory, no wildcard.
+            "tests/test_business_profile_ui_rc254c.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

@@ -125,11 +125,78 @@ def tenant_home():
     )
 
 
+# ── Phase RC2.5.4c: Business Profile ─────────────────────────────────────────
+#
+# The identity ARCHITECTURE already existed and is production-validated:
+# tenant_identity_service.resolve_business_identity() reads the
+# `business_profile` section of TenantSettings and falls back PER FIELD to the
+# platform defaults. tenant_settings_service.set_section() was written in
+# RC2.5.2 as the write path and, until now, had no caller. This phase supplies
+# only the UI and that write; it changes no resolution semantics.
+#
+# The form is deliberately fed from the RAW STORED SECTION, never from
+# resolve_business_identity(). Prefilling with the resolver's output would
+# show a tenant Oxford's address and phone as if they were its own saved data,
+# and a save would then silently copy them in -- turning a fallback into
+# authored content. Blank means "inherit the platform default", and the
+# template says so.
+#
+# Flat form field -> nested section path. Nesting is expressed here rather
+# than parsed out of the field names so a crafted field cannot invent a new
+# structure inside the JSON.
+_BP_SCALARS = ('legal_name', 'description', 'tagline', 'location_url',
+               'brand_voice')
+_BP_NESTED = {
+    'address': ('line', 'locality', 'city', 'region', 'country', 'postal_code'),
+    'contact': ('phone', 'whatsapp', 'email', 'website'),
+    'hours': ('general', 'extended'),
+}
+# `description` is a textarea; the others are single-line inputs.
+_BP_MULTILINE = ('description',)
+
+
+def _business_profile_form(form):
+    """Build the `business_profile` section from submitted form fields.
+
+    Only the keys this phase owns are read, so a stray field cannot inject a
+    new key. Blank fields are OMITTED rather than stored as "", because an
+    empty string is a value the per-field resolver would honour, and the
+    contract's meaning of "not set" is "absent". That also keeps the two-state
+    semantics honest: a wholly blank submission yields {}, which
+    resolve_business_identity() reads as is_configured=False.
+    """
+    section = {}
+    for key in _BP_SCALARS:
+        raw = form.get(f'bp_{key}', '')
+        value = raw.strip() if key not in _BP_MULTILINE else raw.strip('\r\n ')
+        if value:
+            section[key] = value
+    for group, keys in _BP_NESTED.items():
+        sub = {}
+        for key in keys:
+            value = form.get(f'bp_{group}_{key}', '').strip()
+            if value:
+                sub[key] = value
+        if sub:
+            section[group] = sub
+    return section
+
+
 @tenant_bp.route('/profile', methods=['GET', 'POST'])
 @login_required
 @tenant_admin_required
 def tenant_profile():
-    """Phase 13-B3B: Company Profile — editable fields only (name, industry, billing_email)."""
+    """Phase 13-B3B: Company Profile — editable Tenant columns.
+    Phase RC2.5.4c: plus the tenant-authored Business Profile section.
+
+    The two are persisted separately on purpose: `name`, `industry` and
+    `billing_email` are Tenant COLUMNS with their existing semantics, while
+    the Business Profile is a JSON section written through set_section() so
+    sibling sections (branding, locale, features) survive untouched.
+    """
+    from app.services import tenant_settings_service
+    from app.services.tenant_identity_service import SETTINGS_KEY
+
     tenant = _get_current_tenant()
     if not tenant:
         flash('No tenant associated with your account.', 'danger')
@@ -144,13 +211,19 @@ def tenant_profile():
             flash('Business Name cannot be empty.', 'danger')
             return redirect(url_for('tenant.tenant_profile'))
 
+        # ── Tenant columns: existing behaviour, unchanged ─────────────────
         tenant.name = name
         if industry:
             tenant.industry = industry
         if billing_email:
             tenant.billing_email = billing_email
 
+        # ── Business Profile: the RC2.5.4c addition ───────────────────────
+        # tenant.id, never a tenant identifier from the request. The form
+        # carries no tenant field at all, so there is nothing to trust.
         try:
+            tenant_settings_service.set_section(
+                tenant.id, SETTINGS_KEY, _business_profile_form(request.form))
             db.session.commit()
             flash('Company profile updated successfully.', 'success')
         except Exception:
@@ -159,7 +232,16 @@ def tenant_profile():
 
         return redirect(url_for('tenant.tenant_profile'))
 
-    return render_template('tenant/profile.html', tenant=tenant)
+    # Raw stored section -- deliberately NOT the resolved identity. See the
+    # comment above _BP_SCALARS.
+    profile = tenant_settings_service.get_section(tenant.id, SETTINGS_KEY) or {}
+    if not isinstance(profile, dict):
+        profile = {}
+    return render_template('tenant/profile.html', tenant=tenant,
+                           profile=profile,
+                           bp_address=profile.get('address') or {},
+                           bp_contact=profile.get('contact') or {},
+                           bp_hours=profile.get('hours') or {})
 
 
 @tenant_bp.route('/staff', methods=['GET', 'POST'])
