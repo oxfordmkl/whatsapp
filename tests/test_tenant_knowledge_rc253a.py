@@ -213,13 +213,15 @@ class TestDualReadFallback:
             catalogue = prompt_composer._catalogue_index_block(TA)
             out = prompt_composer.compose_system_prompt(TA)
         assert "ALPHA-DS" in catalogue
-        # NOTE the raw integer, not "₹42,000": catalogue_index() interpolates
-        # normal_total_fee directly instead of going through format_money(),
-        # so an authored row renders "Total fee 42000" while the platform
-        # default -- whose fees are pre-formatted strings -- renders
-        # "Total fee ₹15,999". Pinned as observed rather than as preferred;
-        # RC2.5.5c-3b is not authorised to change app/ code.
-        assert "Total fee 42000" in catalogue
+        # UPDATED BY RC2.5.5c-6a. This previously pinned the RAW integer
+        # ("Total fee 42000") as observed, because catalogue_index()
+        # interpolated normal_total_fee directly instead of going through
+        # format_money() and c-3b was not authorised to change app/ code.
+        # F3 fixed that single site, so an authored int row now renders
+        # formatted -- while the platform default, whose fees are already
+        # strings, passes through format_money() unchanged.
+        assert "Total fee ₹42,000" in catalogue
+        assert "Total fee 42000" not in catalogue
         assert "PGDCA" not in catalogue and "₹15,999" not in catalogue
         # commercial.payment_url exists on the row but must not reach the AI.
         assert "rzp.io" not in out

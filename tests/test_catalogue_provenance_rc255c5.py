@@ -297,15 +297,28 @@ class TestInvariantsPreserved:
                 r = cat.resolve_legacy_name(OX, name)
                 assert r is not None and r.code == code
 
-    def test_catalogue_index_output_is_unchanged(self, seeded):
-        """F3 is explicitly OUT of scope: the rendered rows, including their
-        monetary formatting, must be byte-identical to c-3."""
+    def test_catalogue_index_formats_fees_through_format_money(self, seeded):
+        """UPDATED BY RC2.5.5c-6a (was: test_catalogue_index_output_is_unchanged,
+        which pinned the raw integer while F3 was deferred).
+
+        F3 is now fixed: catalogue_index() routes the fee through
+        format_money() like the other seventeen fee-formatting sites in app/.
+        A tenant row stores an int, so the AI now reads a formatted amount
+        instead of a bare number.
+
+        The provenance-blind wrapper must still agree with the
+        provenance-aware call -- that is what this test was originally for and
+        it is unchanged.
+        """
         with _APP.app_context():
             entries, _ = cat.catalogue_index_with_provenance(OX)
             legacy = cat.catalogue_index(OX)
+            rendered = cat.format_money(cat.get_course(OX, "PGDCA").normal_total_fee)
         assert tuple(entries) == tuple(legacy)
         pgdca = next(e for e in entries if e.startswith("PGDCA |"))
-        assert "Total fee 19540" in pgdca, "F3 formatting must NOT change here"
+        assert f"Total fee {rendered}" in pgdca
+        assert "Total fee 19540" not in pgdca, "raw integer must not survive"
+        assert "Total fee ₹19,540" in pgdca
 
 
 # 11 ── the replacement for has_authored_content is real and reachable ─────

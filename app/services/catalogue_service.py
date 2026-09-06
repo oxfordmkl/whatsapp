@@ -402,7 +402,14 @@ def catalogue_index_with_provenance(tenant_id):
         if c.duration:
             bits.append(c.duration)
         if c.normal_total_fee is not None:
-            bits.append(f"Total fee {c.normal_total_fee}")
+            # Phase RC2.5.5c-6a (F3). This interpolated the raw stored value,
+            # the only one of eighteen fee-formatting sites in app/ that did
+            # not go through format_money(). Tenant rows store an int and the
+            # platform default stores a pre-formatted string, so the AI saw
+            # "Total fee 19540" for every real tenant while only the fallback
+            # looked right. format_money() passes the string through
+            # unchanged, so the default catalogue's output does not move.
+            bits.append(f"Total fee {format_money(c.normal_total_fee)}")
         bits.append("EMI available" if c.emi_available else "No EMI")
         out.append(" | ".join(str(b) for b in bits))
     return tuple(out), is_default
