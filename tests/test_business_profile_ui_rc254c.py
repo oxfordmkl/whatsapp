@@ -477,10 +477,74 @@ class TestSourceContract:
         out = subprocess.run(
             ["git", "status", "--porcelain", "--",
              "app/services/tenant_identity_service.py",
-             "app/services/prompt_composer.py",
-             "app/services/catalogue_service.py"],
+             "app/services/prompt_composer.py"],
             cwd=_ROOT, capture_output=True, text=True).stdout
         assert out.strip() == "", f"identity/runtime files changed: {out}"
+
+    def test_catalogue_service_changed_only_where_rc254cx_was_authorised(self):
+        """NARROWED BY RC2.5.4c-x-a.
+
+        catalogue_service.py used to be pinned zero-diff alongside the two
+        resolvers above. RC2.5.4c-x is separately authorised to change it --
+        the read-side reconciliation of the RC2.5.4b admin write path
+        (commercial.base_price) with the RC2.5.5c-3 read path
+        (commercial.normal_total_fee).
+
+        So the guard is narrowed, not dropped, and narrowed to something
+        STRONGER than the porcelain check it replaces: every top-level
+        construct in the file must be byte-identical to HEAD except
+        `_record_from_row`, the one function c-x owns. A change anywhere else
+        in the file -- `_default_catalogue`, `catalogue_index_with_provenance`,
+        `format_money`, `match_keyword`, LEGACY_NAME_TO_CODE, any constant --
+        still fails, which is the c-5 provenance guarantee this test existed
+        to protect. `app/services/` as a whole is NOT permitted; the two
+        resolvers above remain pinned zero-diff by the assertion above.
+
+        Once c-x is committed the diff is empty and every comparison is
+        trivially equal, exactly as before.
+        """
+        import subprocess
+        AUTHORISED = {"_record_from_row"}
+        rel = "app/services/catalogue_service.py"
+        # NOT text=True: on Windows that decodes git's stdout with the locale
+        # codepage (cp1252), which mangles the file's non-ASCII literals --
+        # format_money's "₹" -- and the guard then fires on an encoding
+        # artifact rather than a real change. Decode utf-8 explicitly, and
+        # normalise line endings so a CRLF checkout is not a false positive
+        # either (_src reads utf-8 with universal newlines).
+        head = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=_ROOT,
+                              capture_output=True)
+        assert head.returncode == 0, (
+            f"cannot read HEAD:{rel}: {head.stderr.decode('utf-8', 'replace')}")
+        head_src = head.stdout.decode("utf-8").replace("\r\n", "\n")
+
+        def segments(src):
+            """Top-level constructs by name, plus the module body outside
+            them as one blob, so a moved or deleted constant is caught."""
+            tree = ast.parse(src)
+            named, other = {}, []
+            for node in tree.body:
+                seg = ast.get_source_segment(src, node) or ""
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                     ast.ClassDef)):
+                    named[node.name] = seg
+                else:
+                    other.append(seg)
+            return named, "\n".join(other)
+
+        old_named, old_other = segments(head_src)
+        new_named, new_other = segments(_src(rel).replace("\r\n", "\n"))
+
+        assert old_other == new_other, "module-level code in catalogue_service.py changed"
+        assert set(old_named) == set(new_named), (
+            "top-level constructs added or removed: "
+            f"{set(old_named) ^ set(new_named)}")
+        for name, old_seg in old_named.items():
+            if name in AUTHORISED:
+                continue
+            assert new_named[name] == old_seg, (
+                f"{rel}::{name} changed, but only {sorted(AUTHORISED)} "
+                "is authorised in this phase")
 
     def test_csrf_posture_is_unchanged_and_still_absent(self):
         """Asserted as OBSERVED, not as solved. The platform has no CSRF

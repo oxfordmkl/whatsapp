@@ -156,6 +156,36 @@ def _record_from_row(row):
     cats = attrs.get("categories")
     kws = attrs.get("keywords")
     offers = commercial.get("offers")
+
+    # Phase RC2.5.4c-x: read `base_price` when `normal_total_fee` is absent.
+    #
+    # Two halves of the system were never reconciled. The RC2.5.4b course
+    # admin UI writes commercial.base_price and never writes
+    # normal_total_fee; RC2.5.5c-2's backfill wrote BOTH, and RC2.5.5c-3's
+    # read path takes normal_total_fee. So:
+    #
+    #   * a course CREATED through the admin UI has no normal_total_fee at
+    #     all, and its price was invisible to every deterministic
+    #     customer-facing path -- the catalogue index, the fee reply and the
+    #     course detail simply omitted it;
+    #   * a c-2 course EDITED through the admin UI got a new base_price while
+    #     its original normal_total_fee survived untouched, so the admin saw
+    #     the new price and the customer kept being quoted the old one.
+    #
+    # Precedence is deliberate and one-directional: an existing
+    # normal_total_fee is authoritative and base_price NEVER overrides it.
+    # The two disagree on exactly the rows an admin has edited, and silently
+    # switching those to base_price would re-price the sixteen courses
+    # RC2.5.5c-2 authored -- the same "a refactor must not change what a
+    # business charges" rule that governed RC2.5.5b-2.
+    #
+    # This is a READ-side compatibility shim. It stores nothing and migrates
+    # nothing; the underlying rows are untouched. Reconciling the WRITE path
+    # so one field is canonical is a separate, authorised decision.
+    fee = commercial.get("normal_total_fee")
+    if fee is None:
+        fee = commercial.get("base_price")
+
     return CourseRecord(
         code=code,
         title=(row.title or code),
@@ -163,7 +193,7 @@ def _record_from_row(row):
         duration=str(attrs.get("duration") or ""),
         categories=tuple(c for c in (cats or ()) if isinstance(c, str)),
         keywords=tuple(k for k in (kws or ()) if isinstance(k, str)),
-        normal_total_fee=commercial.get("normal_total_fee"),
+        normal_total_fee=fee,
         registration_fee=_money(components, "registration_fee"),
         net_tuition_fee=_money(components, "net_tuition_fee"),
         exam_fee=_money(components, "exam_fee"),

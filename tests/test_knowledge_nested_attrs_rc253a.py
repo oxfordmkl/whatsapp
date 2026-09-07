@@ -758,6 +758,16 @@ class TestScope:
             # app//tests//migrations/ scope, so this new suite was the only
             # gap. A single named file -- no directory, no wildcard.
             "tests/test_business_profile_ui_rc254c.py",
+            # WIDENED BY RC2.5.4c-x-a: the price-fallback suite added by
+            # RC2.5.4c-x, which pins that the catalogue reads
+            # commercial.base_price when commercial.normal_total_fee is
+            # absent -- the read-side reconciliation of the RC2.5.4b admin
+            # write path with the RC2.5.5c-3 read path. Its own source file,
+            # app/services/catalogue_service.py, is already listed above
+            # (widened by c-3). A single named file -- no directory, no
+            # wildcard -- so the tripwire keeps rejecting everything else
+            # exactly as before.
+            "tests/test_catalogue_price_fallback_rc254cx.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
