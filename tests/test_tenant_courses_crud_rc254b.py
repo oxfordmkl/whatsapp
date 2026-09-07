@@ -67,6 +67,58 @@ OX = "t-ox"
 OTHER = "t-rival"
 LEGACY_URL = "https://rzp.io/rzp/KAQ2C7t"
 
+# RC2.5.4c-x-1a: the one construct that phase is authorised to change in
+# app/services/knowledge_service.py.
+_KS_AUTHORISED_CONSTRUCTS = {"_NON_RENDERABLE_KEYS"}
+
+
+def _assert_knowledge_service_only_authorised_change(root):
+    """knowledge_service.py may differ from HEAD ONLY in the constructs named
+    in _KS_AUTHORISED_CONSTRUCTS -- stronger than the porcelain zero-diff pin
+    it replaces, since it also catches a construct being added or removed.
+    """
+    import subprocess
+
+    rel = "app/services/knowledge_service.py"
+    # NOT text=True: on Windows that decodes git's stdout with the locale
+    # codepage and mangles non-ASCII characters, firing the guard on an
+    # encoding artifact rather than a real change.
+    head = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root,
+                          capture_output=True)
+    assert head.returncode == 0, f"cannot read HEAD:{rel}"
+    old_src = head.stdout.decode("utf-8").replace("\r\n", "\n")
+    with open(os.path.join(root, *rel.split("/")), encoding="utf-8") as fh:
+        new_src = fh.read().replace("\r\n", "\n")
+
+    def segments(src):
+        named, other = {}, []
+        for node in ast.parse(src).body:
+            seg = ast.get_source_segment(src, node) or ""
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)):
+                named[node.name] = seg
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)):
+                named[node.targets[0].id] = seg
+            else:
+                other.append(seg)
+        return named, "\n".join(other)
+
+    old_named, old_other = segments(old_src)
+    new_named, new_other = segments(new_src)
+
+    assert old_other == new_other, f"module-level code in {rel} changed"
+    assert set(old_named) == set(new_named), (
+        f"top-level constructs added or removed in {rel}: "
+        f"{set(old_named) ^ set(new_named)}")
+    for name, old_seg in old_named.items():
+        if name in _KS_AUTHORISED_CONSTRUCTS:
+            continue
+        assert new_named[name] == old_seg, (
+            f"{rel}::{name} changed, but only "
+            f"{sorted(_KS_AUTHORISED_CONSTRUCTS)} is authorised")
+
+
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
 _APP.config["PRIMARY_TENANT_ID"] = OX
@@ -662,14 +714,28 @@ class TestAIPathUnchanged:
     def test_max_chars_unchanged(self):
         assert ks.MAX_CHARS == 2000
 
-    def test_knowledge_service_file_untouched(self):
+    def test_ai_path_files_untouched(self):
+        """NARROWED BY RC2.5.4c-x-1a: knowledge_service.py moves out of this
+        blanket zero-diff list into the dedicated, stricter test below.
+        prompt_composer.py and ai_service.py keep their full protection."""
         import subprocess
-        for path in ("app/services/knowledge_service.py",
-                     "app/services/prompt_composer.py",
+        for path in ("app/services/prompt_composer.py",
                      "app/services/ai_service.py"):
             out = subprocess.run(["git", "status", "--porcelain", "--", path],
                                  cwd=ROOT, capture_output=True, text=True).stdout
             assert out.strip() == "", f"{path} unexpectedly changed"
+
+    def test_knowledge_service_changed_only_where_rc254cx1a_authorised(self):
+        """RC2.5.4c-x-1a is authorised to add `base_price` to
+        _NON_RENDERABLE_KEYS so the AI stops receiving two prices for one
+        course. Nothing else in the file may move: the exclusion set must
+        equal the authorised value exactly, and every other top-level
+        construct must be byte-identical to HEAD. MAX_ITEMS, MAX_CHARS,
+        _flatten_attrs and _render_row are all still pinned by this.
+        """
+        assert ks._NON_RENDERABLE_KEYS == frozenset(
+            {"legacy_payment_url", "payment_url", "base_price"})
+        _assert_knowledge_service_only_authorised_change(ROOT)
 
     def test_admin_service_still_does_not_import_knowledge_service(self):
         tree = ast.parse(open(KAS_PY, encoding="utf-8").read())

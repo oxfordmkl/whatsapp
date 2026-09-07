@@ -68,6 +68,64 @@ KS_PY = os.path.join(ROOT, "app", "services", "knowledge_service.py")
 OX = "t-ox"
 OTHER = "t-rival"
 
+# RC2.5.4c-x-1a: the one construct that phase is authorised to change in
+# app/services/knowledge_service.py. Everything else in the file stays pinned
+# byte-identical to HEAD -- see
+# test_knowledge_service_changed_only_where_rc254cx1a_authorised.
+_KS_AUTHORISED_CONSTRUCTS = {"_NON_RENDERABLE_KEYS"}
+
+
+def _assert_knowledge_service_only_authorised_change(root):
+    """knowledge_service.py may differ from HEAD ONLY in the constructs named
+    in _KS_AUTHORISED_CONSTRUCTS. Stronger than the porcelain zero-diff pin it
+    replaces: it also catches a construct being added or removed, and it does
+    not care whether the change is committed yet.
+    """
+    import subprocess
+
+    rel = "app/services/knowledge_service.py"
+    # NOT text=True: on Windows that decodes git's stdout with the locale
+    # codepage and mangles the file's non-ASCII characters, so the guard would
+    # fire on an encoding artifact rather than a real change. Line endings are
+    # normalised for the same reason on a CRLF checkout.
+    head = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root,
+                          capture_output=True)
+    assert head.returncode == 0, f"cannot read HEAD:{rel}"
+    old_src = head.stdout.decode("utf-8").replace("\r\n", "\n")
+    with open(os.path.join(root, *rel.split("/")), encoding="utf-8") as fh:
+        new_src = fh.read().replace("\r\n", "\n")
+
+    def segments(src):
+        """Top-level constructs by name, plus everything else as one blob so a
+        moved or deleted module-level statement is still caught."""
+        named, other = {}, []
+        for node in ast.parse(src).body:
+            seg = ast.get_source_segment(src, node) or ""
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)):
+                named[node.name] = seg
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)):
+                named[node.targets[0].id] = seg
+            else:
+                other.append(seg)
+        return named, "\n".join(other)
+
+    old_named, old_other = segments(old_src)
+    new_named, new_other = segments(new_src)
+
+    assert old_other == new_other, f"module-level code in {rel} changed"
+    assert set(old_named) == set(new_named), (
+        f"top-level constructs added or removed in {rel}: "
+        f"{set(old_named) ^ set(new_named)}")
+    for name, old_seg in old_named.items():
+        if name in _KS_AUTHORISED_CONSTRUCTS:
+            continue
+        assert new_named[name] == old_seg, (
+            f"{rel}::{name} changed, but only "
+            f"{sorted(_KS_AUTHORISED_CONSTRUCTS)} is authorised")
+
+
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
 _APP.config["PRIMARY_TENANT_ID"] = OX
@@ -357,13 +415,32 @@ class TestPromptPathUnchanged:
                        if isinstance(n, ast.Attribute)}
         assert "MAX_ITEMS" not in referenced
 
-    def test_knowledge_service_file_untouched_this_phase(self):
-        import subprocess
-        out = subprocess.run(
-            ["git", "status", "--porcelain", "--",
-             "app/services/knowledge_service.py"],
-            cwd=ROOT, capture_output=True, text=True).stdout
-        assert out.strip() == ""
+    def test_knowledge_service_changed_only_where_rc254cx1a_authorised(self):
+        """NARROWED BY RC2.5.4c-x-1a (was test_knowledge_service_file_
+        untouched_this_phase, a plain zero-diff pin).
+
+        RC2.5.4c-x-1a is separately authorised to make ONE change to this
+        file: `base_price` joins _NON_RENDERABLE_KEYS, so the AI stops
+        receiving two prices for one course. (commercial.base_price and
+        commercial.normal_total_fee both hold the customer price; the
+        deterministic paths apply a precedence rule via CourseRecord, the
+        flattener did not, and PGDCA carried 16000 and 19540 simultaneously
+        for ~17h.)
+
+        The guard is narrowed, not dropped, and to something STRONGER than
+        the porcelain check it replaces: the exclusion set must equal the
+        authorised value EXACTLY, and every other top-level construct in the
+        file must be byte-identical to HEAD. A change to MAX_ITEMS,
+        _flatten_attrs, _render_row, _is_renderable_scalar, fetch_knowledge
+        or any constant still fails -- which is the prompt-path guarantee
+        this test exists to protect.
+
+        Once 1a is committed the diff is empty and every comparison is
+        trivially equal, exactly as before.
+        """
+        assert ks._NON_RENDERABLE_KEYS == frozenset(
+            {"legacy_payment_url", "payment_url", "base_price"})
+        _assert_knowledge_service_only_authorised_change(ROOT)
 
     def test_fetch_knowledge_still_bounded_and_active_only(self, seeded):
         with _APP.app_context():
@@ -578,9 +655,14 @@ class TestFailOpen:
 class TestScope:
 
     def test_forbidden_files_untouched(self):
+        # NARROWED BY RC2.5.4c-x-1a: app/services/knowledge_service.py moves
+        # out of this blanket zero-diff list and into the dedicated,
+        # stricter test_knowledge_service_changed_only_where_rc254cx1a_
+        # authorised above, which permits ONLY the authorised exclusion-set
+        # change and still rejects every other edit to that file. Every other
+        # path below keeps its full zero-diff protection unchanged.
         import subprocess
         for path in ("app/models.py", "migrations/",
-                     "app/services/knowledge_service.py",
                      "app/services/prompt_composer.py",
                      "app/services/ai_service.py",
                      "app/bot/router.py", "app/bot/constants.py",

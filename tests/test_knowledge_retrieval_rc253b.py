@@ -423,10 +423,17 @@ class TestRendererPropertiesPreserved:
         unranked one -- ranking selects WHICH rows render, never WHICH KEYS
         within a row. The price still renders, so this is not passing merely
         because the row was ranked out.
+
+        RC2.5.4c-x-1a: the fixture's price moves from commercial.base_price
+        (now excluded, because it duplicates normal_total_fee and gave the AI
+        two prices for one course) to commercial.normal_total_fee, the
+        canonical field that still renders. The anti-vacuity assertion is
+        deliberately still a PRICE, which keeps the docstring's claim above
+        literally true.
         """
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, {
-                "commercial": {"base_price": 19540,
+                "commercial": {"normal_total_fee": 19540,
                               "payment_url": "https://rzp.io/rzp/ACTIVE"}
             }))
             db.session.commit()

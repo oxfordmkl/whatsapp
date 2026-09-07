@@ -161,23 +161,34 @@ class TestScalarRenderingUnchanged:
 
 class TestNestedRendering:
 
-    def test_commercial_base_price_and_currency_render(self, seeded):
-        """INVERTED IN PART by RC2.5.5b-1.
+    def test_commercial_currency_renders_and_base_price_does_not(self, seeded):
+        """INVERTED TWICE.
 
-        Was test_commercial_base_price_currency_payment_url_render, which also
-        asserted commercial.payment_url reached the block. payment_url is now
-        excluded from rendering: it is resolved deterministically by
-        payment_link_service and emitted in a fixed template, never handed to
-        the AI to paraphrase. The price/currency half of the original contract
-        is unchanged and still asserted; only the payment_url line flipped.
+        RC2.5.5b-1 flipped the payment_url half: it is resolved
+        deterministically by payment_link_service and emitted in a fixed
+        template, never handed to the AI to paraphrase.
+
+        RC2.5.4c-x-1a flips the base_price half, for a different reason --
+        duplication, not secrecy. commercial.base_price and
+        commercial.normal_total_fee both hold one course's customer price.
+        catalogue_service._record_from_row applies a precedence rule
+        (normal_total_fee first, base_price only when absent) and every
+        deterministic path reads the resulting CourseRecord; this flattener
+        bypasses CourseRecord and used to yield BOTH keys, so the AI path had
+        no precedence rule at all. Production PGDCA carried 16000 and 19540
+        simultaneously for ~17h with both in the prompt.
+
+        commercial.currency is the surviving positive assertion and proves the
+        row still rendered -- the test is not vacuous.
         """
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, PRICING_ATTRS))
             db.session.commit()
             row = TenantKnowledge.query.filter_by(tenant_id=TA).first()
             line = ks._render_row(row)
-        assert "commercial.base_price: 15999" in line
-        assert "commercial.currency: INR" in line
+        assert "commercial.currency: INR" in line        # anti-vacuity
+        assert "commercial.base_price" not in line
+        assert "15999" not in line
         assert "commercial.payment_url" not in line
         assert "rzp.io/rzp/KAQ2C7t" not in line
 
@@ -205,8 +216,13 @@ class TestNestedRendering:
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, PRICING_ATTRS))
             db.session.commit()
             block = ks.render_knowledge_block(TA)
-        assert "commercial.base_price: 15999" in block
+        # RC2.5.4c-x-1a: commercial.base_price is no longer rendered, so the
+        # positive assertion moves to commercial.currency. The point of this
+        # test is that NESTED values reach the composed block at all, which
+        # both surviving assertions still prove.
+        assert "commercial.currency: INR" in block
         assert "regulatory.components[0].amount: 4500" in block
+        assert "commercial.base_price" not in block
 
     def test_dict_keys_sorted_deterministically(self, seeded):
         with _APP.app_context():
@@ -237,14 +253,22 @@ class TestNestedRendering:
 class TestEmptyNestedStructures:
 
     def test_empty_offers_list_produces_no_offers_line(self, seeded):
+        # RC2.5.4c-x-1a: base_price is no longer rendered, so it can no longer
+        # serve as this test's anti-vacuity canary -- an empty `line` would
+        # otherwise satisfy `"offers" not in line` vacuously. commercial.code
+        # is added to the fixture and asserted present in its place; the
+        # subject of the test (an empty list yields NO line, never
+        # "offers: []") is unchanged.
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None,
-                              {"commercial": {"base_price": 100, "offers": []}}))
+                              {"commercial": {"code": "X1", "base_price": 100,
+                                              "offers": []}}))
             db.session.commit()
             row = TenantKnowledge.query.filter_by(tenant_id=TA).first()
             line = ks._render_row(row)
-        assert "commercial.base_price: 100" in line
+        assert "commercial.code: X1" in line             # anti-vacuity
         assert "offers" not in line
+        assert "commercial.base_price" not in line
 
     def test_empty_dict_produces_nothing(self, seeded):
         with _APP.app_context():
@@ -282,12 +306,17 @@ class TestMalformedNestedDataFailsOpen:
     def test_offers_as_wrong_type_does_not_raise(self, seeded):
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None,
-                              {"commercial": {"base_price": 100, "offers": "oops"}}))
+                              {"commercial": {"code": "X1", "base_price": 100,
+                                              "offers": "oops"}}))
             db.session.commit()
             row = TenantKnowledge.query.filter_by(tenant_id=TA).first()
             line = ks._render_row(row)
-        assert "commercial.base_price: 100" in line
+        # RC2.5.4c-x-1a: commercial.code replaces base_price as the sibling
+        # that proves the rest of the row still rendered around the malformed
+        # value. The fail-open contract itself is unchanged.
+        assert "commercial.code: X1" in line
         assert "commercial.offers: oops" in line
+        assert "commercial.base_price" not in line
 
     def test_malformed_top_level_json_still_fails_open(self, seeded):
         """Unchanged pre-existing contract: unparsable attributes -> {}."""
@@ -390,18 +419,28 @@ class TestNestedPayloadCapped:
 class TestNoArithmetic:
 
     def test_final_price_rendered_verbatim_not_derived(self, seeded):
-        """No discount/base_price subtraction performed anywhere -- the
-        offer's stated final_price is the only number that appears for it."""
+        """No discount subtraction performed anywhere -- the offer's stated
+        final_price is the only number that appears for it.
+
+        RC2.5.4c-x-1a: the full price in this fixture moves from
+        commercial.base_price (now excluded from rendering) to
+        commercial.normal_total_fee (the canonical customer-facing field,
+        which still renders). The contract is deliberately unweakened: TWO
+        authored prices are still present in the line and the derived
+        difference is still asserted absent. Swapping to a non-price canary
+        would have made the "no subtraction" claim vacuous, since there would
+        be nothing left to subtract from.
+        """
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None, {
-                "commercial": {"base_price": 15999, "offers": [
+                "commercial": {"normal_total_fee": 15999, "offers": [
                     {"label": "Sale", "final_price": 13999}
                 ]}
             }))
             db.session.commit()
             row = TenantKnowledge.query.filter_by(tenant_id=TA).first()
             line = ks._render_row(row)
-        assert "commercial.base_price: 15999" in line
+        assert "commercial.normal_total_fee: 15999" in line
         assert "commercial.offers[0].final_price: 13999" in line
         assert "2000" not in line  # no computed discount amount anywhere
 
@@ -474,7 +513,7 @@ class TestLegacyPaymentUrlExclusion:
         not reach a generative model. The surrounding price still renders."""
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None, {
-                "commercial": {"base_price": 100,
+                "commercial": {"code": "X1", "base_price": 100,
                               "payment_url": "https://rzp.io/rzp/ACTIVE123"}
             }))
             db.session.commit()
@@ -482,7 +521,11 @@ class TestLegacyPaymentUrlExclusion:
             line = ks._render_row(row)
         assert "commercial.payment_url" not in line
         assert "ACTIVE123" not in line
-        assert "commercial.base_price: 100" in line
+        # ANTI-VACUITY, RC2.5.4c-x-1a: base_price used to be the sibling that
+        # proved the row rendered at all; it is now excluded too, so without a
+        # replacement the two assertions above would pass on an empty line.
+        # commercial.code renders and is unrelated to payment content.
+        assert "commercial.code: X1" in line
 
     def test_legacy_payment_url_does_not_appear_in_rendered_block(self, seeded):
         """Reproduces the exact RC2.5.3a-K production finding: PGDCA's real
@@ -509,6 +552,7 @@ class TestLegacyPaymentUrlExclusion:
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "X", None, {
                 "commercial": {
+                    "code": "PGDCA",
                     "base_price": 19540,
                     "payment_url": "https://rzp.io/rzp/NEWLINK",
                     "legacy_payment_url": "https://rzp.io/rzp/KAQ2C7t",
@@ -521,7 +565,10 @@ class TestLegacyPaymentUrlExclusion:
         assert "rzp.io/rzp/KAQ2C7t" not in line
         assert "legacy_payment_url" not in line
         assert "commercial.payment_url" not in line
-        assert "commercial.base_price: 19540" in line
+        # ANTI-VACUITY, RC2.5.4c-x-1a: commercial.code replaces the retired
+        # base_price canary. Four negative assertions above are only
+        # meaningful if the row rendered at all.
+        assert "commercial.code: PGDCA" in line
 
     def test_other_scalar_attributes_still_render_normally(self, seeded):
         """The exclusion is scoped to one key name -- everything else in the
@@ -543,9 +590,15 @@ class TestLegacyPaymentUrlExclusion:
             line = ks._render_row(row)
         assert "duration: 12 Months" in line
         assert "commercial.currency: INR" in line
-        assert "commercial.base_price: 19540" in line
         assert "regulatory.components[0].amount: 4500" in line
         assert "rzp.io/rzp/KAQ2C7t" not in line
+        # RC2.5.4c-x-1a: base_price is now excluded too, so it moves from the
+        # "still renders" list to the "excluded" list. The point of the test
+        # -- that exclusion is scoped to named keys and leaves every other
+        # field in the same nested structure alone -- is proven by the three
+        # surviving positive assertions above, which span two nesting levels
+        # and both sibling dicts.
+        assert "commercial.base_price" not in line
 
     def test_legacy_payment_url_excluded_regardless_of_nesting_location(self, seeded):
         """The rule is a bare key-name match, not a fixed dotted path --
@@ -562,13 +615,15 @@ class TestLegacyPaymentUrlExclusion:
     def test_legacy_payment_url_excluded_from_the_composed_block(self, seeded):
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, {
-                "commercial": {"base_price": 19540,
+                "commercial": {"code": "PGDCA", "base_price": 19540,
                               "legacy_payment_url": "https://rzp.io/rzp/KAQ2C7t"}
             }))
             db.session.commit()
             block = ks.render_knowledge_block(TA)
         assert "rzp.io/rzp/KAQ2C7t" not in block
-        assert "commercial.base_price: 19540" in block
+        # ANTI-VACUITY, RC2.5.4c-x-1a: commercial.code replaces base_price as
+        # proof the row reached the composed block.
+        assert "commercial.code: PGDCA" in block
 
     def test_composed_prompt_has_no_payment_url_of_either_kind(self, seeded):
         """End-to-end through prompt_composer: the exact property that
@@ -580,7 +635,13 @@ class TestLegacyPaymentUrlExclusion:
         with _APP.app_context():
             db.session.add(_k(TA, ks.KIND_COURSE, "PGDCA", None, {
                 "commercial": {
-                    "base_price": 19540,
+                    # RC2.5.4c-x-1a: the price in this fixture moves from
+                    # base_price (now excluded) to normal_total_fee, the
+                    # canonical customer-facing field that still renders. The
+                    # anti-vacuity assertion below is specifically about a
+                    # PRICE reaching the prompt, so it keeps a real price
+                    # rather than degrading to a non-price canary.
+                    "normal_total_fee": 19540,
                     "payment_url": "https://rzp.io/rzp/CURRENTLINK",
                     "legacy_payment_url": "https://rzp.io/rzp/KAQ2C7t",
                 }
@@ -768,6 +829,26 @@ class TestScope:
             # wildcard -- so the tripwire keeps rejecting everything else
             # exactly as before.
             "tests/test_catalogue_price_fallback_rc254cx.py",
+            # WIDENED BY RC2.5.4c-x-1b: the AI price-source suite added by
+            # RC2.5.4c-x-1a, which pins that commercial.base_price no longer
+            # reaches the prompt while commercial.normal_total_fee still
+            # does -- so the AI path gets ONE price per course, the same one
+            # the deterministic paths quote. Its source file,
+            # app/services/knowledge_service.py, is the first entry in this
+            # list. A single named file -- no directory, no wildcard -- so
+            # the tripwire keeps rejecting everything else exactly as before.
+            "tests/test_ai_price_source_rc254cx1a.py",
+            # ALSO WIDENED BY RC2.5.4c-x-1b: the RC2.5.5b payment-isolation
+            # suite, which that same phase authorises this tripwire inversion
+            # to touch. Two of its tests used "commercial.base_price: 19540"
+            # as their ANTI-VACUITY canary before asserting no payment URL
+            # renders; with base_price excluded that canary is gone, so it was
+            # replaced with commercial.code / commercial.normal_total_fee
+            # rather than deleted -- deleting it would have left the payment
+            # assertions passing on an empty block. Its exact-set assertion
+            # was updated to the three authorised keys at the same time. A
+            # single named file -- no directory, no wildcard.
+            "tests/test_payment_link_isolation_rc255b.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

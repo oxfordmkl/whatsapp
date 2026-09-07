@@ -590,13 +590,20 @@ class TestPaymentUrlNeverReachesThePrompt:
     def test_active_payment_url_is_not_rendered(self, seeded):
         from app.services import knowledge_service as ks
         with _APP.app_context():
-            db.session.add(self._row(B, base_price=19540,
+            db.session.add(self._row(B, code="PGDCA", base_price=19540,
                                      payment_url="https://rzp.io/rzp/SECRETPAY"))
             db.session.commit()
             block = ks.render_knowledge_block(B)
         assert "SECRETPAY" not in block
         assert "payment_url" not in block
-        assert "19540" in block, "row did not render at all -- test is vacuous"
+        # ANTI-VACUITY. The canary was commercial.base_price: 19540, which
+        # RC2.5.4c-x-1a excludes from rendering too (it duplicates
+        # commercial.normal_total_fee and gave the AI two prices for one
+        # course). commercial.code replaces it: it renders, it is unrelated
+        # to payment content, and without it the two negative assertions
+        # above would pass on an empty block.
+        assert "commercial.code: PGDCA" in block, \
+            "row did not render at all -- test is vacuous"
 
     def test_legacy_payment_url_remains_excluded(self, seeded):
         from app.services import knowledge_service as ks
@@ -607,24 +614,38 @@ class TestPaymentUrlNeverReachesThePrompt:
             block = ks.render_knowledge_block(B)
         assert "OLDPAY" not in block and "legacy_payment_url" not in block
 
-    def test_both_keys_are_in_the_exclusion_set(self):
+    def test_the_exclusion_set_is_exactly_the_three_authorised_keys(self):
+        """WIDENED BY RC2.5.4c-x-1a (was test_both_keys_are_in_the_exclusion
+        _set). Still EXACT equality, not membership: an accidental addition or
+        removal must still fail this test. base_price joins the set for a
+        different reason from the two URLs -- it duplicates
+        commercial.normal_total_fee, so the AI received two prices for one
+        course with no precedence rule, while the deterministic paths applied
+        one via CourseRecord."""
         from app.services import knowledge_service as ks
         assert ks._NON_RENDERABLE_KEYS == frozenset(
-            {"legacy_payment_url", "payment_url"})
+            {"legacy_payment_url", "payment_url", "base_price"})
 
     def test_other_commercial_fields_still_render(self, seeded):
-        """The exclusion is two key names, not the commercial subtree."""
+        """The exclusion is three key names, not the commercial subtree."""
         from app.services import knowledge_service as ks
         with _APP.app_context():
             db.session.add(self._row(B, base_price=19540, currency="INR",
-                                     code="PGDCA",
+                                     code="PGDCA", normal_total_fee=19540,
                                      payment_url="https://rzp.io/rzp/X"))
             db.session.commit()
             block = ks.render_knowledge_block(B)
-        assert "commercial.base_price: 19540" in block
+        # RC2.5.4c-x-1a: base_price moves from the "still renders" list to the
+        # excluded list, and normal_total_fee -- the canonical customer-facing
+        # price -- is added to the fixture in its place. The test's subject is
+        # unchanged and is if anything better proven: a PRICE still reaches
+        # the prompt, so the exclusion demonstrably is not swallowing the
+        # commercial subtree.
+        assert "commercial.normal_total_fee: 19540" in block
         assert "commercial.currency: INR" in block
         assert "commercial.code: PGDCA" in block
         assert "rzp.io/rzp/X" not in block
+        assert "commercial.base_price" not in block
 
     def test_excluded_at_any_nesting_depth(self, seeded):
         """Matched by bare key name, not dotted path -- the same rule the

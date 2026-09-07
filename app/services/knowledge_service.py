@@ -290,7 +290,38 @@ _MAX_LIST_ITEMS = 5
 # So the set now covers both the archival URL and the live one: no payment
 # URL of any kind reaches the prompt, while both remain fully readable by the
 # code paths that are supposed to read them.
-_NON_RENDERABLE_KEYS = frozenset({"legacy_payment_url", "payment_url"})
+#
+# RC2.5.4c-x-1a adds `base_price`, for a third distinct reason: it is a
+# DUPLICATE of a fact already in the prompt, not a secret.
+#
+# Two fields hold one course's customer price. The RC2.5.4b admin UI writes
+# commercial.base_price; RC2.5.5c-2's backfill wrote commercial
+# .normal_total_fee; RC2.5.5c-3's read path takes normal_total_fee, and
+# RC2.5.4c-x falls back to base_price when it is absent. That precedence
+# rule lives in catalogue_service._record_from_row and protects every
+# DETERMINISTIC path -- but this flattener bypasses CourseRecord entirely and
+# yielded both keys verbatim, so the AI path had no precedence rule at all.
+#
+# That is not theoretical. PGDCA carried normal_total_fee 19540 and
+# base_price 16000 for roughly seventeen hours (RC2.5.4c-x-1 audit), during
+# which the composed prompt contained BOTH "commercial.base_price: 16000" and
+# "commercial.normal_total_fee: 19540" for one course, with nothing to say
+# which the model should quote. The deterministic flow said 19540 throughout.
+#
+# Excluding base_price makes the prompt agree with the read precedence:
+# normal_total_fee is what the customer is quoted, so it is the one price the
+# AI sees. When normal_total_fee is absent the AI simply has no price line
+# for that course and must not invent one -- which is correct, and strictly
+# safer than the old behaviour of showing a number no deterministic path
+# would ever have quoted.
+#
+# Rendering-time only, exactly like the two URLs above. base_price stays in
+# storage, stays readable by _attributes(), stays the admin UI's write
+# target, and stays the RC2.5.4c-x catalogue fallback -- FST01 is still
+# quoted 37,000 by every deterministic path. Nothing about the WRITE path or
+# the canonical-field decision is settled here; that is Phase 2.
+_NON_RENDERABLE_KEYS = frozenset(
+    {"legacy_payment_url", "payment_url", "base_price"})
 
 
 def _is_renderable_scalar(v):
