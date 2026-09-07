@@ -849,6 +849,14 @@ class TestScope:
             # was updated to the three authorised keys at the same time. A
             # single named file -- no directory, no wildcard.
             "tests/test_payment_link_isolation_rc255b.py",
+            # WIDENED BY RC2.5.4c-x-2: the dual-write suite. That phase gives
+            # commercial.normal_total_fee its first writer -- the admin form's
+            # customer price is now stored to BOTH keys, so the two cannot
+            # diverge on any row an admin edits. Its source file,
+            # app/services/knowledge_admin_service.py, is already listed
+            # above. A single named file -- no directory, no wildcard -- so
+            # the tripwire keeps rejecting everything else exactly as before.
+            "tests/test_price_dualwrite_rc254cx2.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

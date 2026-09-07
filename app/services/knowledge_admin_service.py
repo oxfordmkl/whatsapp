@@ -388,10 +388,44 @@ def _merge_attributes(existing, cleaned):
     else:
         commercial.pop("currency", None)
 
+    # Phase RC2.5.4c-x-2: the customer price is written to BOTH keys.
+    #
+    # Two fields hold one course's customer-facing total. This module wrote
+    # only commercial.base_price; commercial.normal_total_fee had NO writer
+    # anywhere in the application -- its sixteen production values came from
+    # RC2.5.5c-2, a data-only commit that shipped no runnable writer. The
+    # catalogue read path prefers normal_total_fee (RC2.5.5c-3) and falls
+    # back to base_price only when it is absent (RC2.5.4c-x). So an edit
+    # moved the admin's number while the customer kept being quoted the old
+    # one -- PGDCA carried 19540 and 16000 simultaneously for ~17h.
+    #
+    # Writing both here makes the two fields incapable of diverging on any
+    # row an admin touches. The value is the SUBMITTED price and nothing
+    # else: never derived from the fee components (validate_payload keeps
+    # those independent and test_base_price_is_never_derived_from_components
+    # pins it), and never taken from either stored field, which would ignore
+    # what the admin just typed.
+    #
+    # THE BLANK BRANCH IS DELIBERATELY ASYMMETRIC.
+    #
+    # A blank price pops base_price, as it always has. It must NOT pop
+    # normal_total_fee. That field has never been touched by this merge, and
+    # popping it would silently delete the customer-facing price from the
+    # sixteen courses RC2.5.5c-2 authored -- a blank form field erasing what
+    # a business charges. The asymmetry is the safety guard, not an
+    # oversight: see test_blank_price_preserves_normal_total_fee and mutant
+    # M5, which exists solely to keep this branch honest.
+    #
+    # The RC2.5.4c-x read fallback stays. It is what still serves a row
+    # written before this phase (FST01) until its next edit, and it is what
+    # makes this change reversible. Retiring it, and removing base_price
+    # from storage, is a separate later decision.
     if cleaned["base_price"] is not None:
         commercial["base_price"] = cleaned["base_price"]
+        commercial["normal_total_fee"] = cleaned["base_price"]
     else:
         commercial.pop("base_price", None)
+        # normal_total_fee is deliberately NOT popped -- see above.
 
     # An empty submission CLEARS the code, exactly like payment_url. A stale
     # code left behind after an admin blanked the field would keep matching in
