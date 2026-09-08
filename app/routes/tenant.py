@@ -85,6 +85,24 @@ def _get_current_tenant():
     return Tenant.query.get(tid)
 
 
+def _catalogue_categories():
+    """Phase RC2.5.4c-x-5a: the closed goal-category vocabulary for the course
+    form.
+
+    Sourced from catalogue_service so the admin form and the runtime resolver
+    cannot drift apart -- courses_for_category() returns nothing for a value
+    outside this set, so a form offering a fifth option would let an admin
+    save a category that puts their course in no menu at all. Imported lazily
+    and fail-soft: an empty tuple renders a select with no options rather than
+    500-ing the whole course form.
+    """
+    try:
+        from app.services.catalogue_service import CATEGORIES
+        return CATEGORIES
+    except Exception:
+        return ()
+
+
 def _tenant_user_query():
     """
     Returns a User query scoped to the current tenant.
@@ -733,6 +751,10 @@ def tenant_course_new():
         row=None,
         values={},
         allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+        # RC2.5.4c-x-5a: the closed goal-category vocabulary, sourced
+        # from catalogue_service so the form and the resolver cannot
+        # drift apart.
+        allowed_categories=_catalogue_categories(),
     )
 
 
@@ -760,6 +782,10 @@ def tenant_course_create():
             row=None,
             values=request.form,
             allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+            # RC2.5.4c-x-5a: the closed goal-category vocabulary, sourced
+            # from catalogue_service so the form and the resolver cannot
+            # drift apart.
+            allowed_categories=_catalogue_categories(),
         ), 400
 
     flash(f'"{row.title}" created.', 'success')
@@ -797,6 +823,10 @@ def tenant_course_edit(row_id):
                 row=row,
                 values=request.form,
                 allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+                # RC2.5.4c-x-5a: the closed goal-category vocabulary, sourced
+                # from catalogue_service so the form and the resolver cannot
+                # drift apart.
+                allowed_categories=_catalogue_categories(),
             ), 400
 
         flash(f'"{updated.title}" updated.', 'success')
@@ -812,12 +842,22 @@ def tenant_course_edit(row_id):
             if isinstance(c, dict) and c.get('type') is not None:
                 by_type[c['type']] = c.get('amount')
 
+    # RC2.5.4c-x-5a: the form edits these as one comma-separated string and a
+    # multi-select. Stored shape is a list of strings at the top level; a row
+    # that has neither key prefills empty rather than erroring.
+    stored_keywords = attrs.get('keywords')
+    stored_categories = attrs.get('categories')
+
     values = {
         'title': row.title,
         'kind': row.kind,
         'body': row.body or '',
         'sort_order': row.sort_order,
         'duration': attrs.get('duration') or '',
+        'keywords': ', '.join(
+            k for k in (stored_keywords or []) if isinstance(k, str)),
+        'categories': [c for c in (stored_categories or [])
+                       if isinstance(c, str)],
         # RC2.5.5b-1: the stable key the payment resolver matches on.
         'code': commercial.get('code') or '',
         'currency': commercial.get('currency') or '',
@@ -836,6 +876,10 @@ def tenant_course_edit(row_id):
         row=row,
         values=values,
         allowed_kinds=knowledge_admin_service.ALLOWED_KINDS,
+        # RC2.5.4c-x-5a: the closed goal-category vocabulary, sourced
+        # from catalogue_service so the form and the resolver cannot
+        # drift apart.
+        allowed_categories=_catalogue_categories(),
     )
 
 

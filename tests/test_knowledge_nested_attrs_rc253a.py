@@ -857,6 +857,16 @@ class TestScope:
             # above. A single named file -- no directory, no wildcard -- so
             # the tripwire keeps rejecting everything else exactly as before.
             "tests/test_price_dualwrite_rc254cx2.py",
+            # WIDENED BY RC2.5.4c-x-5a: the keywords/categories suite. That
+            # phase gives attributes.keywords and attributes.categories their
+            # first writer -- both were read by catalogue_service (free-text
+            # discovery and goal recommendations) and writable by nobody, so a
+            # course created through the admin form was unreachable by keyword
+            # and absent from every goal menu. Its source files,
+            # app/services/knowledge_admin_service.py and
+            # app/routes/tenant.py, are already listed above. A single named
+            # file -- no directory, no wildcard.
+            "tests/test_course_keywords_categories_rc254cx5.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

@@ -246,6 +246,25 @@ _URL_RE = re.compile(r"^https?://[^\s<>\"']+$", re.IGNORECASE)
 # case-folding would weaken the resolver's "exactly one match" guarantee.
 _CODE_RE = re.compile(r"^[A-Z0-9_-]+$")
 
+# Phase RC2.5.4c-x-5a: discovery keywords.
+#
+# These are matched as SUBSTRINGS of a customer's free text by
+# catalogue_service.match_keyword, so they are short discovery phrases, not
+# prose. The ceilings are set from what production actually holds (max 6
+# keywords per course, longest single keyword 20 characters) with headroom,
+# rather than invented: a course needing more than ten discovery terms is
+# almost certainly trying to match on prose, which makes every OTHER course
+# harder to reach.
+MAX_KEYWORDS = 10
+MAX_KEYWORD_LEN = 60
+
+# Letters, digits, spaces, ampersand and hyphen. Wide enough for every value
+# in production ("word processing", "tally prime", "dca fast track",
+# "corporate accounting") and narrow enough to keep punctuation, quotes and
+# angle brackets out of a field that is rendered to a tenant admin and fed to
+# the AI. Deliberately NOT the code charset: a keyword is a human phrase.
+_KEYWORD_RE = re.compile(r"^[a-z0-9 &-]+$")
+
 # NEVER writable through this module. See the module docstring.
 _NON_WRITABLE_ATTR_KEYS = frozenset({"legacy_payment_url"})
 
@@ -270,6 +289,86 @@ def _clean_money(raw, field, errors):
     return int(value) if value == int(value) else value
 
 
+def _clean_keywords(raw, errors):
+    """Comma-separated discovery phrases -> an ordered, de-duplicated list.
+
+    Returns None for a blank submission, which the merge treats as "remove
+    the key" (see _merge_attributes). Normalisation is strip + lowercase
+    because catalogue_service.match_keyword lowercases the customer's text
+    and then tests `keyword in text`: a stored "Web Design" would simply
+    never match anything, silently.
+
+    Order is preserved rather than sorted -- the tenant authored it, and
+    match_keyword's longest-wins rule makes order irrelevant to matching, so
+    reordering would only make the admin's own field look shuffled.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    out = []
+    for part in text.split(","):
+        kw = part.strip().lower()
+        if not kw:                       # "a,,b" and trailing commas
+            continue
+        if kw in out:                    # de-duplicate, keep first position
+            continue
+        if len(kw) > MAX_KEYWORD_LEN:
+            errors.append(
+                f"Keyword \"{kw[:30]}...\" is too long "
+                f"({MAX_KEYWORD_LEN} characters or fewer).")
+            continue
+        if not _KEYWORD_RE.match(kw):
+            errors.append(
+                f"Keyword \"{kw}\" may use only letters, digits, spaces, "
+                "'&' and '-'.")
+            continue
+        out.append(kw)
+
+    if len(out) > MAX_KEYWORDS:
+        errors.append(f"Use at most {MAX_KEYWORDS} keywords.")
+        return None
+    return out or None
+
+
+def _clean_categories(values, errors):
+    """Goal categories -> a de-duplicated list drawn from a CLOSED vocabulary.
+
+    catalogue_service.CATEGORIES is the single source of truth and is imported
+    lazily so this module keeps its existing import surface. A value outside
+    it is REJECTED rather than dropped: courses_for_category() would return
+    nothing for it, so silently accepting one would leave an admin looking at
+    a saved category that puts their course in no menu at all.
+    """
+    if values is None:
+        return None
+    if isinstance(values, str):
+        # A scalar arrives when a form sends one value, or from a plain dict
+        # in a unit test. Same comma semantics as keywords so both entry
+        # points behave identically.
+        values = [v for v in values.split(",")]
+    try:
+        from app.services.catalogue_service import CATEGORIES
+    except Exception:                                  # pragma: no cover
+        logger.exception("[knowledge_admin] category vocabulary unavailable")
+        return None
+
+    out = []
+    for v in values:
+        cat = str(v or "").strip().lower()
+        if not cat:
+            continue
+        if cat not in CATEGORIES:
+            errors.append(
+                f"Category \"{cat}\" is not one of: {', '.join(CATEGORIES)}.")
+            continue
+        if cat not in out:
+            out.append(cat)
+    return out or None
+
+
 def validate_payload(form):
     """Validate one create/edit submission. Returns (cleaned, errors).
 
@@ -279,6 +378,14 @@ def validate_payload(form):
     """
     errors = []
     get = form.get if hasattr(form, "get") else (lambda k, d=None: form.get(k, d))
+
+    # Phase RC2.5.4c-x-5a: categories arrive from a <select multiple>, so the
+    # form carries SEVERAL values under one name. request.form is a
+    # MultiDict and .get() returns only the FIRST -- reading it that way
+    # would silently store one category and drop the rest. getlist() is used
+    # when the form offers it, with a scalar fallback for a plain dict (unit
+    # tests, and any future non-MultiDict caller).
+    getlist = getattr(form, "getlist", None)
 
     title = (get("title") or "").strip()
     if not title:
@@ -346,6 +453,14 @@ def validate_payload(form):
         if amount is not None:
             components.append({"type": ctype, "label": label, "amount": amount})
 
+    # Phase RC2.5.4c-x-5a. Both are TOP-LEVEL attributes, not commercial ones:
+    # that is where catalogue_service._record_from_row already reads them
+    # from, and where all sixteen authored courses already store them.
+    keywords = _clean_keywords(get("keywords"), errors)
+    raw_categories = (getlist("categories") if getlist is not None
+                      else get("categories"))
+    categories = _clean_categories(raw_categories, errors)
+
     cleaned = {
         "title": title,
         "kind": kind,
@@ -357,6 +472,8 @@ def validate_payload(form):
         "code": code,
         "payment_url": payment_url,
         "components": components,
+        "keywords": keywords,
+        "categories": categories,
     }
     return cleaned, errors
 
@@ -382,6 +499,34 @@ def _merge_attributes(existing, cleaned):
         attrs["duration"] = cleaned["duration"]
     else:
         attrs.pop("duration", None)
+
+    # Phase RC2.5.4c-x-5a: discovery keywords and goal categories.
+    #
+    # Both were READ by catalogue_service and written by nobody. All sixteen
+    # authored courses carry them (from RC2.5.5c-2's data-only commit) and
+    # they survived edits only incidentally, via the dict(existing) copy
+    # above -- exactly the accident normal_total_fee lived on before
+    # RC2.5.4c-x-2. A course created through this form got neither, so it was
+    # unreachable by free text (match_keyword) and appeared in no goal
+    # recommendation (courses_for_category). That is what this fixes.
+    #
+    # POP ON BLANK, and deliberately so -- the opposite of the price guard
+    # three blocks below. Blanking a price would silently delete a
+    # customer-facing money value the admin never saw a field for; blanking
+    # keywords is a legible act with a visible effect, and leaving stale
+    # keywords un-clearable would be the worse failure. It is the same
+    # reasoning `code` records for itself: a stale value that keeps matching
+    # is worse than no value. The asymmetry is intentional, not an
+    # inconsistency, and both halves are pinned by tests.
+    if cleaned["keywords"] is not None:
+        attrs["keywords"] = list(cleaned["keywords"])
+    else:
+        attrs.pop("keywords", None)
+
+    if cleaned["categories"] is not None:
+        attrs["categories"] = list(cleaned["categories"])
+    else:
+        attrs.pop("categories", None)
 
     if cleaned["currency"] is not None:
         commercial["currency"] = cleaned["currency"]

@@ -395,9 +395,18 @@ class TestNoDerivation:
 class TestPreservation:
 
     def test_unrelated_attributes_survive_an_edit(self, seeded):
+        """AMENDED BY RC2.5.4c-x-5a. `keywords` and `categories` are no longer
+        UNRELATED to the form -- that phase made them editable fields, so a
+        submission that omits them now clears them by design (the pop-on-blank
+        contract, pinned in test_course_keywords_categories_rc254cx5). They are
+        therefore submitted here like any other form field, which keeps this
+        test's actual subject intact: attributes with NO form field at all --
+        historical_alias, official_name, eligibility, regulatory.source/as_of
+        -- must survive an edit rather than being silently destroyed."""
         client(seeded["ox_admin"]).post(
             f"/tenant/courses/{seeded['aligned']}/edit",
-            data=_form(title="Renamed", code="PGDCA", base_price="20000"))
+            data=_form(title="Renamed", code="PGDCA", base_price="20000",
+                       keywords="pgdca", categories=["job"]))
         a = _attrs(seeded["aligned"])
         assert a["historical_alias"] == "Computer Teacher Training"
         assert a["official_name"].startswith("Post Graduate")
@@ -451,10 +460,17 @@ class TestPreservation:
             assert pls.resolve_payment_url(OX, "FST01") is None
 
     def test_update_does_not_replace_the_whole_attributes_object(self, seeded):
+        """AMENDED BY RC2.5.4c-x-5a for the same reason as
+        test_unrelated_attributes_survive_an_edit: keywords and categories are
+        now form-managed, so they are submitted rather than omitted. The
+        subject -- that an update MERGES into the stored attributes instead of
+        replacing them wholesale -- is unchanged and still asserted over every
+        top-level key."""
         before = set(_attrs(seeded["aligned"]).keys())
         client(seeded["ox_admin"]).post(
             f"/tenant/courses/{seeded['aligned']}/edit",
-            data=_form(title="PGDCA", code="PGDCA", base_price="20000"))
+            data=_form(title="PGDCA", code="PGDCA", base_price="20000",
+                       keywords="pgdca", categories=["job"]))
         after = set(_attrs(seeded["aligned"]).keys())
         assert before <= after, f"top-level keys lost: {before - after}"
 

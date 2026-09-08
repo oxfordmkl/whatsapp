@@ -93,6 +93,49 @@
         </div>
       </div>
 
+      {# RC2.5.4c-x-5a: discovery keywords + goal categories. Both are read by
+         catalogue_service already; until this phase nothing could write them,
+         so a course created here was unreachable by free text and appeared in
+         no goal recommendation. #}
+      <div class="t-field">
+        <label for="keywords">Discovery keywords</label>
+        <input type="text" id="keywords" name="keywords"
+               value="{{ values.get('keywords', '') }}"
+               placeholder="e.g. pgdca, pgd">
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          Comma-separated words a customer might type when looking for this
+          course. Saved in lower case. Keep them short and specific — they are
+          matched inside whatever the customer writes, so a very general word
+          makes your other courses harder to find. Leave blank to remove all
+          keywords; the course can then only be found by its exact name or code.
+        </div>
+      </div>
+
+      <div class="t-field">
+        <label for="categories">Goal categories</label>
+        {# `values` is a plain dict on the edit-GET path (a real list) but the
+           submitted MultiDict when a validation error re-renders the form.
+           .get() on a MultiDict yields only the FIRST value, which would drop
+           every category but one from the redisplay, so use getlist() when
+           the object offers it. #}
+        {% set selected_categories = values.getlist('categories')
+             if values.getlist is defined else values.get('categories', []) %}
+        <select id="categories" name="categories" multiple size="4">
+          {% for c in allowed_categories %}
+            <option value="{{ c }}"
+              {% if c in selected_categories %}selected{% endif %}>
+              {{ c|capitalize }}
+            </option>
+          {% endfor %}
+        </select>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          Which career goals this course is recommended for. Hold Ctrl (or ⌘)
+          to choose more than one. Leave nothing selected to remove the course
+          from every goal-based recommendation — it stays available by name,
+          code and in the full course list.
+        </div>
+      </div>
+
       <!-- ── Customer price ─────────────────────────────────────── -->
       <div class="t-card">
         <div class="t-card-title"><i class="bi bi-cash-stack me-1"></i> Customer Price</div>
