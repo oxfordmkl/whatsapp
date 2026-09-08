@@ -755,6 +755,7 @@ def tenant_course_new():
         # from catalogue_service so the form and the resolver cannot
         # drift apart.
         allowed_categories=_catalogue_categories(),
+        allowed_eligibility=knowledge_admin_service.ELIGIBILITY_VALUES,
     )
 
 
@@ -786,6 +787,7 @@ def tenant_course_create():
             # from catalogue_service so the form and the resolver cannot
             # drift apart.
             allowed_categories=_catalogue_categories(),
+            allowed_eligibility=knowledge_admin_service.ELIGIBILITY_VALUES,
         ), 400
 
     flash(f'"{row.title}" created.', 'success')
@@ -827,6 +829,7 @@ def tenant_course_edit(row_id):
                 # from catalogue_service so the form and the resolver cannot
                 # drift apart.
                 allowed_categories=_catalogue_categories(),
+                allowed_eligibility=knowledge_admin_service.ELIGIBILITY_VALUES,
             ), 400
 
         flash(f'"{updated.title}" updated.', 'success')
@@ -858,6 +861,11 @@ def tenant_course_edit(row_id):
             k for k in (stored_keywords or []) if isinstance(k, str)),
         'categories': [c for c in (stored_categories or [])
                        if isinstance(c, str)],
+        # RC2.5.4c-x-6a: both stored as top-level strings. A row that has
+        # neither prefills empty rather than erroring -- DCA and DGSTP have no
+        # eligibility in production and must keep rendering correctly.
+        'official_name': attrs.get('official_name') or '',
+        'eligibility': attrs.get('eligibility') or '',
         # RC2.5.5b-1: the stable key the payment resolver matches on.
         'code': commercial.get('code') or '',
         'currency': commercial.get('currency') or '',
@@ -880,6 +888,7 @@ def tenant_course_edit(row_id):
         # from catalogue_service so the form and the resolver cannot
         # drift apart.
         allowed_categories=_catalogue_categories(),
+        allowed_eligibility=knowledge_admin_service.ELIGIBILITY_VALUES,
     )
 
 

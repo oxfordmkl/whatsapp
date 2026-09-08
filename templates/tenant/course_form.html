@@ -93,6 +93,46 @@
         </div>
       </div>
 
+      {# RC2.5.4c-x-6a: the awarding body's formal name and the entry
+         requirement. Both are AI-ONLY -- no deterministic customer screen
+         reads either; they reach a customer only through the AI's knowledge
+         block. Neither is course identity: that stays the course code. #}
+      <div class="t-field">
+        <label for="official_name">Official name</label>
+        <input type="text" id="official_name" name="official_name"
+               maxlength="200"
+               value="{{ values.get('official_name', '') }}"
+               placeholder="e.g. Post Graduate Diploma in Computer Applications (PGDCA)">
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          The awarding body's full formal name for this course, exactly as it
+          appears on the certificate or fee card. Used only when the AI answers
+          questions — the course title above is what customers see in menus.
+          Leave blank to remove it.
+        </div>
+      </div>
+
+      <div class="t-field">
+        <label for="eligibility">Eligibility</label>
+        <select id="eligibility" name="eligibility">
+          <option value="" {% if not values.get('eligibility') %}selected{% endif %}>
+            Not specified
+          </option>
+          {% for e in allowed_eligibility %}
+            <option value="{{ e }}"
+              {% if values.get('eligibility') == e %}selected{% endif %}>
+              {{ e }}
+            </option>
+          {% endfor %}
+        </select>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          The minimum qualification required to enrol. Chosen from a fixed list
+          rather than typed, because the AI quotes this to customers as an
+          entry requirement and must never state one you did not authorise.
+          "Not specified" removes it, and the AI then says nothing about
+          eligibility for this course.
+        </div>
+      </div>
+
       {# RC2.5.4c-x-5a: discovery keywords + goal categories. Both are read by
          catalogue_service already; until this phase nothing could write them,
          so a course created here was unreachable by free text and appeared in

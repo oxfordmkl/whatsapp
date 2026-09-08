@@ -867,6 +867,15 @@ class TestScope:
             # app/routes/tenant.py, are already listed above. A single named
             # file -- no directory, no wildcard.
             "tests/test_course_keywords_categories_rc254cx5.py",
+            # WIDENED BY RC2.5.4c-x-6a: the official_name/eligibility suite.
+            # Phase A of the remaining admin-surface gap -- both are top-level
+            # AI-only strings that were stored on the authored courses and
+            # writable by nobody. (emi_available is deliberately NOT in that
+            # phase: it is nested, boolean, and rendered as a financial claim.)
+            # Its source files, app/services/knowledge_admin_service.py and
+            # app/routes/tenant.py, are already listed above. A single named
+            # file -- no directory, no wildcard.
+            "tests/test_course_official_name_eligibility_rc254cx6a.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

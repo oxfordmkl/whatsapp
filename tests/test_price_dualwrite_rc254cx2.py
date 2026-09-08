@@ -401,18 +401,26 @@ class TestPreservation:
         contract, pinned in test_course_keywords_categories_rc254cx5). They are
         therefore submitted here like any other form field, which keeps this
         test's actual subject intact: attributes with NO form field at all --
-        historical_alias, official_name, eligibility, regulatory.source/as_of
-        -- must survive an edit rather than being silently destroyed."""
+        historical_alias, regulatory.source/as_of -- must survive an edit
+        rather than being silently destroyed.
+
+        AMENDED AGAIN BY RC2.5.4c-x-6a, which made official_name and
+        eligibility form-controlled too, so they move from the "omitted" list
+        to the "submitted" list for exactly the same reason. eligibility is
+        submitted and asserted in the vocabulary's canonical casing."""
         client(seeded["ox_admin"]).post(
             f"/tenant/courses/{seeded['aligned']}/edit",
             data=_form(title="Renamed", code="PGDCA", base_price="20000",
-                       keywords="pgdca", categories=["job"]))
+                       keywords="pgdca", categories=["job"],
+                       official_name="Post Graduate Diploma in Computer "
+                                     "Applications",
+                       eligibility="Any Degree"))
         a = _attrs(seeded["aligned"])
         assert a["historical_alias"] == "Computer Teacher Training"
         assert a["official_name"].startswith("Post Graduate")
         assert a["categories"] == ["job"]
         assert a["keywords"] == ["pgdca"]
-        assert a["eligibility"] == "Any degree"
+        assert a["eligibility"] == "Any Degree"
         assert a["regulatory"]["source"] == "Kerala State Rutronix fee card"
         assert a["regulatory"]["as_of"] == "2026"
 
@@ -465,12 +473,17 @@ class TestPreservation:
         now form-managed, so they are submitted rather than omitted. The
         subject -- that an update MERGES into the stored attributes instead of
         replacing them wholesale -- is unchanged and still asserted over every
-        top-level key."""
+        top-level key.
+
+        AMENDED AGAIN BY RC2.5.4c-x-6a for official_name and eligibility, now
+        form-controlled for the same reason."""
         before = set(_attrs(seeded["aligned"]).keys())
         client(seeded["ox_admin"]).post(
             f"/tenant/courses/{seeded['aligned']}/edit",
             data=_form(title="PGDCA", code="PGDCA", base_price="20000",
-                       keywords="pgdca", categories=["job"]))
+                       keywords="pgdca", categories=["job"],
+                       official_name="Post Graduate Diploma",
+                       eligibility="Any Degree"))
         after = set(_attrs(seeded["aligned"]).keys())
         assert before <= after, f"top-level keys lost: {before - after}"
 

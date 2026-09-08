@@ -236,6 +236,26 @@ MAX_DURATION_LEN = 100
 MAX_URL_LEN = 500
 MAX_CODE_LEN = 32
 
+# Phase RC2.5.4c-x-6a: the awarding body's formal course name, e.g.
+# "Certificate in Word Processing and Data Entry Operator (CWPDE)". The
+# longest in production is 75 characters; 200 matches MAX_TITLE_LEN, which is
+# the closest existing analogue -- both are a single-line human name for the
+# same row -- so this introduces no new limit convention.
+MAX_OFFICIAL_NAME_LEN = 200
+
+# Phase RC2.5.4c-x-6a: a CLOSED vocabulary, exactly the three values in
+# production (11 x "10th and Above", 2 x "+2 & Above", 1 x "Any Degree").
+#
+# Deliberately a select rather than free text. Eligibility is an entry
+# requirement -- the same class of claim prompt_composer tells the model never
+# to invent ("Never invent prices, offers, guarantees, eligibility or legal
+# claims") and constants.py annotates "always quote exactly -- never invent
+# eligibility". Free text would let an admin type a regulatory claim in prose
+# straight into the AI's context; a fixed list keeps the stored values
+# identical to the ones already authored. Adding a fourth value is a
+# deliberate vocabulary change, exactly as CATEGORIES is.
+ELIGIBILITY_VALUES = ("10th and Above", "+2 & Above", "Any Degree")
+
 # Anything not http/https is rejected outright. This is what stops
 # javascript:, data:, file: and similar from being stored and later rendered
 # to a tenant admin or fed to the AI.
@@ -331,6 +351,54 @@ def _clean_keywords(raw, errors):
         errors.append(f"Use at most {MAX_KEYWORDS} keywords.")
         return None
     return out or None
+
+
+def _clean_official_name(raw, errors):
+    """The awarding body's formal course name, or None for a blank field.
+
+    Whitespace is collapsed rather than merely stripped: these values are
+    pasted from fee cards and prospectuses, where a stray double space or a
+    newline is common, and the value is rendered into the AI prompt by
+    knowledge_service._flatten_attrs as a single line.
+
+    This is DESCRIPTIVE metadata, never identity. Course identity is
+    commercial.code, which get_course(), resolve_legacy_name() and the payment
+    resolver all key on; nothing here touches any of them.
+    """
+    if raw is None:
+        return None
+    text = " ".join(str(raw).split())
+    if not text:
+        return None
+    if len(text) > MAX_OFFICIAL_NAME_LEN:
+        errors.append(
+            f"Official name must be {MAX_OFFICIAL_NAME_LEN} characters or fewer.")
+        return None
+    return text
+
+
+def _clean_eligibility(raw, errors):
+    """One value from the CLOSED ELIGIBILITY_VALUES vocabulary, or None.
+
+    Rejected rather than dropped when unknown: silently discarding it would
+    leave an admin looking at a saved course whose eligibility never appeared,
+    and the value goes to the AI as an entry-requirement claim.
+
+    Matched case-insensitively on the trimmed input but STORED in the
+    vocabulary's own canonical casing, so the fourteen values already authored
+    keep their exact byte shape.
+    """
+    if raw is None:
+        return None
+    text = " ".join(str(raw).split())
+    if not text:
+        return None
+    for allowed in ELIGIBILITY_VALUES:
+        if text.lower() == allowed.lower():
+            return allowed
+    errors.append(
+        f"Eligibility must be one of: {', '.join(ELIGIBILITY_VALUES)}.")
+    return None
 
 
 def _clean_categories(values, errors):
@@ -461,6 +529,13 @@ def validate_payload(form):
                       else get("categories"))
     categories = _clean_categories(raw_categories, errors)
 
+    # Phase RC2.5.4c-x-6a. Also TOP-LEVEL, alongside keywords/categories --
+    # that is where all sixteen authored courses store them and where the
+    # generic flattener picks them up for the prompt. Both are single-valued,
+    # so neither needs getlist().
+    official_name = _clean_official_name(get("official_name"), errors)
+    eligibility = _clean_eligibility(get("eligibility"), errors)
+
     cleaned = {
         "title": title,
         "kind": kind,
@@ -474,6 +549,8 @@ def validate_payload(form):
         "components": components,
         "keywords": keywords,
         "categories": categories,
+        "official_name": official_name,
+        "eligibility": eligibility,
     }
     return cleaned, errors
 
@@ -527,6 +604,31 @@ def _merge_attributes(existing, cleaned):
         attrs["categories"] = list(cleaned["categories"])
     else:
         attrs.pop("categories", None)
+
+    # Phase RC2.5.4c-x-6a: the awarding body's formal name and the entry
+    # requirement. Both are AI-ONLY: no deterministic customer path reads
+    # either -- official_name has no reader in app/ at all, and eligibility's
+    # only source mentions are prompt guardrails -- so they reach a customer
+    # solely through knowledge_service._flatten_attrs, which is untouched.
+    #
+    # Same pop-on-blank as keywords/categories, and for the same reason: both
+    # are legible fields with a visible effect, and an un-clearable stale
+    # eligibility would be the worse failure -- it is an entry-requirement
+    # claim the AI may repeat. The RC2.5.4c-x-2 price guard below stays
+    # asymmetric and untouched.
+    #
+    # DCA and DGSTP have no eligibility in production and are deliberately
+    # left that way: this phase creates the capability, it does not populate
+    # existing records.
+    if cleaned["official_name"] is not None:
+        attrs["official_name"] = cleaned["official_name"]
+    else:
+        attrs.pop("official_name", None)
+
+    if cleaned["eligibility"] is not None:
+        attrs["eligibility"] = cleaned["eligibility"]
+    else:
+        attrs.pop("eligibility", None)
 
     if cleaned["currency"] is not None:
         commercial["currency"] = cleaned["currency"]

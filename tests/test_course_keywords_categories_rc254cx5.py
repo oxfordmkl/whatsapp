@@ -454,13 +454,26 @@ class TestPrefill:
 class TestPreservation:
 
     def test_unrelated_attributes_survive(self, seeded):
+        """AMENDED BY RC2.5.4c-x-6a. official_name and eligibility are no
+        longer UNRELATED to the form -- that phase made them editable, so a
+        submission omitting them now clears them by design (the pop-on-blank
+        contract). They are submitted here like any other field, keeping this
+        test's subject intact: attributes with NO form field at all --
+        historical_alias, regulatory.source/as_of -- must survive an edit.
+
+        eligibility is submitted and asserted in the vocabulary's canonical
+        casing ("Any Degree"); the cleaner matches case-insensitively but
+        stores the canonical form, which is the documented contract."""
         client(seeded["ox_admin"]).post(
             f"/tenant/courses/{seeded['rich']}/edit",
             data=_form(title="Renamed", code="PGDCA", base_price="19540",
-                       keywords="pgdca", categories=["job"]))
+                       keywords="pgdca", categories=["job"],
+                       official_name="Post Graduate Diploma in Computer "
+                                     "Applications",
+                       eligibility="Any Degree"))
         a = _attrs(seeded["rich"])
         assert a["official_name"].startswith("Post Graduate")
-        assert a["eligibility"] == "Any degree"
+        assert a["eligibility"] == "Any Degree"
         assert a["historical_alias"] == "Computer Teacher Training"
         assert a["regulatory"]["source"] == "Kerala State Rutronix fee card"
         assert a["regulatory"]["as_of"] == "2026"
