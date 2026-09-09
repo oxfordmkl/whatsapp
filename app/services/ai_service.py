@@ -139,9 +139,15 @@ def gemini_reply(user_msg: str, name: str, context: str = "", tenant_id: str = N
 def smart_fallback(name: str, msg: str = "") -> str:
     m = msg.lower()
     if any(w in m for w in ["fee", "price", "cost", "vila", "ethra","fees"]):
+        # Phase RC2.5.4c-x-6b1: the unconditional "EMI / installment option um
+        # und!" is removed. This fallback has no course in scope, so it cannot
+        # know whether commercial.emi_available is true -- and it fires on
+        # exactly the fee questions where a wrong EMI claim matters most. EMI
+        # is stated per course by cta_handlers/router/screens, which is
+        # untouched. Removal, not rewrite: nothing here can make the claim
+        # conditional, and whether EMI is offered at all remains open.
         return (
             f"😊 {name}, government approved rates-il courses und!\n\n"
-            "₹4,499 muthal thudangi — EMI / installment option um und! 📊\n\n"
             "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
             "Courses kaanan: *COURSES* reply cheyyoo 📚\n"
             "📞 9447329972"

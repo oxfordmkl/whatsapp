@@ -75,6 +75,75 @@ KAS_PY = os.path.join(_ROOT, "app", "services", "knowledge_admin_service.py")
 LEGACY_URL = "https://rzp.io/rzp/KAQ2C7t"
 ACTIVE_URL = "https://rzp.io/rzp/ACTIVE99"
 
+LF = chr(10)
+
+# RC2.5.4c-x-6b1: the only constructs that phase is authorised to change in
+# app/bot/constants.py. Both are marketing-copy pools that carried an
+# UNCONDITIONAL EMI claim, contradicting the per-course
+# commercial.emi_available flag inside a single rendered message.
+_CONSTANTS_AUTHORISED = {"TRUST_LINES", "FEES_VALUE_LINES"}
+
+
+def _assert_constants_only_emi_lines_changed(root):
+    """app/bot/constants.py may differ from HEAD ONLY in the two marketing
+    pools, and only by LOSING EMI-affirming entries.
+
+    Stronger than the working-tree pin it replaces: it also catches a
+    construct being added or removed, it proves every payment/price constant
+    is byte-identical, and it proves the permitted change was a removal of an
+    EMI claim rather than an arbitrary edit to those pools.
+    """
+    import subprocess
+
+    rel = "app/bot/constants.py"
+    # NOT text=True: on Windows that decodes git's stdout with the locale
+    # codepage and mangles this file's Malayalam and emoji, so the guard would
+    # fire on an encoding artifact rather than a real change. splitlines()
+    # normalises the line endings without needing a literal newline escape.
+    head = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root,
+                          capture_output=True)
+    assert head.returncode == 0, f"cannot read HEAD:{rel}"
+    old_src = LF.join(head.stdout.decode("utf-8").splitlines())
+    with open(os.path.join(root, *rel.split("/")), encoding="utf-8") as fh:
+        new_src = LF.join(fh.read().splitlines())
+
+    def segments(src):
+        named, other = {}, []
+        for node in ast.parse(src).body:
+            seg = ast.get_source_segment(src, node) or ""
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)):
+                named[node.name] = seg
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)):
+                named[node.targets[0].id] = seg
+            else:
+                other.append(seg)
+        return named, LF.join(other)
+
+    old_named, old_other = segments(old_src)
+    new_named, new_other = segments(new_src)
+
+    assert old_other == new_other, f"module-level code in {rel} changed"
+    assert set(old_named) == set(new_named), (
+        f"top-level constructs added or removed in {rel}: "
+        f"{set(old_named) ^ set(new_named)}")
+    for name, old_seg in old_named.items():
+        if name in _CONSTANTS_AUTHORISED:
+            continue
+        assert new_named[name] == old_seg, (
+            f"{rel}::{name} changed, but only "
+            f"{sorted(_CONSTANTS_AUTHORISED)} is authorised")
+
+    # The permitted change must be a REMOVAL of EMI-affirming entries.
+    for name in sorted(_CONSTANTS_AUTHORISED):
+        new_l = [x for x in new_named[name].splitlines() if "emi" in x.lower()]
+        assert not new_l, f"{rel}::{name} still carries an EMI line: {new_l}"
+        assert len(new_named[name].splitlines()) <= len(
+            old_named[name].splitlines()), (
+            f"{rel}::{name} gained lines; only removal is authorised")
+
+
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
 _APP.config["PRIMARY_TENANT_ID"] = OX
@@ -415,13 +484,23 @@ class TestRuntimeEffect:
             assert cat.match_keyword(OX, "pgdca please").kind == "none"
 
     def test_catalogue_service_source_is_untouched(self):
-        """This phase changes the WRITE path only."""
+        """This phase changes the WRITE path only.
+
+        NARROWED BY RC2.5.4c-x-6b1: catalogue_service.py keeps its full
+        zero-diff pin; app/bot/constants.py moves to the stricter
+        construct-level guard below, which permits ONLY the two EMI marketing
+        lines that phase is authorised to remove and still pins every other
+        constant -- including KEYWORD_TO_COURSE, ALL_COURSES and GOAL_COURSES,
+        which are what this test cares about."""
         import subprocess
         out = subprocess.run(
             ["git", "status", "--porcelain", "--",
-             "app/services/catalogue_service.py", "app/bot/constants.py"],
+             "app/services/catalogue_service.py"],
             cwd=_ROOT, capture_output=True, text=True).stdout
         assert out.strip() == "", f"runtime resolver changed: {out}"
+
+    def test_constants_changed_only_where_rc254cx6b1_authorised(self):
+        _assert_constants_only_emi_lines_changed(_ROOT)
 
 
 # ═══ 13 — edit-form prefill ═══════════════════════════════════════════════

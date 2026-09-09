@@ -381,17 +381,41 @@ URGENCY_LINES = [
     "Current batch fast fill aavunnu.",
 ]
 
+# Phase RC2.5.4c-x-6b1: the unconditional EMI lines are removed from both
+# pools.
+#
+# EMI is a PER-COURSE fact (commercial.emi_available), and RC2.5.5c-3 made the
+# deterministic flow say so -- screens.py records the rule as "EMI is a
+# per-course fact now, not a blanket claim". These two pools were not part of
+# that change, so an unconditional EMI claim survived in them.
+#
+# Both are drawn with pick(), a UNIFORM RANDOM choice, and appended AFTER the
+# per-course line. So cta_handlers.fees_reply() could emit, in ONE message for
+# a 3-month course:
+#
+#     EMI not available for this course
+#     ...
+#     EMI / installment option available aanu.
+#
+# -- roughly a quarter of the time, on all four 3-month certificates. The same
+# unconditional claim reached customers through objections.py via
+# FEES_VALUE_LINES. Reproduced against production data in the RC2.5.4c-x-6b
+# audit.
+#
+# This is deliberately a REMOVAL, not a rewrite: these pools have no access to
+# a course, so they cannot make the claim conditional. The per-course lines in
+# cta_handlers, router, screens and the catalogue index are untouched and
+# remain the only place EMI is stated. Nothing here decides whether EMI is
+# actually offered -- that question is explicitly open (audit section I).
 TRUST_LINES = [
     "Kerala State Rutronix approved certificate aanu 🎓",
     "Placement assistance + interview support und 👍",
     "Practical training aanu, theory mathram alla.",
-    "EMI / installment option available aanu.",
 ]
 
 FEES_VALUE_LINES = [
     "Ithu one-time investment aanu 😊",
     "Nalla job kittiyal 1–2 months-il recover cheyyam 💪",
-    "EMI option und, so full amount tension venda 👍",
     "Skill kittiyal athinte value long-term aanu.",
 ]
 

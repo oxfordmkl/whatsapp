@@ -876,6 +876,18 @@ class TestScope:
             # app/routes/tenant.py, are already listed above. A single named
             # file -- no directory, no wildcard.
             "tests/test_course_official_name_eligibility_rc254cx6a.py",
+            # WIDENED BY RC2.5.4c-x-6b1: app/bot/constants.py plus that
+            # phase's own suite. B1 removes two UNCONDITIONAL EMI marketing
+            # lines -- one from TRUST_LINES, one from FEES_VALUE_LINES -- which
+            # pick() appended after the per-course EMI line, so fees_reply
+            # could deny and affirm EMI in the SAME message for a 3-month
+            # course. constants.py is otherwise still pinned construct-by-
+            # construct by test_constants_changed_only_where_rc254cx6b1_
+            # authorised in the rc255b2 and rc254cx5 suites, so this entry
+            # does not loosen the payment/price constants. Two named files --
+            # no directory, no wildcard.
+            "app/bot/constants.py",
+            "tests/test_emi_claim_consistency_rc254cx6b1.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

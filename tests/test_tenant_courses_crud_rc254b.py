@@ -119,6 +119,78 @@ def _assert_knowledge_service_only_authorised_change(root):
             f"{sorted(_KS_AUTHORISED_CONSTRUCTS)} is authorised")
 
 
+LF = chr(10)
+
+# RC2.5.4c-x-6b1: the ONLY constructs that phase may change in each file.
+# constants.py -- two marketing pools that carried an unconditional EMI claim.
+# ai_service.py -- smart_fallback, whose fee branch carried the same claim.
+_X6B1_AUTHORISED = {
+    "app/bot/constants.py": {"TRUST_LINES", "FEES_VALUE_LINES"},
+    "app/services/ai_service.py": {"smart_fallback"},
+}
+
+
+def _assert_only_x6b1_constructs_changed(root, rel):
+    """`rel` may differ from HEAD ONLY in its authorised constructs.
+
+    Stronger than the working-tree pin it replaces: it also catches a
+    construct being added or removed, and it proves every other construct --
+    every payment/price constant, every other AI helper -- is byte-identical.
+    Once b1 is committed the diff is empty and every comparison is trivially
+    equal.
+    """
+    import subprocess
+
+    authorised = _X6B1_AUTHORISED[rel]
+    # NOT text=True: on Windows that decodes git's stdout with the locale
+    # codepage and mangles Malayalam and emoji, firing the guard on an
+    # encoding artifact. splitlines() normalises line endings.
+    head = subprocess.run(["git", "show", "HEAD:" + rel], cwd=root,
+                          capture_output=True)
+    assert head.returncode == 0, "cannot read HEAD:" + rel
+    old_src = LF.join(head.stdout.decode("utf-8").splitlines())
+    with open(os.path.join(root, *rel.split("/")), encoding="utf-8") as fh:
+        new_src = LF.join(fh.read().splitlines())
+
+    def segments(src):
+        named, other = {}, []
+        for node in ast.parse(src).body:
+            seg = ast.get_source_segment(src, node) or ""
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)):
+                named[node.name] = seg
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)):
+                named[node.targets[0].id] = seg
+            else:
+                other.append(seg)
+        return named, LF.join(other)
+
+    old_named, old_other = segments(old_src)
+    new_named, new_other = segments(new_src)
+
+    assert old_other == new_other, "module-level code in " + rel + " changed"
+    assert set(old_named) == set(new_named), (
+        "top-level constructs added or removed in " + rel + ": "
+        + str(set(old_named) ^ set(new_named)))
+    for name, old_seg in old_named.items():
+        if name in authorised:
+            continue
+        assert new_named[name] == old_seg, (
+            rel + "::" + name + " changed, but only "
+            + str(sorted(authorised)) + " is authorised")
+
+    # The permitted change must be a REMOVAL of an EMI-affirming line.
+    for name in sorted(authorised):
+        # Comment lines are skipped: this phase's own rationale comment
+        # necessarily says "EMI", and a comment is not a customer claim.
+        new_l = [x for x in new_named[name].splitlines()
+                 if "emi" in x.lower()
+                 and not x.strip().startswith("#")
+                 and "not available" not in x.lower()]
+        assert not new_l, rel + "::" + name + " still affirms EMI: " + str(new_l)
+
+
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
 _APP.config["PRIMARY_TENANT_ID"] = OX
@@ -719,11 +791,18 @@ class TestAIPathUnchanged:
         blanket zero-diff list into the dedicated, stricter test below.
         prompt_composer.py and ai_service.py keep their full protection."""
         import subprocess
-        for path in ("app/services/prompt_composer.py",
-                     "app/services/ai_service.py"):
+        # NARROWED BY RC2.5.4c-x-6b1: ai_service.py moves to the stricter
+        # construct-level test below. prompt_composer.py keeps its full pin.
+        for path in ("app/services/prompt_composer.py",):
             out = subprocess.run(["git", "status", "--porcelain", "--", path],
                                  cwd=ROOT, capture_output=True, text=True).stdout
             assert out.strip() == "", f"{path} unexpectedly changed"
+
+    def test_ai_service_changed_only_where_x6b1_authorised(self):
+        _assert_only_x6b1_constructs_changed(ROOT, "app/services/ai_service.py")
+
+    def test_constants_changed_only_where_x6b1_authorised(self):
+        _assert_only_x6b1_constructs_changed(ROOT, "app/bot/constants.py")
 
     def test_knowledge_service_changed_only_where_rc254cx1a_authorised(self):
         """RC2.5.4c-x-1a is authorised to add `base_price` to
@@ -751,8 +830,14 @@ class TestAIPathUnchanged:
 class TestScope:
 
     def test_forbidden_files_untouched(self):
+        # NARROWED BY RC2.5.4c-x-6b1: app/bot/constants.py moves out of this
+        # blanket zero-diff list into test_constants_changed_only_where_x6b1_
+        # authorised above, which permits ONLY the two EMI marketing lines
+        # that phase removes and still pins every other constant --
+        # COURSE_PAYMENT_LINKS, OFFER_MENU, COURSE_FEES, ALL_COURSES and the
+        # rest -- byte-identical. Every other path keeps full zero-diff cover.
         import subprocess
-        for path in ("app/models.py", "migrations/", "app/bot/constants.py",
+        for path in ("app/models.py", "migrations/",
                      "app/bot/prompts.py", "app/bot/router.py",
                      "app/services/whatsapp_service.py",
                      "app/routes/webhook.py", "app/routes/admin.py"):
