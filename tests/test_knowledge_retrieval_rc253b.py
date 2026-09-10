@@ -448,10 +448,103 @@ class TestRendererPropertiesPreserved:
 class TestScope:
 
     def test_router_not_modified(self):
+        """NARROWED BY RC2.5.4c-x-6c1 -- still active, and now STRICTER.
+
+        RC2.5.3b has no authorisation to touch the router, and this guard
+        existed to prove it. RC2.5.4c-x-6c1 threads an OPTIONAL, UNREAD
+        `tenant_id` through six call expressions so a later phase can resolve
+        identity from the tenant instead of a constant. Those six lines are
+        the only permitted difference.
+
+        The blanket porcelain pin this replaces could only answer "did the
+        file change at all". This answers "did anything OTHER than these six
+        exact substitutions change", which also catches a line being added or
+        removed -- something the porcelain pin could not distinguish. Once
+        x-6c1 is committed every comparison below is trivially equal.
+        """
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "app/bot/router.py"],
-                             cwd=ROOT, capture_output=True, text=True).stdout
-        assert out.strip() == ""
+
+        # line number -> (HEAD text, permitted working-tree text, enclosing fn)
+        authorised = {
+            143: ("        return screens.main_menu(name)",
+                  "        return screens.main_menu(name, tenant_id)",
+                  "_nearest_menu"),
+            175: ("    return screens.main_menu(name)",
+                  "    return screens.main_menu(name, tenant_id)",
+                  "_nearest_menu"),
+            199: ("        return legacy_main_menu_reply(name)",
+                  "        return legacy_main_menu_reply(name, tenant_id)",
+                  "_enter_main_menu"),
+            265: ("            screen = screens.main_menu(name)",
+                  "            screen = screens.main_menu(name, tenant_id)",
+                  "_try_navigation"),
+            498: ('            return (ai or smart_fallback(name, low)), "GOAL"',
+                  '            return (ai or smart_fallback(name, low, tenant_id)), "GOAL"',
+                  "smart_reply"),
+            621: ('    return smart_fallback(name, raw), "COURSE"',
+                  '    return smart_fallback(name, raw, tenant_id), "COURSE"',
+                  "smart_reply"),
+        }
+
+        rel = "app/bot/router.py"
+        # NOT text=True: on Windows that decodes git's stdout with the locale
+        # codepage and mangles Malayalam and emoji, firing the guard on an
+        # encoding artifact. splitlines() normalises line endings.
+        head = subprocess.run(["git", "show", "HEAD:" + rel],
+                              cwd=ROOT, capture_output=True)
+        assert head.returncode == 0, "cannot read HEAD:" + rel
+        old = head.stdout.decode("utf-8").splitlines()
+        with open(os.path.join(ROOT, "app", "bot", "router.py"),
+                  encoding="utf-8") as fh:
+            new = fh.read().splitlines()
+
+        # A pure substitution set cannot change the line count. This is what
+        # makes an inserted or deleted line impossible to hide.
+        assert len(old) == len(new), (
+            "router.py line count changed (%d -> %d): only in-place "
+            "substitution of the six authorised calls is permitted"
+            % (len(old), len(new)))
+
+        differing = [i for i in range(len(old)) if old[i] != new[i]]
+        assert set(n - 1 for n in authorised) == set(differing), (
+            "router.py changed on unauthorised lines: %s"
+            % sorted(n + 1 for n in differing
+                     if (n + 1) not in authorised))
+
+        for lineno, (want_old, want_new, _fn) in sorted(authorised.items()):
+            assert old[lineno - 1] == want_old, (
+                "router.py:%d is not the expected HEAD text" % lineno)
+            assert new[lineno - 1] == want_new, (
+                "router.py:%d changed to something other than the authorised "
+                "call: %r" % (lineno, new[lineno - 1]))
+
+        # Structural cross-check: every permitted edit must sit inside the
+        # function the audit named. A line moved into a different function
+        # would keep its text but change its meaning.
+        tree = ast.parse("\n".join(new))
+        for lineno, (_o, _n, want_fn) in sorted(authorised.items()):
+            holder = None
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node.lineno <= lineno <= (node.end_lineno or node.lineno):
+                        if holder is None or node.lineno > holder.lineno:
+                            holder = node
+            assert holder is not None and holder.name == want_fn, (
+                "router.py:%d is no longer inside %s" % (lineno, want_fn))
+
+        # tenant_id must come from the enclosing function's OWN parameter --
+        # never from a global, an import or PRIMARY_TENANT_ID.
+        for name in sorted({fn for _o, _n, fn in authorised.values()}):
+            fn = next(n for n in ast.walk(tree)
+                      if isinstance(n, ast.FunctionDef) and n.name == name)
+            params = [a.arg for a in fn.args.args] + \
+                     [a.arg for a in fn.args.kwonlyargs]
+            assert "tenant_id" in params, (
+                "%s does not take tenant_id -- the threaded value would not "
+                "be the caller's authoritative tenant" % name)
+        src = "\n".join(new)
+        assert "PRIMARY_TENANT_ID" not in src, (
+            "router.py must never infer a tenant from PRIMARY_TENANT_ID")
 
     def test_models_and_migrations_not_modified(self):
         import subprocess

@@ -888,6 +888,18 @@ class TestScope:
             # no directory, no wildcard.
             "app/bot/constants.py",
             "tests/test_emi_claim_consistency_rc254cx6b1.py",
+            # WIDENED BY RC2.5.4c-x-6c1: that phase's own suite, and nothing
+            # else. x-6c1 threads an OPTIONAL, UNREAD tenant_id through six
+            # router call expressions so a later phase can resolve identity
+            # from the tenant instead of a constant; its output is proven
+            # byte-identical. app/bot/router.py already appears above (widened
+            # by RC2.5.5c-3c/3d) and is separately pinned construct-by-
+            # construct to those six exact substitutions by rc253b's
+            # test_router_not_modified and by the rc254a/rc254b
+            # test_router_changed_only_where_x6c1_authorised guards -- so this
+            # entry does not loosen the router guarantee. One explicit file --
+            # no directory, no wildcard.
+            "tests/test_tenant_id_threading_rc254cx6c1.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

@@ -136,7 +136,16 @@ def gemini_reply(user_msg: str, name: str, context: str = "", tenant_id: str = N
             logger.warning(f"⚠️  Gemini error: {e}")
         return None
 
-def smart_fallback(name: str, msg: str = "") -> str:
+def smart_fallback(name: str, msg: str = "", tenant_id=None) -> str:
+    """Deterministic reply used when the AI path returns nothing.
+
+    Phase RC2.5.4c-x-6c1: `tenant_id` is accepted and NOT read. Every branch
+    below still hardcodes the platform's institute name, phone and recognition
+    wording -- a known, separately-tracked defect (P1 in the RC2.5.0 backlog,
+    pinned by rc251::test_smart_fallback_unchanged). This phase only makes the
+    tenant reachable from here; output is byte-identical with the parameter
+    present, absent or None.
+    """
     m = msg.lower()
     if any(w in m for w in ["fee", "price", "cost", "vila", "ethra","fees"]):
         # Phase RC2.5.4c-x-6b1: the unconditional "EMI / installment option um

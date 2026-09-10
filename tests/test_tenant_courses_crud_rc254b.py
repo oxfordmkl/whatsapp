@@ -191,6 +191,92 @@ def _assert_only_x6b1_constructs_changed(root, rel):
         assert not new_l, rel + "::" + name + " still affirms EMI: " + str(new_l)
 
 
+# RC2.5.4c-x-6c1: the ONLY router.py lines that phase may change. Optional,
+# UNREAD tenant_id threaded to six call expressions so a later phase can
+# resolve identity from the tenant instead of a constant. Payload unchanged.
+_X6C1_ROUTER_CALLS = {
+    143: ("        return screens.main_menu(name)",
+          "        return screens.main_menu(name, tenant_id)",
+          "_nearest_menu"),
+    175: ("    return screens.main_menu(name)",
+          "    return screens.main_menu(name, tenant_id)",
+          "_nearest_menu"),
+    199: ("        return legacy_main_menu_reply(name)",
+          "        return legacy_main_menu_reply(name, tenant_id)",
+          "_enter_main_menu"),
+    265: ("            screen = screens.main_menu(name)",
+          "            screen = screens.main_menu(name, tenant_id)",
+          "_try_navigation"),
+    498: ('            return (ai or smart_fallback(name, low)), "GOAL"',
+          '            return (ai or smart_fallback(name, low, tenant_id)), "GOAL"',
+          "smart_reply"),
+    621: ('    return smart_fallback(name, raw), "COURSE"',
+          '    return smart_fallback(name, raw, tenant_id), "COURSE"',
+          "smart_reply"),
+}
+
+
+def _assert_only_x6c1_router_calls_changed(root):
+    """app/bot/router.py may differ from HEAD ONLY in the six x-6c1 calls.
+
+    Stronger than the blanket porcelain pin it replaces: that could only say
+    "did the file change at all". This also catches a line added or removed,
+    an authorised line reverted, an authorised line's text appearing somewhere
+    else, and a tenant inferred from PRIMARY_TENANT_ID. Once x-6c1 is
+    committed every comparison is trivially equal.
+    """
+    import subprocess
+
+    rel = "app/bot/router.py"
+    # NOT text=True: on Windows that decodes git's stdout with the locale
+    # codepage and mangles Malayalam and emoji, firing on an encoding
+    # artifact. splitlines() normalises line endings.
+    head = subprocess.run(["git", "show", "HEAD:" + rel],
+                          cwd=root, capture_output=True)
+    assert head.returncode == 0, "cannot read HEAD:" + rel
+    old = head.stdout.decode("utf-8").splitlines()
+    with open(os.path.join(root, "app", "bot", "router.py"),
+              encoding="utf-8") as fh:
+        new = fh.read().splitlines()
+
+    assert len(old) == len(new), (
+        "router.py line count changed (%d -> %d): only in-place substitution "
+        "of the six authorised calls is permitted" % (len(old), len(new)))
+
+    differing = [i for i in range(len(old)) if old[i] != new[i]]
+    assert set(n - 1 for n in _X6C1_ROUTER_CALLS) == set(differing), (
+        "router.py changed on unauthorised lines: %s"
+        % sorted(n + 1 for n in differing if (n + 1) not in _X6C1_ROUTER_CALLS))
+
+    for lineno, (want_old, want_new, _fn) in sorted(_X6C1_ROUTER_CALLS.items()):
+        assert old[lineno - 1] == want_old, (
+            "router.py:%d is not the expected HEAD text" % lineno)
+        assert new[lineno - 1] == want_new, (
+            "router.py:%d changed to something other than the authorised "
+            "call: %r" % (lineno, new[lineno - 1]))
+
+    tree = ast.parse("\n".join(new))
+    for lineno, (_o, _n, want_fn) in sorted(_X6C1_ROUTER_CALLS.items()):
+        holder = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.lineno <= lineno <= (node.end_lineno or node.lineno):
+                    if holder is None or node.lineno > holder.lineno:
+                        holder = node
+        assert holder is not None and holder.name == want_fn, (
+            "router.py:%d is no longer inside %s" % (lineno, want_fn))
+
+    for name in sorted({fn for _o, _n, fn in _X6C1_ROUTER_CALLS.values()}):
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == name)
+        params = [a.arg for a in fn.args.args] + \
+                 [a.arg for a in fn.args.kwonlyargs]
+        assert "tenant_id" in params, (
+            "%s does not take tenant_id -- the threaded value would not be "
+            "the caller's authoritative tenant" % name)
+    assert "PRIMARY_TENANT_ID" not in "\n".join(new), (
+        "router.py must never infer a tenant from PRIMARY_TENANT_ID")
+
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
 _APP.config["PRIMARY_TENANT_ID"] = OX
@@ -798,6 +884,9 @@ class TestAIPathUnchanged:
                                  cwd=ROOT, capture_output=True, text=True).stdout
             assert out.strip() == "", f"{path} unexpectedly changed"
 
+    def test_router_changed_only_where_x6c1_authorised(self):
+        _assert_only_x6c1_router_calls_changed(ROOT)
+
     def test_ai_service_changed_only_where_x6b1_authorised(self):
         _assert_only_x6b1_constructs_changed(ROOT, "app/services/ai_service.py")
 
@@ -837,8 +926,14 @@ class TestScope:
         # COURSE_PAYMENT_LINKS, OFFER_MENU, COURSE_FEES, ALL_COURSES and the
         # rest -- byte-identical. Every other path keeps full zero-diff cover.
         import subprocess
+        # NARROWED AGAIN BY RC2.5.4c-x-6c1: app/bot/router.py moves out of
+        # this blanket zero-diff list into
+        # test_router_changed_only_where_x6c1_authorised below, which permits
+        # ONLY the six authorised tenant_id call-site substitutions and still
+        # rejects every other router edit -- including an added or removed
+        # line, which this porcelain pin could not detect.
         for path in ("app/models.py", "migrations/",
-                     "app/bot/prompts.py", "app/bot/router.py",
+                     "app/bot/prompts.py",
                      "app/services/whatsapp_service.py",
                      "app/routes/webhook.py", "app/routes/admin.py"):
             out = subprocess.run(["git", "status", "--porcelain", "--", path],

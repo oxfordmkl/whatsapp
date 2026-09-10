@@ -140,7 +140,7 @@ def _nearest_menu(screens, action, name: str, st, tenant_id=None):
 
     if target == "MENU":
         st["stage"] = "goal_selection"
-        return screens.main_menu(name)
+        return screens.main_menu(name, tenant_id)
 
     if target == "CATEGORY":
         st["stage"] = "goal_selection"
@@ -172,7 +172,7 @@ def _nearest_menu(screens, action, name: str, st, tenant_id=None):
         return screens.category_menu()
 
     st["stage"] = "goal_selection"
-    return screens.main_menu(name)
+    return screens.main_menu(name, tenant_id)
 
 
 def _enter_main_menu(name: str, st, phone: str = "", tenant_id=None):
@@ -196,7 +196,7 @@ def _enter_main_menu(name: str, st, phone: str = "", tenant_id=None):
         pass
     try:
         from app.bot.screens import legacy_main_menu_reply
-        return legacy_main_menu_reply(name)
+        return legacy_main_menu_reply(name, tenant_id)
     except Exception:  # pragma: no cover - defensive
         return None
 
@@ -262,7 +262,7 @@ def _try_navigation(raw: str, name: str, st,
         elif action.kind == KIND_BACK:
             screen = _nearest_menu(screens, action, name, st, tenant_id)
         else:  # KIND_MENU
-            screen = screens.main_menu(name)
+            screen = screens.main_menu(name, tenant_id)
             st["stage"] = "goal_selection"
 
         if screen.kind == screens.KIND_BUTTONS:
@@ -495,7 +495,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
                 name,
                 tenant_id=tenant_id,
             )
-            return (ai or smart_fallback(name, low)), "GOAL"
+            return (ai or smart_fallback(name, low, tenant_id)), "GOAL"
 
         if low.isdigit():
             return (
@@ -618,4 +618,4 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     if ai:
         return ai, "COURSE"
 
-    return smart_fallback(name, raw), "COURSE"
+    return smart_fallback(name, raw, tenant_id), "COURSE"

@@ -146,12 +146,20 @@ def _category_section() -> Section:
     )
 
 
-def legacy_main_menu_reply(name: str) -> tuple[str, str]:
+def legacy_main_menu_reply(name: str, tenant_id=None) -> tuple[str, str]:
     """The pre-Phase-6 welcome menu, verbatim (migrated from router.msg_welcome).
 
     This is the Main Menu's legacy representation: plain text plus the "GOAL"
     reply-button preset. The transport layer renders it whenever List Messages
     are unavailable, so behaviour with the flag OFF is byte-identical to before.
+
+    Phase RC2.5.4c-x-6c1: `tenant_id` is accepted and NOT read. This screen
+    still renders the platform's hardcoded institute name and recognition
+    wording, which is a separate, unresolved defect (x-6c). Threading the
+    parameter first, with output byte-identical, is what lets a later phase
+    resolve identity here from the tenant rather than from a constant --
+    without that phase also having to change every call chain at the same
+    time. Accepting it does not make this screen tenant-aware.
     """
     text = (
         f"👋 നമസ്കാരം *{name}*!\n\n"
@@ -168,12 +176,17 @@ def legacy_main_menu_reply(name: str) -> tuple[str, str]:
     return text, "GOAL"
 
 
-def main_menu(name: str = "") -> Screen:
+def main_menu(name: str = "", tenant_id=None) -> Screen:
     """Main Menu — a List Message, with the legacy menu as its fallback.
 
     Phase 7.0A Refinement 1: Greeting shortened to 5-6 lines.
     Career categories remain the primary section.
     Architecture, IDs, routing and fallback are completely unchanged.
+
+    Phase RC2.5.4c-x-6c1: `tenant_id` is accepted, forwarded to the legacy
+    fallback, and NOT read -- see legacy_main_menu_reply. `name` is the
+    CUSTOMER's name and is unrelated to it. Output is byte-identical with the
+    parameter present, absent or None; that is this phase's whole contract.
     """
     hi = f" *{name}*" if name else ""
     body = (
@@ -182,7 +195,7 @@ def main_menu(name: str = "") -> Screen:
         "നിങ്ങളുടെ career goal-നു best course കണ്ടെത്താൻ ഞാൻ സഹായിക്കാം.\n\n"
         "👇 ആദ്യം ഒരു Career Path തിരഞ്ഞെടുക്കൂ."
     )
-    legacy_body, legacy_preset = legacy_main_menu_reply(name)
+    legacy_body, legacy_preset = legacy_main_menu_reply(name, tenant_id)
     quick = Section(
         title="⚡ Need Immediate Help?",
         rows=(
