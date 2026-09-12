@@ -106,6 +106,69 @@ LF = chr(10)
 # commercial.emi_available flag inside a single rendered message.
 _CONSTANTS_AUTHORISED = {"TRUST_LINES", "FEES_VALUE_LINES"}
 
+# ── WIDENED BY RC2.5.4c-x-6d1 ──────────────────────────────────────────────
+# The ten PLATFORM DEFAULT course cards. x-6d1 strips their unsupported
+# accreditation/certification/government-approval claims and the EMI claim
+# that contradicted the default record's own emi_available=False. They are
+# listed EXPLICITLY -- no wildcard, no "any constant starting with _" -- so a
+# new constant can never inherit the allowance.
+_X6D1_CARDS = frozenset({
+    "_PGDCA", "_AIDM", "_SAP", "_PYTHON", "_GST",
+    "_DCA", "_TEACHER", "_ACCOUNTING", "_WORD", "_WEB",
+})
+
+# Claim text x-6d1 removed. A card may never carry any of it again.
+_X6D1_BANNED = (
+    "EMI Available", "EMI / installment", "Rutronix", "Government Approved",
+    "Government Recognised", "recognised for Govt",
+    "Industry-Recognised Certificate", "SAP Alliance", "Dual Certification",
+    "Payroll",
+)
+
+
+def _x6d1_words(text):
+    """Word tokens of a construct's SOURCE segment."""
+    import re
+    return set(re.findall(r"\w+", text))
+
+
+def _assert_x6d1_card_change_is_removal_only(rel, name, old_seg, new_seg):
+    """A permitted card edit may only DELETE claim content.
+
+    Three independent clauses, so "allowed to change" never degrades into
+    "allowed to become anything":
+
+      1. no banned claim survives;
+      2. the construct did not gain lines;
+      3. NO NEW WORD appears. This is the strong one -- a changed price, a
+         changed duration, a reworded title, a rewritten syllabus or an
+         invented claim all introduce a token absent from HEAD, and are
+         rejected even though the construct itself is allow-listed.
+    """
+    low = new_seg.lower()
+    for claim in _X6D1_BANNED:
+        assert claim.lower() not in low, (
+            rel + "::" + name + " still carries the claim " + repr(claim))
+
+    assert len(new_seg.splitlines()) <= len(old_seg.splitlines()), (
+        rel + "::" + name + " gained lines; x-6d1 authorises removal only")
+
+    added = _x6d1_words(new_seg) - _x6d1_words(old_seg)
+    assert not added, (
+        rel + "::" + name + " introduced new content " + str(sorted(added))
+        + "; x-6d1 authorises claim REMOVAL only, never a price, duration, "
+          "title, syllabus or claim rewrite")
+
+    # 4. ANTI-VACUITY. Clauses 1-3 all permit deletion, so on their own they
+    # would accept a card gutted to an empty string. The descriptive skeleton
+    # must survive: x-6d1 removes CLAIMS, not the course description.
+    for marker in ("📚", "Best for:", "Syllabus:", "Duration:",
+                   "Course Fee"):
+        assert marker in new_seg, (
+            rel + "::" + name + " lost descriptive marker " + repr(marker)
+            + "; x-6d1 removes claims, not description")
+
+
 
 def _assert_constants_only_emi_lines_changed(root):
     """app/bot/constants.py may differ from HEAD ONLY in the two marketing
@@ -152,7 +215,10 @@ def _assert_constants_only_emi_lines_changed(root):
         f"top-level constructs added or removed in {rel}: "
         f"{set(old_named) ^ set(new_named)}")
     for name, old_seg in old_named.items():
-        if name in _CONSTANTS_AUTHORISED:
+        # x-6b1 pools and the x-6d1 cards are the ONLY
+        # constructs permitted to differ; each is then
+        # direction-checked separately below.
+        if name in _CONSTANTS_AUTHORISED or name in _X6D1_CARDS:
             continue
         assert new_named[name] == old_seg, (
             f"{rel}::{name} changed, but only "
@@ -165,6 +231,11 @@ def _assert_constants_only_emi_lines_changed(root):
         assert len(new_named[name].splitlines()) <= len(
             old_named[name].splitlines()), (
             f"{rel}::{name} gained lines; only removal is authorised")
+
+    # x-6d1: the ten cards get their own, stricter direction check.
+    for name in sorted(_X6D1_CARDS):
+        _assert_x6d1_card_change_is_removal_only(
+            rel, name, old_named[name], new_named[name])
 
 
 _APP = create_app()

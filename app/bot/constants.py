@@ -103,115 +103,119 @@ def normalize_course_name(raw: str) -> str:
         return raw
 
 
+# Phase RC2.5.4c-x-6d1: the ten default cards no longer carry
+# accreditation, certification, government-approval or EMI claims.
+#
+# These are the PLATFORM DEFAULT catalogue: catalogue_service builds one
+# CourseRecord per card for any tenant that has not authored a catalogue
+# (11 of 12 tenants at the time of writing). They date from the
+# single-tenant era, so every claim in them was Oxford's, asserted
+# unconditionally for whoever received the card:
+#
+#   * "EMI Available" contradicted the record's own emi_available=False,
+#     so course_details said EMI was available while fees_reply, reading
+#     the flag, said it was not -- opposite answers for one course.
+#   * the Rutronix / "Government Approved" / "Industry-Recognised
+#     Certificate" / "SAP Alliance" lines asserted accreditations no
+#     default record has provenance for: 0/10 carry regulatory data,
+#     whereas Oxford's authored rows carry regulatory.source.
+#   * "Payroll" is documented in catalogue_service as NOT source-backed.
+#
+# Removal, not rewrite: these cards have no tenant and no course flag in
+# scope, so they cannot make any of it conditional. Titles, audience
+# lines, syllabi, durations and PRICES are deliberately untouched --
+# this phase removes claims only. emi_available stays False, and the
+# per-course EMI line in cta_handlers/screens is unchanged: it remains
+# the only place EMI is stated.
 _PGDCA = (
     "📚 *PGDCA — Post Graduate Diploma in Computer Applications*\n"
     "💼 Best for: Graduates seeking IT / Government jobs\n"
     "🌟 Industry-Oriented Training with practical project work\n"
-    f"⏱ Duration: 12 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 12 Months\n"
     "💻 Syllabus: C++, Java, Python, DBMS, Web Dev, Networking, Mobile Apps, Final Project\n"
-    "✅ Government Approved Course — recognised for Govt & private jobs\n"
     "💰 Course Fee\n"
-    "   ₹15,999\n"
-    "✅ EMI Available"
+    "   ₹15,999"
 )
 _AIDM = (
     "📚 *AIDM — AI-Driven Digital Marketing*\n"
     "💼 Best for: Marketers, entrepreneurs, freelancers & beginners\n"
     "🌟 Practical Learning with live campaign projects\n"
-    f"⏱ Duration: 6 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 6 Months\n"
     "💻 Syllabus: SEO, Social Media, Google Ads, Meta Ads, ChatGPT/AI Tools, Live Campaigns\n"
-    "✅ Industry-Recognised Certificate\n"
     "💰 Course Fee\n"
-    "   ₹19,999\n"
-    "✅ EMI Available"
+    "   ₹19,999"
 )
 _SAP = (
     "📚 *SAP Financial Accounting & Controlling*\n"
     "💼 Best for: Commerce graduates & accounting professionals\n"
     "🌟 SAP-Certified Skills — high demand in corporate sector\n"
-    f"⏱ Duration: 6 Months | 🎓 SAP Alliance + {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 6 Months\n"
     "💻 Syllabus: GL Accounting, AP/AR, Asset Accounting, SAP CO, Real-Time Project\n"
-    "✅ Dual Certification — SAP Alliance + Rutronix Approved\n"
     "💰 Course Fee\n"
-    "   ₹15,000\n"
-    "✅ EMI Available"
+    "   ₹15,000"
 )
 _PYTHON = (
     "📚 *Python — Beginner to Advanced*\n"
     "💼 Best for: Beginners, IT aspirants & automation enthusiasts\n"
     "🌟 One of the most in-demand programming skills globally\n"
-    f"⏱ Duration: 3 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 3 Months\n"
     "💻 Syllabus: OOP, File Handling, Flask, Pandas, Web Scraping, Automation\n"
-    "✅ Industry-Recognised Certificate\n"
     "💰 Course Fee\n"
-    "   ₹4,499\n"
-    "✅ EMI Available"
+    "   ₹4,499"
 )
 _GST = (
-    "📚 *Diploma in GST, Taxation & Payroll*\n"
+    "📚 *Diploma in GST & Taxation*\n"
     "💼 Best for: Accounting professionals & commerce students\n"
     "🌟 High demand skill — GST expertise needed across all businesses\n"
-    f"⏱ Duration: 6 Months | 🎓 {RUTRONIX_LABEL}\n"
-    "💻 Syllabus: GST Concepts, Income Tax, Tally Prime, Payroll Processing, E-filing\n"
-    "✅ Government Approved Course\n"
+    "⏱ Duration: 6 Months\n"
+    "💻 Syllabus: GST Concepts, Income Tax, Tally Prime, E-filing\n"
     "💰 Course Fee\n"
-    "   ₹18,999\n"
-    "✅ EMI Available"
+    "   ₹18,999"
 )
 _DCA = (
     "📚 *DCA — Diploma in Computer Applications (Fast Track)*\n"
     "💼 Best for: Students & office job seekers\n"
     "🌟 Solid foundation for any computer-based job — practical & job-ready\n"
-    f"⏱ Duration: 6 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 6 Months\n"
     "💻 Syllabus: Computer Fundamentals, MS Office, Programming Basics, Internet, Database, DTP\n"
-    "✅ Government Approved Course — recognised for Govt & private jobs\n"
     "💰 Course Fee\n"
-    "   ₹6,400\n"
-    "✅ EMI Available"
+    "   ₹6,400"
 )
 _TEACHER = (
     "📚 *Computer Teacher Training Course*\n"
     "💼 Best for: Aspiring computer teachers & trainers\n"
     "🌟 Career Guidance Available — teaching skills for schools & institutes\n"
-    f"⏱ Duration: 12 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 12 Months\n"
     "💻 Syllabus: Teaching Methodology, MS Office Pedagogy, Programming Basics, Practice Teaching\n"
-    "✅ Government Approved Course\n"
     "💰 Course Fee\n"
-    "   ₹11,999\n"
-    "✅ EMI Available"
+    "   ₹11,999"
 )
 _ACCOUNTING = (
     "📚 *Diploma in Corporate Business Accounting & Taxation*\n"
     "💼 Best for: Advanced accounting & finance career seekers\n"
     "🌟 Corporate-level skills — relevant for CA firms, MNCs & Finance roles\n"
-    f"⏱ Duration: 12 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 12 Months\n"
     "💻 Syllabus: Corporate Accounting, GST, Income Tax Corporate, Financial Modelling, Case Studies\n"
-    "✅ Industry-Recognised Certificate\n"
     "💰 Course Fee\n"
-    "   ₹40,000\n"
-    "✅ EMI Available"
+    "   ₹40,000"
 )
 _WORD = (
     "📚 *Certificate in Word Processing & Data Entry*\n"
     "💼 Best for: Data entry professionals & beginners\n"
     "🌟 Practical skills for office and data-entry roles\n"
-    f"⏱ Duration: 6 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 6 Months\n"
     "💻 Syllabus: Touch Typing, MS Word, Data Entry Techniques, DTP Basics, Document Management\n"
-    "✅ Industry-Recognised Certificate\n"
     "💰 Course Fee\n"
-    "   ₹4,800\n"
-    "✅ EMI Available"
+    "   ₹4,800"
 )
 _WEB = (
     "📚 *Professional Diploma in Web Designing*\n"
     "💼 Best for: Aspiring web developers, designers & freelancers\n"
     "🌟 Build websites — freelance or get hired in the industry\n"
-    f"⏱ Duration: 6 Months | 🎓 {RUTRONIX_LABEL}\n"
+    "⏱ Duration: 6 Months\n"
     "💻 Syllabus: HTML5, CSS3, JavaScript, jQuery, PHP & MySQL, WordPress, Portfolio Project\n"
-    "✅ Industry-Recognised Certificate\n"
     "💰 Course Fee\n"
-    "   ₹8,800\n"
-    "✅ EMI Available"
+    "   ₹8,800"
 )
 
 # Index → (name, card)

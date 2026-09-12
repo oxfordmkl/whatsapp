@@ -900,6 +900,14 @@ class TestScope:
             # entry does not loosen the router guarantee. One explicit file --
             # no directory, no wildcard.
             "tests/test_tenant_id_threading_rc254cx6c1.py",
+            # WIDENED BY RC2.5.4c-x-6d1: that phase's own suite, and
+            # nothing else. x-6d1 strips unsupported accreditation,
+            # certification and EMI claims from the ten platform
+            # default course cards; app/bot/constants.py already
+            # appears above and is separately pinned construct-by-
+            # construct, so this entry does not loosen any guarantee.
+            # One explicit file -- no directory, no wildcard.
+            "tests/test_default_card_claims_rc254cx6d1.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
