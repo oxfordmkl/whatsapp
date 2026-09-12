@@ -250,17 +250,36 @@ def _assert_only_x6c1_router_calls_changed(root):
         "router.py line count changed (%d -> %d): only in-place substitution "
         "of the six authorised calls is permitted" % (len(old), len(new)))
 
+    # CONTAINMENT, not equality (repaired by RC2.5.4c-x-6c5).
+    #
+    # The original form asserted set(differing) == set(authorised), which could
+    # only hold while x-6c1 was UNCOMMITTED. Once x-6c1 became HEAD a clean
+    # tree correctly has differing == [], so the guard failed on the very state
+    # it exists to protect -- and a permanently red guard protects nothing.
+    # Containment is the invariant that holds in BOTH states: every line that
+    # differs from HEAD must be an authorised one.
+    #
+    # Strictness is NOT reduced. The two clauses below still pin the exact text
+    # of all six lines, so dropping or altering an authorised call is still
+    # caught even though its index is inside the allowlist.
     differing = [i for i in range(len(old)) if old[i] != new[i]]
-    assert set(n - 1 for n in _X6C1_ROUTER_CALLS) == set(differing), (
-        "router.py changed on unauthorised lines: %s"
-        % sorted(n + 1 for n in differing if (n + 1) not in _X6C1_ROUTER_CALLS))
+    unauthorised = sorted(n + 1 for n in differing
+                          if (n + 1) not in _X6C1_ROUTER_CALLS)
+    assert not unauthorised, (
+        "router.py changed on unauthorised lines: %s" % unauthorised)
 
     for lineno, (want_old, want_new, _fn) in sorted(_X6C1_ROUTER_CALLS.items()):
-        assert old[lineno - 1] == want_old, (
-            "router.py:%d is not the expected HEAD text" % lineno)
+        # HEAD holds the pre-x-6c1 text before the commit and the post-x-6c1
+        # text after it. Anything else means HEAD is not a commit this guard
+        # was written against.
+        assert old[lineno - 1] in (want_old, want_new), (
+            "router.py:%d HEAD text is neither the pre- nor the post-x-6c1 "
+            "authorised form: %r" % (lineno, old[lineno - 1]))
+        # The WORKING TREE must always carry the authorised call. This is the
+        # clause that rejects a dropped or rewritten tenant_id, in either state.
         assert new[lineno - 1] == want_new, (
-            "router.py:%d changed to something other than the authorised "
-            "call: %r" % (lineno, new[lineno - 1]))
+            "router.py:%d is not the authorised x-6c1 call: %r"
+            % (lineno, new[lineno - 1]))
 
     tree = ast.parse("\n".join(new))
     for lineno, (_o, _n, want_fn) in sorted(_X6C1_ROUTER_CALLS.items()):
