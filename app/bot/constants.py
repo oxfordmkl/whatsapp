@@ -148,7 +148,6 @@ _AIDM = (
 _SAP = (
     "📚 *SAP Financial Accounting & Controlling*\n"
     "💼 Best for: Commerce graduates & accounting professionals\n"
-    "🌟 SAP-Certified Skills — high demand in corporate sector\n"
     "⏱ Duration: 6 Months\n"
     "💻 Syllabus: GL Accounting, AP/AR, Asset Accounting, SAP CO, Real-Time Project\n"
     "💰 Course Fee\n"

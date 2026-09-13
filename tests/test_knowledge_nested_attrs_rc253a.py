@@ -908,6 +908,15 @@ class TestScope:
             # construct, so this entry does not loosen any guarantee.
             # One explicit file -- no directory, no wildcard.
             "tests/test_default_card_claims_rc254cx6d1.py",
+            # WIDENED BY RC2.5.4c-x-6d3: that phase's own suite, and
+            # nothing else. x-6d3 deletes ONE line from the default
+            # _SAP card -- the unsupported "SAP-Certified Skills"
+            # claim. app/bot/constants.py already appears above and
+            # remains pinned construct-by-construct by the four
+            # x-6d1 guards, which accept this deletion unmodified, so
+            # this entry loosens no guarantee. One explicit file --
+            # no directory, no wildcard.
+            "tests/test_default_sap_claim_rc254cx6d3.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
