@@ -31,8 +31,9 @@ NOT IN SCOPE (asserted elsewhere or deliberately deferred):
   * default PRICES -- stale versus Oxford's authored figures, but there is no
     evidence Oxford's current prices are correct for any other tenant. A
     price is pinned below precisely so this phase cannot drift one.
-  * `ALL_COURSES` course NAMES -- "GST & Payroll" still carries Payroll as a
-    *name*, rendered as the screen title. Out of this phase's card scope.
+  * `ALL_COURSES` course NAMES -- out of this phase's card scope. (Course
+    5's title "GST & Payroll" was later renamed "GST & Taxation" by
+    RC2.5.4c-x-6d4.)
   * main_menu's "Full fee list + EMI options" row, TRUST_LINES, prompts.py,
     identity fallback -- separate phases.
 """
@@ -119,9 +120,10 @@ EXPECTED_DURATIONS = {
 # smoothed over by a single loose assertion.
 EXPECTED_CARD_DURATIONS = dict(EXPECTED_DURATIONS, **{"7": "12 Months",
                                                       "8": "12 Months"})
+# UPDATED BY RC2.5.4c-x-6d4: "5" was "GST & Payroll".
 EXPECTED_TITLES = {
     "1": "PGDCA", "2": "AIDM Digital Marketing", "3": "SAP Financial Accounting",
-    "4": "Python Programming", "5": "GST & Payroll", "6": "DCA Fast Track",
+    "4": "Python Programming", "5": "GST & Taxation", "6": "DCA Fast Track",
     "7": "Computer Teacher Training", "8": "Corporate Business Accounting",
     "9": "Word Processing & Data Entry", "10": "Professional Web Designing",
 }
@@ -355,6 +357,48 @@ class TestRuntimeSurfaces:
             assert cat.get_course(OX, "NOEMI").emi_available is False
 
 
+# ── WIDENED BY RC2.5.4c-x-6d4 ──────────────────────────────────────────────
+# The PLATFORM DEFAULT course 5 is renamed "GST & Payroll" -> "GST & Taxation"
+# because Payroll is not source-backed, and its "payroll" keyword is dropped.
+# Code "5", price, duration, the _GST card and catalogue position are
+# unchanged, and the course stays distinct from Oxford's authored DGSTP.
+#
+# Exactly three constructs, each permitted ONE exact line substitution and
+# nothing else. They must differ from HEAD together or not at all: the title is
+# also the COURSE_FEES lookup key, so a half-applied rename silently blanks the
+# price. Once x-6d4 is committed HEAD holds the new lines, nothing differs, and
+# the check is a no-op -- containment, not equality (the x-6c5 lesson).
+_X6D4_RENAME = {
+    "ALL_COURSES": (
+        '    "5":  ("GST & Payroll",                      _GST),',
+        '    "5":  ("GST & Taxation",                     _GST),'),
+    "COURSE_FEES": (
+        '    "GST & Payroll":                 ("₹18,999",  "6 Months"),',
+        '    "GST & Taxation":                ("₹18,999",  "6 Months"),'),
+    "KEYWORD_TO_COURSE": (
+        '    "gst": "5", "tally": "5", "taxation": "5", "payroll": "5",',
+        '    "gst": "5", "tally": "5", "taxation": "5",'),
+}
+
+
+def _assert_x6d4_rename_is_exact(rel, old_named, new_named):
+    """The three x-6d4 constructs may differ from HEAD only by their one
+    authorised line substitution each, and only all together."""
+    changed = sorted(n for n in _X6D4_RENAME if new_named[n] != old_named[n])
+    if not changed:
+        return
+    assert changed == sorted(_X6D4_RENAME), (
+        rel + ": x-6d4 is ONE atomic identity change, but only "
+        + str(changed) + " differ from HEAD")
+    for name in changed:
+        old_line, new_line = _X6D4_RENAME[name]
+        assert old_named[name].count(old_line) == 1, (
+            rel + "::" + name + " differs from HEAD, but HEAD does not hold "
+            "the exact line x-6d4 authorises replacing")
+        assert new_named[name] == old_named[name].replace(old_line, new_line), (
+            rel + "::" + name + " changed beyond the one line x-6d4 authorises")
+
+
 # ═══ scope contract ═══════════════════════════════════════════════════════
 
 class TestScopeContract:
@@ -392,9 +436,14 @@ class TestScopeContract:
         for name, seg in old.items():
             if name in CARD_NAMES:
                 continue                      # the authorised ten
+            if name in _X6D4_RENAME:
+                continue                      # x-6d4, checked exactly below
             assert new[name] == seg, (
                 f"constants.py::{name} changed, but x-6d1 authorises only "
                 f"{CARD_NAMES}")
+        # WIDENED BY RC2.5.4c-x-6d4: one exact line per construct, all three
+        # or none.
+        _assert_x6d4_rename_is_exact(rel, old, new)
 
     def test_catalogue_service_still_sets_emi_available_false(self):
         with io.open(os.path.join(_ROOT, "app", "services",

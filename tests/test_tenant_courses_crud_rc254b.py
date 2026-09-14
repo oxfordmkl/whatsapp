@@ -193,6 +193,48 @@ def _assert_x6d1_card_change_is_removal_only(rel, name, old_seg, new_seg):
 
 
 
+# ── WIDENED BY RC2.5.4c-x-6d4 ──────────────────────────────────────────────
+# The PLATFORM DEFAULT course 5 is renamed "GST & Payroll" -> "GST & Taxation"
+# because Payroll is not source-backed, and its "payroll" keyword is dropped.
+# Code "5", price, duration, the _GST card and catalogue position are
+# unchanged, and the course stays distinct from Oxford's authored DGSTP.
+#
+# Exactly three constructs, each permitted ONE exact line substitution and
+# nothing else. They must differ from HEAD together or not at all: the title is
+# also the COURSE_FEES lookup key, so a half-applied rename silently blanks the
+# price. Once x-6d4 is committed HEAD holds the new lines, nothing differs, and
+# the check is a no-op -- containment, not equality (the x-6c5 lesson).
+_X6D4_RENAME = {
+    "ALL_COURSES": (
+        '    "5":  ("GST & Payroll",                      _GST),',
+        '    "5":  ("GST & Taxation",                     _GST),'),
+    "COURSE_FEES": (
+        '    "GST & Payroll":                 ("₹18,999",  "6 Months"),',
+        '    "GST & Taxation":                ("₹18,999",  "6 Months"),'),
+    "KEYWORD_TO_COURSE": (
+        '    "gst": "5", "tally": "5", "taxation": "5", "payroll": "5",',
+        '    "gst": "5", "tally": "5", "taxation": "5",'),
+}
+
+
+def _assert_x6d4_rename_is_exact(rel, old_named, new_named):
+    """The three x-6d4 constructs may differ from HEAD only by their one
+    authorised line substitution each, and only all together."""
+    changed = sorted(n for n in _X6D4_RENAME if new_named[n] != old_named[n])
+    if not changed:
+        return
+    assert changed == sorted(_X6D4_RENAME), (
+        rel + ": x-6d4 is ONE atomic identity change, but only "
+        + str(changed) + " differ from HEAD")
+    for name in changed:
+        old_line, new_line = _X6D4_RENAME[name]
+        assert old_named[name].count(old_line) == 1, (
+            rel + "::" + name + " differs from HEAD, but HEAD does not hold "
+            "the exact line x-6d4 authorises replacing")
+        assert new_named[name] == old_named[name].replace(old_line, new_line), (
+            rel + "::" + name + " changed beyond the one line x-6d4 authorises")
+
+
 def _assert_only_x6b1_constructs_changed(root, rel):
     """`rel` may differ from HEAD ONLY in its authorised constructs.
 
@@ -209,6 +251,11 @@ def _assert_only_x6b1_constructs_changed(root, rel):
     # default course cards. ai_service.py is untouched by x-6d1.
     cards = _X6D1_CARDS if rel == "app/bot/constants.py" else frozenset()
     authorised |= cards
+    # WIDENED BY RC2.5.4c-x-6d4, for constants.py only: the course-5
+    # rename, checked exactly by _assert_x6d4_rename_is_exact below.
+    x6d4 = (frozenset(_X6D4_RENAME) if rel == "app/bot/constants.py"
+            else frozenset())
+    authorised |= x6d4
     # NOT text=True: on Windows that decodes git's stdout with the locale
     # codepage and mangles Malayalam and emoji, firing the guard on an
     # encoding artifact. splitlines() normalises line endings.
@@ -248,7 +295,7 @@ def _assert_only_x6b1_constructs_changed(root, rel):
             + str(sorted(authorised)) + " is authorised")
 
     # The permitted change must be a REMOVAL of an EMI-affirming line.
-    for name in sorted(authorised - cards):
+    for name in sorted(authorised - cards - x6d4):
         # Comment lines are skipped: this phase's own rationale comment
         # necessarily says "EMI", and a comment is not a customer claim.
         new_l = [x for x in new_named[name].splitlines()
@@ -261,6 +308,10 @@ def _assert_only_x6b1_constructs_changed(root, rel):
     for name in sorted(cards):
         _assert_x6d1_card_change_is_removal_only(
             rel, name, old_named[name], new_named[name])
+
+    # x-6d4: one exact line per construct, all three or none.
+    if x6d4:
+        _assert_x6d4_rename_is_exact(rel, old_named, new_named)
 
 
 # RC2.5.4c-x-6c1: the ONLY router.py lines that phase may change. Optional,

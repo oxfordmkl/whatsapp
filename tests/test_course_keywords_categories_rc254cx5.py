@@ -147,6 +147,48 @@ def _assert_x6d1_card_change_is_removal_only(rel, name, old_seg, new_seg):
 
 
 
+# ── WIDENED BY RC2.5.4c-x-6d4 ──────────────────────────────────────────────
+# The PLATFORM DEFAULT course 5 is renamed "GST & Payroll" -> "GST & Taxation"
+# because Payroll is not source-backed, and its "payroll" keyword is dropped.
+# Code "5", price, duration, the _GST card and catalogue position are
+# unchanged, and the course stays distinct from Oxford's authored DGSTP.
+#
+# Exactly three constructs, each permitted ONE exact line substitution and
+# nothing else. They must differ from HEAD together or not at all: the title is
+# also the COURSE_FEES lookup key, so a half-applied rename silently blanks the
+# price. Once x-6d4 is committed HEAD holds the new lines, nothing differs, and
+# the check is a no-op -- containment, not equality (the x-6c5 lesson).
+_X6D4_RENAME = {
+    "ALL_COURSES": (
+        '    "5":  ("GST & Payroll",                      _GST),',
+        '    "5":  ("GST & Taxation",                     _GST),'),
+    "COURSE_FEES": (
+        '    "GST & Payroll":                 ("₹18,999",  "6 Months"),',
+        '    "GST & Taxation":                ("₹18,999",  "6 Months"),'),
+    "KEYWORD_TO_COURSE": (
+        '    "gst": "5", "tally": "5", "taxation": "5", "payroll": "5",',
+        '    "gst": "5", "tally": "5", "taxation": "5",'),
+}
+
+
+def _assert_x6d4_rename_is_exact(rel, old_named, new_named):
+    """The three x-6d4 constructs may differ from HEAD only by their one
+    authorised line substitution each, and only all together."""
+    changed = sorted(n for n in _X6D4_RENAME if new_named[n] != old_named[n])
+    if not changed:
+        return
+    assert changed == sorted(_X6D4_RENAME), (
+        rel + ": x-6d4 is ONE atomic identity change, but only "
+        + str(changed) + " differ from HEAD")
+    for name in changed:
+        old_line, new_line = _X6D4_RENAME[name]
+        assert old_named[name].count(old_line) == 1, (
+            rel + "::" + name + " differs from HEAD, but HEAD does not hold "
+            "the exact line x-6d4 authorises replacing")
+        assert new_named[name] == old_named[name].replace(old_line, new_line), (
+            rel + "::" + name + " changed beyond the one line x-6d4 authorises")
+
+
 def _assert_constants_only_emi_lines_changed(root):
     """app/bot/constants.py may differ from HEAD ONLY in the two marketing
     pools, and only by LOSING EMI-affirming entries.
@@ -195,7 +237,10 @@ def _assert_constants_only_emi_lines_changed(root):
         # x-6b1 pools and the x-6d1 cards are the ONLY
         # constructs permitted to differ; each is then
         # direction-checked separately below.
-        if name in _CONSTANTS_AUTHORISED or name in _X6D1_CARDS:
+        # WIDENED BY RC2.5.4c-x-6d4: the course-5 rename, checked
+        # exactly by _assert_x6d4_rename_is_exact below.
+        if (name in _CONSTANTS_AUTHORISED or name in _X6D1_CARDS
+                or name in _X6D4_RENAME):
             continue
         assert new_named[name] == old_seg, (
             f"{rel}::{name} changed, but only "
@@ -213,6 +258,9 @@ def _assert_constants_only_emi_lines_changed(root):
     for name in sorted(_X6D1_CARDS):
         _assert_x6d1_card_change_is_removal_only(
             rel, name, old_named[name], new_named[name])
+
+    # x-6d4: one exact line per construct, all three or none.
+    _assert_x6d4_rename_is_exact(rel, old_named, new_named)
 
 
 _APP = create_app()

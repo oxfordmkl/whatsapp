@@ -917,6 +917,16 @@ class TestScope:
             # this entry loosens no guarantee. One explicit file --
             # no directory, no wildcard.
             "tests/test_default_sap_claim_rc254cx6d3.py",
+            # WIDENED BY RC2.5.4c-x-6d4: that phase's own suite, and
+            # nothing else. x-6d4 renames the platform-default course 5
+            # "GST & Payroll" -> "GST & Taxation" and pins the
+            # ALL_COURSES <-> COURSE_FEES key invariant.
+            # app/bot/constants.py already appears above and remains
+            # pinned construct-by-construct -- the five guards admit
+            # exactly the three authorised line substitutions -- so
+            # this entry loosens no guarantee. One explicit file -- no
+            # directory, no wildcard.
+            "tests/test_default_gst_title_rc254cx6d4.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
