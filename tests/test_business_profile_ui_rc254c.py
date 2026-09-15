@@ -504,7 +504,10 @@ class TestSourceContract:
         trivially equal, exactly as before.
         """
         import subprocess
-        AUTHORISED = {"_record_from_row"}
+        # WIDENED BY RC2.5.4c-x-6e2: match_keyword, the one construct that
+        # phase owns (code-aware, ambiguity-preserving course matching).
+        # Nothing else; _record_from_row is the pre-existing c-x entry.
+        AUTHORISED = {"_record_from_row", "match_keyword"}
         rel = "app/services/catalogue_service.py"
         # NOT text=True: on Windows that decodes git's stdout with the locale
         # codepage (cp1252), which mangles the file's non-ASCII literals --

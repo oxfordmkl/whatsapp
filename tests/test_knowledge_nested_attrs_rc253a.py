@@ -927,6 +927,14 @@ class TestScope:
             # this entry loosens no guarantee. One explicit file -- no
             # directory, no wildcard.
             "tests/test_default_gst_title_rc254cx6d4.py",
+            # WIDENED BY RC2.5.4c-x-6e2: that phase's own suite, and
+            # nothing else. x-6e2 rewrites the body of
+            # catalogue_service.match_keyword(); that file already
+            # appears above and is pinned construct-by-construct to
+            # exactly that function by the rc254cx5, rc254cx6a,
+            # rc254cx6b1 and rc254c guards, so this entry loosens no
+            # guarantee. One explicit file -- no directory, no wildcard.
+            "tests/test_course_matcher_rc254cx6e2.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

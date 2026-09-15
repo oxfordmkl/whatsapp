@@ -595,12 +595,28 @@ class TestRuntimeEffect:
     def test_clearing_keywords_removes_discoverability(self, seeded):
         with _APP.app_context():
             assert cat.match_keyword(OX, "pgdca please").course.code == "PGDCA"
+            assert cat.match_keyword(OX, "pgd please").course.code == "PGDCA"
         client(seeded["ox_admin"]).post(
             f"/tenant/courses/{seeded['rich']}/edit",
             data=_form(title="PGDCA", code="PGDCA", base_price="19540",
                        keywords=""))
+        # ALIGNED BY RC2.5.4c-x-6e2. Clearing keywords removes keyword
+        # discovery; the stable course code remains an explicit identity
+        # resolver. "pgd" is a keyword and not a code, so it is the input that
+        # proves keyword discovery is gone. Deactivation -- not clearing
+        # keywords -- is what removes a course from reachability.
         with _APP.app_context():
+            assert cat.match_keyword(OX, "pgd please").kind == "none"
+            code_result = cat.match_keyword(OX, "pgdca please")
+            assert code_result.kind == "exact"
+            assert code_result.course.code == "PGDCA"
+            row = TenantKnowledge.query.get(seeded["rich"])
+            row.is_active = False
+            db.session.commit()
+        with _APP.app_context():
+            assert cat.get_course(OX, "PGDCA") is None
             assert cat.match_keyword(OX, "pgdca please").kind == "none"
+            assert cat.match_keyword(OX, "pgdca").kind == "none"
 
     def test_catalogue_service_source_is_untouched(self):
         """This phase changes the WRITE path only.
@@ -611,12 +627,58 @@ class TestRuntimeEffect:
         lines that phase is authorised to remove and still pins every other
         constant -- including KEYWORD_TO_COURSE, ALL_COURSES and GOAL_COURSES,
         which are what this test cares about."""
+        # NARROWED BY RC2.5.4c-x-6e2: that phase is authorised to rewrite
+        # the BODY of catalogue_service.match_keyword() and nothing else in
+        # the file. Every other top-level construct -- resolve_legacy_name,
+        # normalise_code, list_courses, _default_catalogue, _record_from_row,
+        # LEGACY_NAME_TO_CODE, AMBIGUOUS_TERMS, the index functions -- and the
+        # module-level code between them must stay byte-identical to HEAD, no
+        # construct may be added or removed, and match_keyword's signature is
+        # not part of the authorisation. Containment, not equality: once x-6e2
+        # is committed nothing differs and this still holds.
         import subprocess
-        out = subprocess.run(
-            ["git", "status", "--porcelain", "--",
-             "app/services/catalogue_service.py"],
-            cwd=_ROOT, capture_output=True, text=True).stdout
-        assert out.strip() == "", f"runtime resolver changed: {out}"
+        rel = "app/services/catalogue_service.py"
+        head = subprocess.run(["git", "show", "HEAD:" + rel], cwd=_ROOT,
+                              capture_output=True)
+        assert head.returncode == 0, "cannot read HEAD:" + rel
+        nl = chr(10)
+        old_src = nl.join(head.stdout.decode("utf-8").splitlines())
+        with open(os.path.join(_ROOT, *rel.split("/")), encoding="utf-8") as fh:
+            new_src = nl.join(fh.read().splitlines())
+
+        def segments(src):
+            named, other, args = {}, [], None
+            for node in ast.parse(src).body:
+                seg = ast.get_source_segment(src, node) or ""
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                     ast.ClassDef)):
+                    named[node.name] = seg
+                    if node.name == "match_keyword":
+                        args = ast.dump(node.args)
+                elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                      and isinstance(node.targets[0], ast.Name)):
+                    named[node.targets[0].id] = seg
+                else:
+                    other.append(seg)
+            return named, nl.join(other), args
+
+        old_named, old_other, old_args = segments(old_src)
+        new_named, new_other, new_args = segments(new_src)
+        # Anti-vacuity: the comparison must really be over the resolver module.
+        assert {"match_keyword", "resolve_legacy_name", "normalise_code",
+                "list_courses", "_default_catalogue", "_record_from_row",
+                "LEGACY_NAME_TO_CODE", "AMBIGUOUS_TERMS"} <= set(old_named)
+        assert old_other == new_other, "module-level code in " + rel + " changed"
+        assert set(old_named) == set(new_named), (
+            "top-level constructs added or removed in " + rel + ": "
+            + str(set(old_named) ^ set(new_named)))
+        for name, seg in old_named.items():
+            if name == "match_keyword":
+                continue
+            assert new_named[name] == seg, (
+                rel + "::" + name + " changed, but x-6e2 authorises only the "
+                "body of match_keyword()")
+        assert old_args == new_args, "match_keyword() signature changed"
 
     def test_constants_changed_only_where_rc254cx6b1_authorised(self):
         _assert_constants_only_emi_lines_changed(_ROOT)

@@ -343,6 +343,39 @@ def match_keyword(tenant_id, text):
     Returns Match(kind="exact"|"ambiguous"|"none"). A term naming more than
     one course is reported AMBIGUOUS with its candidates so the caller can ask
     the customer; nothing is chosen for them.
+
+    Phase RC2.5.4c-x-6e2: code-aware, ambiguity-preserving, tenant-neutral.
+
+    The previous body matched every keyword as a plain SUBSTRING and scored
+    each course by its FIRST matching keyword, and it never looked at codes
+    or titles. So "dgstp" reached a course keyed "gst", "asap" reached "sap",
+    "encoding" reached "coding", and a typed title ("Java Programming") was
+    taken by another course's keyword ("programming") -- on a catalogue with
+    payment links, one "pay" away from the wrong link. A false match costs
+    more than no match: the router still has the legacy-name resolver and the
+    AI after this, but nothing downstream undoes a confident wrong course.
+
+    Decided ONLY from this tenant's list_courses() and the text. No tenant,
+    course, code, title or keyword is special-cased. Precedence:
+
+      1. blank text -> none.
+      2. the whole text is an AMBIGUOUS_TERMS term with more than one of its
+         candidates in this catalogue -> ambiguous (the "dca" contract).
+      3. the whole text is a NON-NUMERIC course code -> that course. Numeric
+         codes (the platform default's menu positions) stay with the
+         router's existing numeric path.
+      4. the whole text is a course title (case-insensitive) -> that course.
+      5. non-numeric codes MENTIONED as whole tokens (hyphen-aware), except a
+         code that is itself a live ambiguous term.
+      6. keywords: the existing ambiguity guard, then a keyword must START at
+         a word boundary -- suffixes such as "teachers" or "pythonil" still
+         match, while "dgstp" no longer contains "gst" -- and each course is
+         scored by its LONGEST matching keyword. Longest wins; a tie is
+         ambiguous.
+      7. reconcile: no code -> the keyword result. One code -> that course
+         when the keywords agree, find nothing, or are ambiguous among
+         candidates that include it; when they point at a different course
+         the disagreement is itself ambiguity. Several codes -> ambiguous.
     """
     low = (text or "").strip().lower()
     if not low:
@@ -351,30 +384,74 @@ def match_keyword(tenant_id, text):
     courses = list_courses(tenant_id)
     by_code = {c.code: c for c in courses}
 
+    live_ambiguous = {}
     for term, codes in AMBIGUOUS_TERMS.items():
-        if re.search(rf"(?<![a-z]){re.escape(term)}(?![a-z])", low):
-            present = tuple(by_code[c] for c in codes if c in by_code)
-            if len(present) > 1:
-                specific = [c for c in courses
-                            for kw in c.keywords
-                            if len(kw) > len(term) and kw in low]
-                if not specific:
-                    return Match(kind="ambiguous", candidates=present)
+        present = tuple(by_code[c] for c in codes if c in by_code)
+        if len(present) > 1:
+            live_ambiguous[term] = present
+    if low in live_ambiguous:
+        return Match(kind="ambiguous", candidates=live_ambiguous[low])
 
-    hits = []
+    if not low.isdigit():
+        whole_code = normalise_code(low)
+        if whole_code and whole_code in by_code:
+            return Match(kind="exact", course=by_code[whole_code])
+
     for c in courses:
-        for kw in c.keywords:
-            if kw and kw in low:
-                hits.append((len(kw), c))
+        if (c.title or "").strip().lower() == low:
+            return Match(kind="exact", course=c)
+
+    mentioned = [
+        c for c in courses
+        if not c.code.isdigit()
+        and c.code.lower() not in live_ambiguous
+        and re.search(rf"(?<![a-z0-9-]){re.escape(c.code.lower())}(?![a-z0-9-])", low)
+    ]
+
+    def starts_at_word(kw):
+        return re.search(rf"(?<![a-z0-9]){re.escape(kw)}", low) is not None
+
+    keyword_result = None
+    for term, present in live_ambiguous.items():
+        if re.search(rf"(?<![a-z]){re.escape(term)}(?![a-z])", low):
+            specific = [c for c in courses
+                        for kw in c.keywords
+                        if kw and len(kw) > len(term) and starts_at_word(kw)]
+            if not specific:
+                keyword_result = Match(kind="ambiguous", candidates=present)
                 break
-    if not hits:
-        return Match(kind="none")
-    hits.sort(key=lambda p: -p[0])            # longest keyword wins
-    best = hits[0]
-    tied = [c for n, c in hits if n == best[0]]
-    if len(tied) > 1:
-        return Match(kind="ambiguous", candidates=tuple(tied))
-    return Match(kind="exact", course=best[1])
+
+    if keyword_result is None:
+        hits = []
+        for c in courses:
+            lengths = [len(kw) for kw in c.keywords if kw and starts_at_word(kw)]
+            if lengths:
+                hits.append((max(lengths), c))    # this course's LONGEST match
+        if not hits:
+            keyword_result = Match(kind="none")
+        else:
+            best = max(n for n, _c in hits)       # longest keyword wins
+            tied = tuple(c for n, c in hits if n == best)
+            if len(tied) > 1:
+                keyword_result = Match(kind="ambiguous", candidates=tied)
+            else:
+                keyword_result = Match(kind="exact", course=tied[0])
+
+    if not mentioned:
+        return keyword_result
+    if len(mentioned) > 1:
+        return Match(kind="ambiguous", candidates=tuple(mentioned))
+    coded = mentioned[0]
+    if keyword_result.kind == "none":
+        return Match(kind="exact", course=coded)
+    if keyword_result.kind == "exact" and keyword_result.course is coded:
+        return keyword_result
+    if keyword_result.kind == "ambiguous" and coded in keyword_result.candidates:
+        return Match(kind="exact", course=coded)
+    others = ((keyword_result.course,) if keyword_result.kind == "exact"
+              else keyword_result.candidates)
+    return Match(kind="ambiguous",
+                 candidates=(coded,) + tuple(c for c in others if c is not coded))
 
 
 def format_money(value):

@@ -331,10 +331,62 @@ class TestScopeContract:
         import subprocess
         out = subprocess.run(
             ["git", "status", "--porcelain", "--",
-             "app/services/catalogue_service.py",
              "app/services/knowledge_admin_service.py",
              "app/services/knowledge_service.py",
              "app/services/payment_link_service.py",
              "app/routes/tenant.py", "app/models.py", "migrations/"],
             cwd=_ROOT, capture_output=True, text=True).stdout
         assert out.strip() == "", f"out-of-scope file changed: {out}"
+
+        # NARROWED BY RC2.5.4c-x-6e2: that phase is authorised to rewrite
+        # the BODY of catalogue_service.match_keyword() and nothing else in
+        # the file. Every other top-level construct -- resolve_legacy_name,
+        # normalise_code, list_courses, _default_catalogue, _record_from_row,
+        # LEGACY_NAME_TO_CODE, AMBIGUOUS_TERMS, the index functions -- and the
+        # module-level code between them must stay byte-identical to HEAD, no
+        # construct may be added or removed, and match_keyword's signature is
+        # not part of the authorisation. Containment, not equality: once x-6e2
+        # is committed nothing differs and this still holds.
+        import subprocess
+        rel = "app/services/catalogue_service.py"
+        head = subprocess.run(["git", "show", "HEAD:" + rel], cwd=_ROOT,
+                              capture_output=True)
+        assert head.returncode == 0, "cannot read HEAD:" + rel
+        nl = chr(10)
+        old_src = nl.join(head.stdout.decode("utf-8").splitlines())
+        with open(os.path.join(_ROOT, *rel.split("/")), encoding="utf-8") as fh:
+            new_src = nl.join(fh.read().splitlines())
+
+        def segments(src):
+            named, other, args = {}, [], None
+            for node in ast.parse(src).body:
+                seg = ast.get_source_segment(src, node) or ""
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                     ast.ClassDef)):
+                    named[node.name] = seg
+                    if node.name == "match_keyword":
+                        args = ast.dump(node.args)
+                elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                      and isinstance(node.targets[0], ast.Name)):
+                    named[node.targets[0].id] = seg
+                else:
+                    other.append(seg)
+            return named, nl.join(other), args
+
+        old_named, old_other, old_args = segments(old_src)
+        new_named, new_other, new_args = segments(new_src)
+        # Anti-vacuity: the comparison must really be over the resolver module.
+        assert {"match_keyword", "resolve_legacy_name", "normalise_code",
+                "list_courses", "_default_catalogue", "_record_from_row",
+                "LEGACY_NAME_TO_CODE", "AMBIGUOUS_TERMS"} <= set(old_named)
+        assert old_other == new_other, "module-level code in " + rel + " changed"
+        assert set(old_named) == set(new_named), (
+            "top-level constructs added or removed in " + rel + ": "
+            + str(set(old_named) ^ set(new_named)))
+        for name, seg in old_named.items():
+            if name == "match_keyword":
+                continue
+            assert new_named[name] == seg, (
+                rel + "::" + name + " changed, but x-6e2 authorises only the "
+                "body of match_keyword()")
+        assert old_args == new_args, "match_keyword() signature changed"
