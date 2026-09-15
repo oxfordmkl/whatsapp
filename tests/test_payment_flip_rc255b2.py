@@ -1025,3 +1025,274 @@ class TestOutOfScopeUnchanged:
         trivially equal.
         """
         _assert_constants_only_emi_lines_changed(_ROOT)
+
+
+# ═══ RC2.5.4c-x-6f1 — a customer-submitted payment reference is NEVER proof ══
+#
+# The x-6f audit (P0): in payment_pending ANY text -- a sentence, an empty
+# message, a fabricated id -- set stage "enrolled", wrote
+# "Payment Received: <text>" to the global CRM sheet and replied
+# "Payment Received -- Seat Confirmed!". Production did exactly that twelve
+# times, never on a real payment id. There is still no payment verification;
+# these tests pin that nothing is CONFIRMED without it.
+#
+# Router-level: a DB-backed conversation in payment_pending. The CRM writer
+# and the confirmation builder are recorders; threads run inline so a
+# restored side effect is observed, not lost in a thread. Dummy references
+# only -- no provider, no Sheets, no WhatsApp.
+
+import types as _x6f1_types                                             # noqa: E402
+
+from app.bot import router as _x6f1_router                              # noqa: E402
+from app.models import (ConversationState, PipelineDefinition,          # noqa: E402
+                        PipelineStage)
+from app.state import get_or_create_state                               # noqa: E402
+
+_FORBIDDEN_COPY = ("payment received", "seat confirmed", "welcome to")
+_RAZORPAY_SHAPED = "pay_29QQoUBi66xm2f"
+
+
+class _Inline:
+    def __init__(self, target=None, args=(), kwargs=None, **_kw):
+        self._t, self._a, self._k = target, args, kwargs or {}
+
+    def start(self):
+        self._t(*self._a, **self._k)
+
+
+@pytest.fixture()
+def pending(seeded, monkeypatch):
+    import app.services.crm_service as crm_service
+    crm, confirms = [], []
+
+    def record_crm(*a, **k):
+        crm.append(a)
+
+    real_confirm = oh.payment_confirmed_reply
+
+    def record_confirm(*a, **k):
+        confirms.append(a)
+        return real_confirm(*a, **k)
+
+    inline = _x6f1_types.SimpleNamespace(Thread=_Inline)
+    for mod in (oh, _x6f1_router, crm_service):
+        monkeypatch.setattr(mod, "update_lead_status", record_crm, raising=False)
+    monkeypatch.setattr(oh, "payment_confirmed_reply", record_confirm)
+    monkeypatch.setattr(oh, "threading", inline)
+    monkeypatch.setattr(_x6f1_router, "threading", inline)
+    monkeypatch.setattr(_x6f1_router, "log_lead_event_in_thread", lambda **k: None)
+    counter = [0]
+
+    def open_conversation(tenant=OX, offer="PGDCA", pipeline_stage_id=None):
+        counter[0] += 1
+        phone = "+91987%07d" % counter[0]
+        with _APP.app_context():
+            st = get_or_create_state(phone, "Asha", tenant_id=tenant)
+            st["stage"] = "payment_pending"
+            st["offer_course"] = offer
+            if pipeline_stage_id is not None:
+                row = ConversationState.query.filter_by(phone=phone, tenant_id=tenant).first()
+                row.pipeline_stage_id = pipeline_stage_id
+                db.session.commit()
+        return phone
+
+    def send(text, phone, tenant=OX):
+        with _APP.app_context():
+            reply, preset = _x6f1_router.smart_reply(text, "Asha", phone, False, tenant_id=tenant)
+            row = ConversationState.query.filter_by(phone=phone, tenant_id=tenant).first()
+            return {"text": reply or "", "preset": preset, "stage": row.stage,
+                    "offer": row.offer_course, "pipeline_stage_id": row.pipeline_stage_id}
+
+    return _x6f1_types.SimpleNamespace(open=open_conversation, send=send, crm=crm, confirms=confirms)
+
+
+def _assert_unverified(env, result):
+    low = result["text"].lower()
+    for bad in _FORBIDDEN_COPY:
+        assert bad not in low, "reply claims " + repr(bad) + ": " + repr(result["text"][:80])
+    assert result["stage"] == "payment_pending", result["stage"]
+    assert result["preset"] != "AFTER_BOOKING"
+    assert env.crm == [], env.crm
+    assert env.confirms == [], env.confirms
+
+
+_UNVERIFIED_INPUTS = {
+    "arbitrary text": "hello there",
+    "empty": "",
+    "whitespace": "     ",
+    "fake id": "FAKE-TXN-000",
+    "razorpay-shaped": _RAZORPAY_SHAPED,
+    "short token": "ok12",
+    "long string": "A1" * 3000,
+    "different-course id": "pay_forAIDMcourse1",
+    "different-amount id": "pay_amount1rupee9",
+    "emoji": "\U0001f44d",
+    "sql-like": "'; DROP TABLE conversation_state; --",
+    "course keyword": "pgdca",
+}
+_WELL_FORMED = {"fake id", "razorpay-shaped", "different-course id", "different-amount id"}
+
+
+class TestPaymentReferenceIsNeverProof:
+
+    @pytest.mark.parametrize("label", sorted(_UNVERIFIED_INPUTS))
+    def test_input_matrix_never_confirms(self, pending, label):
+        text = _UNVERIFIED_INPUTS[label]
+        result = pending.send(text, pending.open())
+        _assert_unverified(pending, result)
+        if label in _WELL_FORMED:
+            assert "verification pending" in result["text"]
+            assert text in result["text"]
+        else:
+            assert "Please reply with the *payment reference" in result["text"]
+            if text.strip():
+                assert text.strip()[:40] not in result["text"], "noise must not be echoed back"
+
+    def test_arbitrary_text_cannot_confirm_payment(self, pending):
+        _assert_unverified(pending, pending.send("i have paid, please confirm my seat", pending.open()))
+
+    def test_empty_reference_cannot_confirm_payment(self, pending):
+        result = pending.send("", pending.open())
+        _assert_unverified(pending, result)
+        assert "Please reply with the *payment reference" in result["text"]
+        assert "Reference:" not in result["text"]
+
+    def test_fake_transaction_cannot_confirm_payment(self, pending):
+        _assert_unverified(pending, pending.send("FAKE-TXN-000", pending.open()))
+
+    def test_razorpay_shaped_reference_is_still_unverified(self, pending):
+        """Format is not verification: the best-looking id stays pending."""
+        result = pending.send(_RAZORPAY_SHAPED, pending.open())
+        _assert_unverified(pending, result)
+        assert "verification pending" in result["text"]
+        assert "NOT confirmed" in result["text"]
+
+    def test_payment_pending_does_not_enroll(self, pending):
+        phone = pending.open()
+        # Not "hello": an exact greeting is answered with the main menu before
+        # the payment branch is reached, so it would not exercise the handler.
+        for text in (_RAZORPAY_SHAPED, "i paid already", "T2504281234"):
+            result = pending.send(text, phone)
+            assert result["stage"] == "payment_pending"
+            assert result["offer"] == "PGDCA"
+        with _APP.app_context():
+            assert ConversationState.query.filter_by(stage="enrolled").count() == 0
+
+    def test_pipeline_linked_payment_pending_does_not_win(self, pending):
+        with _APP.app_context():
+            pipe = PipelineDefinition(tenant_id=OX, internal_key="x6f1_legacy",
+                                      name="Legacy Compatibility Pipeline",
+                                      is_default=False, is_active=True)
+            db.session.add(pipe)
+            db.session.flush()
+            waiting = PipelineStage(pipeline_id=pipe.id, internal_key="payment_pending",
+                                    display_name="Payment Pending", stage_category="open",
+                                    order_index=8, is_entry=False, is_terminal=False, is_active=True)
+            won = PipelineStage(pipeline_id=pipe.id, internal_key="enrolled",
+                                display_name="Enrolled", stage_category="won",
+                                order_index=9, is_entry=False, is_terminal=True, is_active=True)
+            db.session.add_all([waiting, won])
+            db.session.commit()
+            waiting_id, won_id = waiting.id, won.id
+        phone = pending.open(pipeline_stage_id=waiting_id)
+        for text in (_RAZORPAY_SHAPED, "paid"):
+            result = pending.send(text, phone)
+            _assert_unverified(pending, result)
+            assert result["pipeline_stage_id"] == waiting_id
+
+        # Anti-vacuity: the link is live -- a real stage write WOULD move it to won.
+        probe = pending.open(pipeline_stage_id=waiting_id)
+        with _APP.app_context():
+            st = get_or_create_state(probe, "Asha", tenant_id=OX)
+            st["stage"] = "enrolled"
+            row = ConversationState.query.filter_by(phone=probe, tenant_id=OX).first()
+            assert row.pipeline_stage_id == won_id
+
+    def test_unverified_reference_does_not_write_payment_received_to_crm(self, pending):
+        for text in (_RAZORPAY_SHAPED, "hello there", ""):
+            pending.send(text, pending.open())
+        assert pending.crm == []
+
+    def test_tenant_b_reference_cannot_confirm_tenant_a(self, pending):
+        a_phone = pending.open(tenant=OX)
+        b_phone = pending.open(tenant=B, offer="YOGA")
+        a = pending.send(_RAZORPAY_SHAPED, a_phone, tenant=OX)
+        b = pending.send(_RAZORPAY_SHAPED, b_phone, tenant=B)
+        _assert_unverified(pending, a)
+        _assert_unverified(pending, b)
+        assert a["text"] == b["text"], "the reply must be identical for every tenant"
+        with _APP.app_context():
+            row_a = ConversationState.query.filter_by(phone=a_phone, tenant_id=OX).first()
+            assert row_a.stage == "payment_pending" and row_a.offer_course == "PGDCA"
+
+    def test_replay_does_not_confirm(self, pending):
+        phone = pending.open()
+        first = pending.send(_RAZORPAY_SHAPED, phone)
+        second = pending.send(_RAZORPAY_SHAPED, phone)
+        other = pending.send(_RAZORPAY_SHAPED, pending.open())
+        for result in (first, second, other):
+            _assert_unverified(pending, result)
+
+    def test_confirmation_function_not_called(self, pending):
+        for text in (_RAZORPAY_SHAPED, "FAKE-TXN-000", "i paid already", "", "T2504281234"):
+            pending.send(text, pending.open())
+        assert pending.confirms == []
+
+    def test_handle_payment_leaves_state_untouched(self, seeded):
+        st = {"stage": "payment_pending", "offer_course": "PGDCA", "course": ""}
+        before = dict(st)
+        with _APP.app_context():
+            text, preset = oh.handle_payment(_RAZORPAY_SHAPED, "Asha", st, "+91", OX)
+        assert st == before and preset is None
+        assert "verification pending" in text
+
+
+class TestPaymentReferenceContainmentSource:
+    """Static: the handler cannot reach a confirmation, a state write, the CRM,
+    a thread, or anything tenant-specific."""
+
+    @staticmethod
+    def _handler():
+        return _fn("app/bot/offer_handlers.py", "handle_payment")
+
+    def test_no_confirmation_state_write_crm_or_thread(self):
+        fn = self._handler()
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        attrs = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
+        for bad in ("payment_confirmed_reply", "update_lead_status", "threading",
+                    "Thread", "datetime", "db", "commit"):
+            assert bad not in names and bad not in attrs, "handle_payment reaches " + bad
+        writes = [n for n in ast.walk(fn)
+                  if isinstance(n, (ast.Assign, ast.AugAssign))
+                  and any(isinstance(tg, ast.Subscript) for tg in
+                          (n.targets if isinstance(n, ast.Assign) else [n.target]))]
+        assert writes == [], "handle_payment writes into state"
+
+    def test_tenant_neutral(self):
+        fn = self._handler()
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        attrs = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
+        for bad in ("INSTITUTE_NAME", "PHONE", "LOCALITY", "CITY", "RUTRONIX_LABEL",
+                    "os", "environ", "getenv", "PRIMARY_TENANT_ID", "current_app"):
+            assert bad not in names and bad not in attrs, "handle_payment references " + bad
+        uses = [n for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id == "tenant_id"]
+        assert uses == [], "handle_payment branches on tenant_id"
+
+    def test_no_confirmation_copy_or_tenant_literal(self):
+        fn = self._handler()
+        body = fn.body[1:] if isinstance(fn.body[0], ast.Expr) else fn.body
+        for stmt in body:
+            for n in ast.walk(stmt):
+                if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                    low = n.value.lower()
+                    for bad in ("payment received", "seat confirmed", "enrolled",
+                                "welcome to", "t-ox", "oxford", "pay_"):
+                        assert bad not in low, "handle_payment literal " + repr(n.value)
+
+    def test_payment_pending_branch_still_routes_to_the_handler(self):
+        src = _src("app/bot/router.py")
+        assert 'if stage == "payment_pending":' in src
+        assert "return handle_payment(raw, name, st, phone, tenant_id)" in src
+
+    def test_confirmation_builder_is_preserved_for_verified_payments(self):
+        assert callable(oh.payment_confirmed_reply)

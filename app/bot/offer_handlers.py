@@ -9,10 +9,13 @@ Offer definitions are NOT restated here — `constants.OFFER_MENU` remains the
 single catalogue, and this module derives a code index from it, so an offer's
 price/link can never disagree between the numeric and the OFR:* path.
 
-Behaviour parity: stage transitions, `offer_course`, and the CRM
-"Payment Received: …" status (with its timestamped note) are byte-identical to
-the legacy router. Selecting an offer performs NO CRM write and NO analytics
-event — exactly as before; this phase adds neither.
+Behaviour parity: stage transitions and `offer_course` on offer SELECTION are
+byte-identical to the legacy router. Selecting an offer performs NO CRM write
+and NO analytics event — exactly as before; this phase adds neither.
+
+RC2.5.4c-x-6f1: handle_payment no longer confirms anything. The legacy seat
+confirmation, the "enrolled" stage write and the payment-received CRM status
+are gone from it: a customer-typed reference is never proof of payment.
 
 All institute facts come from business_profile.py; no business literals here.
 """
@@ -78,6 +81,9 @@ def offer_menu_reply(tenant_id=None) -> tuple[str, str]:
     return text, "OFFER"
 
 
+# RC2.5.4c-x-6f1: NOT called for customer-submitted references. Kept, unchanged,
+# for the later phase that confirms only after authoritative, tenant-scoped
+# payment verification.
 def payment_confirmed_reply(txn: str, course: str, name: str) -> tuple[str, str]:
     text = (
         "🎉 *Payment Received — Seat Confirmed!*\n\n"
@@ -166,15 +172,51 @@ def handle_offer_number(low: str, st, tenant_id=None) -> tuple[str, None] | None
 
 
 def handle_payment(raw: str, name: str, st, phone: str,
-                   tenant_id=None) -> tuple[str, str]:
-    """Record the transaction id, write the CRM record and confirm the seat."""
-    txn = raw
-    offer = st.get("offer_course", "Unknown")
-    st["stage"] = "enrolled"
-    ts = datetime.now().strftime("[%Y-%m-%d %H:%M]")
-    note = f"{ts} Payment: {txn} Course: {offer}"
-    threading.Thread(
-        target=update_lead_status,
-        args=(phone, f"Payment Received: {txn}", note, tenant_id),
-    ).start()
-    return payment_confirmed_reply(txn, offer, name)
+                   tenant_id=None) -> tuple[str, None]:
+    """A payment reference typed in payment_pending. NEVER proof of payment.
+
+    Phase RC2.5.4c-x-6f1 (P0 containment). This handler used to accept ANY
+    text as a transaction id: it set stage "enrolled" (moving a pipeline-
+    linked lead to its won, terminal stage), wrote "Payment Received: <text>"
+    to the CRM sheet and told the customer "Payment Received -- Seat
+    Confirmed!". Nothing verified anything; production confirmed seats on
+    sentences and short words.
+
+    Until authoritative, tenant-scoped payment verification exists, a
+    customer-submitted reference is only ever UNVERIFIED:
+
+      * the stage is not touched -- it stays payment_pending, so there is no
+        "enrolled" and no pipeline won transition;
+      * nothing is written to the CRM sheet: update_lead_status ignores
+        tenant_id and writes one global spreadsheet, so an unverified
+        reference could land in another tenant's records;
+      * payment_confirmed_reply is not called, and the reply claims nothing
+        and names no institute -- it is identical for every tenant;
+      * the text is stripped, length-bounded and shape-checked only to turn
+        noise into a re-prompt. A well-formed reference is STILL unverified.
+
+    The reference is already persisted, tenant-scoped, as the inbound
+    conversation message, which is where staff check it today.
+    """
+    import re
+
+    reference = (raw or "").strip()
+    well_formed = (
+        6 <= len(reference) <= 64
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./-]*", reference) is not None
+        and any(ch.isdigit() for ch in reference)
+    )
+    if not well_formed:
+        return (
+            "\U0001f9fe Please reply with the *payment reference / transaction ID* "
+            "exactly as it appears on your payment receipt -- letters and "
+            "numbers only, no spaces.\n\n"
+            "Nothing has been confirmed yet."
+        ), None
+    return (
+        "\U0001f9fe *Payment reference noted -- verification pending*\n\n"
+        f"Reference: {reference}\n\n"
+        "Our team will verify this payment. Your admission and seat are NOT "
+        "confirmed until the payment has been verified.\n\n"
+        "Verify cheythu kazhinju team contact cheyyum \U0001f64f"
+    ), None

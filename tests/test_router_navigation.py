@@ -488,23 +488,41 @@ class TestOfferParityWithLegacy:
 
 class TestPaymentConfirmationParity:
     def test_payment_confirmation_crm_identical(self, env):
-        env.make_state(stage="payment_pending", course="DCA Fast Track")
-        env.state()["offer_course"] = "DCA"
-        env.router.smart_reply("T2504281234", "Alice", "+911", False, tenant_id="t1")
-        args = env.crm.call_args.args
-        assert args[0] == "+911"
-        assert args[1] == "Payment Received: T2504281234"
-        assert "Payment: T2504281234 Course: DCA" in args[2]   # timestamped note
-        assert args[3] == "t1"
+        """INVERTED BY RC2.5.4c-x-6f1. This used to pin the CRM write
+        "Payment Received: <whatever the customer typed>". Customer input is
+        never proof of payment, so a reference typed in payment_pending --
+        including a Razorpay-shaped one -- must write NO CRM confirmation."""
+        for reference in ("T2504281234", "pay_29QQoUBi66xm2f"):
+            env.make_state(stage="payment_pending", course="DCA Fast Track")
+            env.state()["offer_course"] = "DCA"
+            env.crm.reset_mock()
+            text, _ = env.router.smart_reply(reference, "Alice", "+911", False,
+                                             tenant_id="t1")
+            assert "verification pending" in text      # the handler did run
+            env.crm.assert_not_called()
+            assert env.state()["stage"] == "payment_pending"
 
     def test_payment_confirmation_sets_enrolled(self, env):
-        env.make_state(stage="payment_pending", course="")
-        env.state()["offer_course"] = "PGDCA"
-        text, preset = env.router.smart_reply("TXN99", "Alice", "+911",
-                                              False, tenant_id="t1")
-        assert "Payment Received — Seat Confirmed" in text
-        assert preset == "AFTER_BOOKING"
-        assert env.state()["stage"] == "enrolled"
+        """INVERTED BY RC2.5.4c-x-6f1. This used to pin customer text ->
+        "Payment Received — Seat Confirmed" -> enrolled. Now: customer text ->
+        reference received / verification pending -> stays payment_pending.
+        The stage is what drives the pipeline (enrolled -> won), so an
+        unchanged stage is no won transition; the database-backed proof of
+        pipeline_stage_id is in test_payment_flip_rc255b2.py."""
+        confirm = MagicMock(side_effect=AssertionError("confirmation emitted"))
+        env.offers.payment_confirmed_reply = confirm
+        for reference in ("TXN99", "TXN2504281234", "pay_29QQoUBi66xm2f"):
+            env.make_state(stage="payment_pending", course="")
+            env.state()["offer_course"] = "PGDCA"
+            text, preset = env.router.smart_reply(reference, "Alice", "+911",
+                                                  False, tenant_id="t1")
+            assert "Nothing has been confirmed" in text or "verification pending" in text
+            assert "payment received" not in text.lower()
+            assert "seat confirmed" not in text.lower()
+            assert preset is None
+            assert env.state()["stage"] == "payment_pending"
+            assert env.state()["stage"] not in ("enrolled", "won")
+        confirm.assert_not_called()
 
     def test_payment_confirmation_emits_no_analytics(self, env):
         env.make_state(stage="payment_pending", course="")
@@ -514,12 +532,21 @@ class TestPaymentConfirmationParity:
         env.events.assert_not_called()
 
     def test_confirmation_sources_institute_facts_from_profile(self, env):
+        """INVERTED BY RC2.5.4c-x-6f1. This used to pin that the payment-
+        confirmed reply carried the institute's facts. No confirmation is sent
+        for a customer-submitted reference any more, so the unverified-
+        reference reply must neither claim payment/seat confirmation nor carry
+        the old confirmation's institute facts."""
         env.make_state(stage="payment_pending", course="")
         env.state()["offer_course"] = "DCA"
-        text, _ = env.router.smart_reply("TXN1", "Alice", "+911", False, tenant_id="t1")
-        assert env.profile.INSTITUTE_NAME in text
-        assert env.profile.PHONE in text
-        assert env.profile.LOCALITY in text and env.profile.CITY in text
+        text, _ = env.router.smart_reply("TXN2504281234", "Alice", "+911", False,
+                                         tenant_id="t1")
+        assert "verification pending" in text          # anti-vacuity
+        assert "payment received" not in text.lower()
+        assert "seat confirmed" not in text.lower()
+        for fact in (env.profile.INSTITUTE_NAME, env.profile.PHONE,
+                     env.profile.LOCALITY, env.profile.CITY):
+            assert fact and fact not in text
 
     def test_full_offer_to_admission_flow(self, env):
         env.make_state(stage="course_viewed", course="")

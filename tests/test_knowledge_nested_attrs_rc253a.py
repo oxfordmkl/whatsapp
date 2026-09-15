@@ -935,6 +935,17 @@ class TestScope:
             # rc254cx6b1 and rc254c guards, so this entry loosens no
             # guarantee. One explicit file -- no directory, no wildcard.
             "tests/test_course_matcher_rc254cx6e2.py",
+            # WIDENED BY RC2.5.4c-x-6f1: the CI-excluded router harness,
+            # and nothing else. x-6f1 stops handle_payment treating any
+            # customer text as proof of payment; three tests in that file
+            # pinned the old confirmation (CRM "Payment Received", stage
+            # enrolled, institute facts in the confirmed reply) and were
+            # inverted, not deleted. app/bot/offer_handlers.py already
+            # appears above and is pinned to handle_payment by the x-6f1
+            # source tests in test_payment_flip_rc255b2.py, so this entry
+            # loosens no guarantee. One explicit file -- no directory, no
+            # wildcard.
+            "tests/test_router_navigation.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],
