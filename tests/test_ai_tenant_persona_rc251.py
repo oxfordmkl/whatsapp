@@ -502,6 +502,11 @@ class TestOutOfScopeUntouched:
         changed = [ln.split()[-1] for ln in out.strip().splitlines() if ln.strip()]
         allowed = {
             "migrations/versions/c1a7e93b45d2_rc2_5_3a_tenant_knowledge.py",
+            # WIDENED BY RC2.5.4c-x-6f2a: the payment-ledger migration, the
+            # second authorised migration in this session. Same treatment as
+            # the RC2.5.3a widening above -- the set is pinned, so an
+            # unexpected THIRD migration still fails here.
+            "migrations/versions/e6d1b9a37f24_rc2_5_4c_x_6f2a_payment_ledger.py",
         }
         unexpected = [c for c in changed if c not in allowed]
         assert not unexpected, f"unexpected migrations/ changes: {unexpected}"

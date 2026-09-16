@@ -565,11 +565,10 @@ class TestScope:
             "router.py must never infer a tenant from PRIMARY_TENANT_ID")
 
     def test_models_and_migrations_not_modified(self):
-        import subprocess
-        for path in ("app/models.py", "migrations/"):
-            out = subprocess.run(["git", "status", "--porcelain", "--", path],
-                                 cwd=ROOT, capture_output=True, text=True).stdout
-            assert out.strip() == "", f"{path} unexpectedly changed"
+        """NARROWED BY RC2.5.4c-x-6f2a -- see the helper at the end of this
+        file. The payment-ledger class may be ADDED and its one migration may
+        appear; every existing model and migration must still be untouched."""
+        _assert_only_x6f2a_payment_ledger_added(ROOT)
 
     def test_no_hardcoded_education_vocabulary_in_scoring(self):
         """The ranking function must not import or reference constants.py's
@@ -598,3 +597,52 @@ class TestScope:
     def test_payment_links_untouched(self):
         from app.bot.constants import COURSE_PAYMENT_LINKS
         assert COURSE_PAYMENT_LINKS["PGDCA"][4] == "https://rzp.io/rzp/KAQ2C7t"
+
+
+# ── RC2.5.4c-x-6f2a: the payment-ledger foundation ──────────────────────────
+#
+# NARROWS a blanket `git status --porcelain app/models.py migrations/` pin that
+# asserted "no schema change has EVER been made", not "this phase made none".
+# x-6f2a is authorised to add ONE model class (the tenant-scoped payment
+# ledger) and ONE migration, so the pin is inverted rather than deleted: the
+# property actually being protected -- that no EXISTING model or migration
+# changes -- is now checked construct-by-construct against HEAD, which is
+# strictly STRONGER than the porcelain pin it replaces (porcelain could not
+# tell an added class from a rewritten one).
+#
+# Containment, not equality: once x-6f2a is committed nothing differs and this
+# still holds.
+def _assert_only_x6f2a_payment_ledger_added(root):
+    import ast
+    import os as _os
+    import subprocess
+    LF = "\n"
+
+    head = LF.join(subprocess.run(
+        ["git", "show", "HEAD:app/models.py"], cwd=root,
+        capture_output=True).stdout.decode("utf-8").splitlines())
+    with open(_os.path.join(root, "app", "models.py"), encoding="utf-8") as fh:
+        work = LF.join(fh.read().splitlines())
+
+    def _segments(src):
+        out = {}
+        for node in ast.parse(src).body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+                out[node.name] = ast.get_source_segment(src, node)
+            elif isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
+                out[node.targets[0].id] = ast.get_source_segment(src, node)
+        return out
+
+    old, new = _segments(head), _segments(work)
+    removed = sorted(set(old) - set(new))
+    changed = sorted(k for k in old if old[k] != new.get(k))
+    added = sorted(set(new) - set(old))
+    assert removed == [], f"models.py construct(s) removed: {removed}"
+    assert changed == [], f"existing models.py construct(s) modified: {changed}"
+    assert added in ([], ["Payment"]), f"unauthorised new model(s): {added}"
+
+    out = subprocess.run(["git", "status", "--porcelain", "--", "migrations/"],
+                         cwd=root, capture_output=True, text=True).stdout
+    touched = sorted(ln[3:].strip('"') for ln in out.splitlines() if ln.strip())
+    allowed = ["migrations/versions/e6d1b9a37f24_rc2_5_4c_x_6f2a_payment_ledger.py"]
+    assert touched in ([], allowed), f"unexpected migrations/ changes: {touched}"

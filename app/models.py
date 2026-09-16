@@ -1902,3 +1902,150 @@ class CampaignRecipient(db.Model):
 
     def __repr__(self):
         return f"<CampaignRecipient {self.id} c={self.campaign_id} {self.phone} {self.status}>"
+
+
+class Payment(db.Model):
+    """Phase RC2.5.4c-x-6f2a: the tenant-scoped payment ledger.
+
+    WHY THIS TABLE EXISTS
+    ---------------------
+    Until RC2.5.4c-x-6f1 the bot treated ANY text typed at the payment_pending
+    stage as proof of payment: it confirmed a seat, moved the lead to its won
+    stage and wrote "Payment Received" to a spreadsheet. x-6f1 removed that.
+    The x-6f2 audit then established that the platform holds NO payment
+    provider credentials for any tenant, so nothing can currently verify a
+    payment at all, and that there is nowhere to record one if it could: no
+    payment table, no idempotency key, no amount, no provider identity.
+
+    This is that missing record, and only that. It is the FOUNDATION phase:
+    the schema exists, and nothing writes to it.
+
+    WHAT MAY EVENTUALLY WRITE HERE
+    -------------------------------
+    Only a writer acting on authoritative, tenant-scoped evidence: a signed
+    provider webhook, a server-side provider lookup performed with the
+    tenant's OWN credentials, or a named member of staff who verified the
+    payment in the provider's dashboard. `verification_source` records which.
+
+    WHAT MAY NEVER WRITE HERE
+    --------------------------
+    Customer input. A reference typed into WhatsApp is a claim, not evidence,
+    and handle_payment does not and must not create rows in this table. That
+    is enforced by the no-writer tripwires in
+    tests/test_payment_ledger_rc254cx6f2a.py.
+
+    IDENTITY AND IDEMPOTENCY
+    -------------------------
+    (provider, provider_payment_id) is UNIQUE. Replay protection is a database
+    constraint rather than a lookup-then-insert check, because a lookup races
+    with a concurrent webhook retry and a constraint does not. The same
+    provider payment therefore cannot be recorded twice -- not for two
+    customers, and not for two tenants.
+
+    provider_payment_id is NOT NULL on purpose. A row with no provider
+    identity would be exactly the shape x-6f1 removed -- an unverifiable claim
+    -- and in PostgreSQL NULLs are distinct under a UNIQUE constraint, so
+    nullable identity would silently permit unlimited duplicate "pending"
+    rows and defeat the idempotency this table exists to provide.
+
+    NULLABILITY OF THE BINDINGS
+    ----------------------------
+    conversation_state_id and course_code are nullable because a provider
+    webhook can deliver an authentic payment the platform cannot yet attribute
+    -- the payer's phone need not match the WhatsApp conversation, and the
+    payment may name no course. Recording such a payment unattributed is
+    honest; forcing NOT NULL would push a future writer to GUESS a
+    conversation or a course, which is the failure mode this architecture
+    exists to prevent. An unbound row is inert: it confirms nothing on its
+    own, and the confirmation writer must require the bindings to match.
+
+    MONEY
+    -----
+    Integer minor units (paise for INR), never float -- matching
+    BillingInvoice.amount_paid. expected_amount_minor is what the tenant's
+    catalogue said the course costs; paid_amount_minor is what the provider
+    says arrived. They are stored separately so a mismatch is visible and
+    auditable rather than reconciled away at write time.
+
+    NOT IN THIS PHASE
+    -----------------
+    No writer, no verification, no provider credentials (a separate phase, and
+    deliberately NOT columns here), no state machine, and no change to
+    payment_pending behaviour.
+    """
+    __tablename__ = 'payments'
+
+    # Status values. A plain string, like BillingInvoice.status, Task.status
+    # and Campaign.status -- this codebase uses no database enums, so that a
+    # new value never requires a migration. The permitted set is pinned here
+    # and asserted in tests rather than in a CHECK constraint, matching the
+    # convention every other status column already follows.
+    STATUS_SUBMITTED = 'submitted'   # provider identity known, not yet verified
+    STATUS_VERIFIED  = 'verified'    # authoritative evidence of success
+    STATUS_REJECTED  = 'rejected'    # evidence says failed/mismatched/duplicate
+    STATUSES = (STATUS_SUBMITTED, STATUS_VERIFIED, STATUS_REJECTED)
+
+    # Refund/reversal is deliberately NOT a fourth value in this phase: a
+    # reversal has to undo an enrolment, and no enrolment writer exists yet.
+    # It is added with the writer that can act on it.
+
+    SOURCE_WEBHOOK = 'webhook'
+    SOURCE_LOOKUP  = 'lookup'
+    SOURCE_STAFF   = 'staff'
+    VERIFICATION_SOURCES = (SOURCE_WEBHOOK, SOURCE_LOOKUP, SOURCE_STAFF)
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # ── Tenant ownership ────────────────────────────────────────────────────
+    # Mandatory, FK, indexed -- the same shape as every other tenant-owned
+    # table. There is no global payment, no platform default and no primary
+    # tenant: a payment whose tenant cannot be resolved cannot be recorded.
+    tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                          nullable=False, index=True)
+
+    # ── Provider identity ───────────────────────────────────────────────────
+    provider            = db.Column(db.String(20), nullable=False)   # 'razorpay' | 'stripe'
+    provider_payment_id = db.Column(db.String(100), nullable=False)
+
+    # ── Bindings (see NULLABILITY above) ────────────────────────────────────
+    conversation_state_id = db.Column(db.Integer,
+                                      db.ForeignKey('conversation_state.id'),
+                                      nullable=True, index=True)
+    # The STABLE course identity -- commercial.code, the same key
+    # payment_link_service resolves links by. Never a title, display name,
+    # keyword or menu position: those are free text a tenant admin may reword.
+    # No FK: courses live in TenantKnowledge.attributes JSON, so there is no
+    # course table to reference, and the same code may exist independently
+    # under different tenants.
+    course_code = db.Column(db.String(32), nullable=True)
+
+    # ── Money (integer minor units, never float) ────────────────────────────
+    expected_amount_minor = db.Column(db.Integer, nullable=True)
+    paid_amount_minor     = db.Column(db.Integer, nullable=False)
+    currency              = db.Column(db.String(3), nullable=False)
+
+    # ── Verification state ──────────────────────────────────────────────────
+    # No default: a writer must state the status explicitly. A silent default
+    # on a security-relevant column is how a row acquires a meaning nobody
+    # chose.
+    status              = db.Column(db.String(20), nullable=False)
+    verification_source = db.Column(db.String(20), nullable=True)
+    verified_at         = db.Column(db.DateTime, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # The idempotency foundation. See IDENTITY AND IDEMPOTENCY above.
+        db.UniqueConstraint('provider', 'provider_payment_id',
+                            name='uq_payment_provider_payment_id'),
+        # Reconciling one tenant's payments against one provider account.
+        db.Index('ix_payments_tenant_provider', 'tenant_id', 'provider'),
+        # The operational queue: this tenant's payments awaiting verification.
+        db.Index('ix_payments_tenant_status', 'tenant_id', 'status'),
+        # Per-course lookup within a tenant, for binding checks and reporting.
+        db.Index('ix_payments_tenant_course_code', 'tenant_id', 'course_code'),
+    )
+
+    def __repr__(self):
+        return (f"<Payment {self.id} t={self.tenant_id} {self.provider} "
+                f"{self.status}>")
