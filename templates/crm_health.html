@@ -186,7 +186,7 @@
                 {% for issue in data.critical_issues %}
                 <tr>
                   <td style="width: 35%;">
-                    <a href="/crm/lead/{{ issue.phone }}?key={{ key }}" class="phone-link">{{ issue.phone }}</a>
+                    <a href="/crm/lead/{{ issue.phone }}" class="phone-link">{{ issue.phone }}</a>
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">{{ issue.name }}</div>
                   </td>
                   <td>
@@ -228,7 +228,7 @@
                 {% for issue in data.warning_issues %}
                 <tr>
                   <td style="width: 35%;">
-                    <a href="/crm/lead/{{ issue.phone }}?key={{ key }}" class="phone-link">{{ issue.phone }}</a>
+                    <a href="/crm/lead/{{ issue.phone }}" class="phone-link">{{ issue.phone }}</a>
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">{{ issue.name }}</div>
                   </td>
                   <td>

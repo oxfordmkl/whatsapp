@@ -141,7 +141,7 @@
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <a href="/crm/tasks/admin?key={{ key }}" style="text-decoration: none;">
+        <a href="/crm/tasks/admin" style="text-decoration: none;">
           <div class="kpi-box" style="border-left: 3px solid var(--yellow); transition: all 0.2s;">
             <div class="kpi-title">Follow-ups Due</div>
             <div class="kpi-value text-white">{{ data.kpis.total_followups }}</div>
@@ -284,7 +284,7 @@
                     {% endif %}
                   </td>
                   <td>
-                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                    <a href="/crm/lead/{{ item.phone }}" class="btn-open">
                       <i class="bi bi-box-arrow-up-right"></i> Open Lead
                     </a>
                   </td>
@@ -322,7 +322,7 @@
                   <td class="fw-bold text-info">{{ item.enquiries }}</td>
                   <td class="fw-bold {% if item.admissions > 0 %}text-success{% else %}text-muted{% endif %}">{{ item.admissions }}</td>
                   <td><span class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">{{ item.score }}</span></td>
-                  <td><a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open"><i class="bi bi-box-arrow-up-right"></i> Open</a></td>
+                  <td><a href="/crm/lead/{{ item.phone }}" class="btn-open"><i class="bi bi-box-arrow-up-right"></i> Open</a></td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -359,7 +359,7 @@
                   <td class="text-center"><span class="score-badge score-hot">{{ item.score }}</span></td>
                   <td class="text-center text-danger fw-bold">{{ item.days_silent }}</td>
                   <td>
-                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                    <a href="/crm/lead/{{ item.phone }}" class="btn-open">
                       <i class="bi bi-box-arrow-up-right"></i> Open
                     </a>
                   </td>
@@ -402,7 +402,7 @@
                   <td class="text-center"><span class="score-badge {% if item.score >= 80 %}score-hot{% elif item.score >= 50 %}score-warm{% else %}score-cold{% endif %}">{{ item.score }}</span></td>
                   <td class="text-center text-danger fw-bold">{{ item.days_silent }}</td>
                   <td>
-                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                    <a href="/crm/lead/{{ item.phone }}" class="btn-open">
                       <i class="bi bi-box-arrow-up-right"></i> Open
                     </a>
                   </td>
@@ -446,7 +446,7 @@
                   <td class="text-center text-danger fw-bold">{{ item.days_silent }}</td>
                   <td class="text-center"><span class="score-badge score-warm">{{ item.score }}</span></td>
                   <td>
-                    <a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open">
+                    <a href="/crm/lead/{{ item.phone }}" class="btn-open">
                       <i class="bi bi-box-arrow-up-right"></i> Open
                     </a>
                   </td>
@@ -480,7 +480,7 @@
                   <td style="font-size: 0.8rem; color: var(--blue);">{{ item.courses }}</td>
                   <td>{% if item.staff == '—' or item.staff == '' %}<span class="text-muted fst-italic">Unassigned</span>{% else %}{{ item.staff }}{% endif %}</td>
                   <td><span class="score-badge score-hot">{{ item.score }}</span></td>
-                  <td><a href="/crm/lead/{{ item.phone }}?key={{ key }}" class="btn-open"><i class="bi bi-box-arrow-up-right"></i> Open</a></td>
+                  <td><a href="/crm/lead/{{ item.phone }}" class="btn-open"><i class="bi bi-box-arrow-up-right"></i> Open</a></td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -604,7 +604,7 @@
                 </div>
                 <div class="d-flex w-100 justify-content-between align-items-center mt-2">
                   <span class="text-muted" style="font-size: 0.75rem;">Score: {{ req.score }} (No open task)</span>
-                  <a href="/crm/lead/{{ req.phone }}?key={{ key }}" class="text-decoration-none" style="font-size: 0.75rem; color: var(--blue);">Action <i class="bi bi-arrow-right-short"></i></a>
+                  <a href="/crm/lead/{{ req.phone }}" class="text-decoration-none" style="font-size: 0.75rem; color: var(--blue);">Action <i class="bi bi-arrow-right-short"></i></a>
                 </div>
               </div>
               {% endfor %}
@@ -665,7 +665,7 @@
                 <p class="mb-0 text-warning">{{ issue.issue }}</p>
                 {% if issue.phone != '-' %}
                 <div class="mt-2">
-                  <a href="/crm/lead/{{ issue.phone }}?key={{ key }}" class="text-decoration-none" style="font-size: 0.75rem; color: var(--blue);">
+                  <a href="/crm/lead/{{ issue.phone }}" class="text-decoration-none" style="font-size: 0.75rem; color: var(--blue);">
                     View Lead <i class="bi bi-arrow-right-short"></i>
                   </a>
                 </div>

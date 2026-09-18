@@ -57,8 +57,8 @@
         <i class="bi bi-exclamation-triangle-fill me-2"></i> <strong>Deactivation Blocked:</strong> {{ staff_name }} currently has {{ count }} assigned lead(s).
       </div>
       <div>
-        <a href="/crm/leads?search={{ staff_name }}&key={{ key }}" class="btn btn-sm btn-light text-danger me-2"><i class="bi bi-eye"></i> View Leads</a>
-        <a href="/crm/reassignment-center?key={{ key }}" class="btn btn-sm btn-dark"><i class="bi bi-arrow-left-right"></i> Bulk Reassign</a>
+        <a href="/crm/leads?search={{ staff_name }}" class="btn btn-sm btn-light text-danger me-2"><i class="bi bi-eye"></i> View Leads</a>
+        <a href="/crm/reassignment-center" class="btn btn-sm btn-dark"><i class="bi bi-arrow-left-right"></i> Bulk Reassign</a>
       </div>
     </div>
   {% else %}
@@ -99,7 +99,7 @@
                     onclick="openEditModal('{{ staff.code }}', '{{ staff.display_name }}', '{{ staff.role }}', {{ 'true' if staff.active else 'false' }})">
               <i class="bi bi-pencil"></i> Edit
             </button>
-            <form method="POST" action="?key={{ key }}" style="display: inline;">
+            <form method="POST" action="" style="display: inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="action" value="toggle">
               <input type="hidden" name="staff_code" value="{{ staff.code }}">
@@ -124,7 +124,7 @@
 <!-- Add Staff Modal -->
 <div class="modal fade" id="addStaffModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
   <div class="modal-dialog modal-dialog-centered">
-    <form class="modal-content" method="POST" action="?key={{ key }}" style="background: var(--card-bg); border: 1px solid var(--border);">
+    <form class="modal-content" method="POST" action="" style="background: var(--card-bg); border: 1px solid var(--border);">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add">
       <div class="modal-header border-bottom-0">
@@ -163,7 +163,7 @@
 <!-- Edit Staff Modal -->
 <div class="modal fade" id="editStaffModal" tabindex="-1" aria-hidden="true" data-bs-theme="dark">
   <div class="modal-dialog modal-dialog-centered">
-    <form class="modal-content" method="POST" action="?key={{ key }}" style="background: var(--card-bg); border: 1px solid var(--border);">
+    <form class="modal-content" method="POST" action="" style="background: var(--card-bg); border: 1px solid var(--border);">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="edit">
       <input type="hidden" name="staff_code" id="edit_staff_code">

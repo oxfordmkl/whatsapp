@@ -66,7 +66,7 @@
               {% for staff in staff_data %}
               <tr>
                 <td>
-                  <a href="/crm/staff-allocation/{{ staff.name }}?key={{ key }}" class="staff-name">
+                  <a href="/crm/staff-allocation/{{ staff.name }}" class="staff-name">
                     <i class="bi bi-person-circle fs-5 text-secondary"></i>
                     {{ staff.name }}
                     {% if not staff.active and staff.name != 'Unassigned' %}
@@ -93,7 +93,7 @@
                 <td class="text-end stat-number text-danger">{{ staff.open_tasks }}</td>
                 <td class="text-end stat-number">{{ staff.completed_tasks }}</td>
                 <td class="text-end">
-                  <a href="/crm/staff-allocation/{{ staff.name }}?key={{ key }}" class="btn-view">View Leads</a>
+                  <a href="/crm/staff-allocation/{{ staff.name }}" class="btn-view">View Leads</a>
                 </td>
               </tr>
               {% endfor %}

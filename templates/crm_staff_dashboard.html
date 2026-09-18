@@ -88,7 +88,6 @@
       </div>
       <div class="d-flex align-items-center gap-3">
         <form method="GET" class="d-flex align-items-center gap-2 m-0">
-          <input type="hidden" name="key" value="{{ key }}">
           <label style="color: var(--text-muted); font-size: 0.82rem; font-weight: 600;">Staff:</label>
           <select name="staff" class="form-select form-select-sm" style="background: var(--card-bg); color: var(--text-main); border-color: var(--border); width: 200px;" onchange="this.form.submit()">
             <option value="">-- Select Staff --</option>
@@ -100,7 +99,7 @@
         <a href="/crm/operations" style="color: var(--text-muted); font-size: 0.82rem; text-decoration: none;">
           <i class="bi bi-speedometer2 me-1"></i>Operations
         </a>
-        <a href="/panel?key={{ key }}" class="btn btn-outline-secondary btn-sm" style="border-color: var(--border); color: var(--text-muted);">
+        <a href="/panel" class="btn btn-outline-secondary btn-sm" style="border-color: var(--border); color: var(--text-muted);">
           <i class="bi bi-arrow-left me-1"></i>Panel
         </a>
       </div>
@@ -249,7 +248,7 @@
     <h5 class="mb-3" style="font-weight: 600; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Quick Navigation</h5>
     <div class="row g-3">
       <div class="col-12 col-md-4">
-        <a href="/crm/my-leads?key={{ key }}&staff={{ staff_name }}" class="btn-action">
+        <a href="/crm/my-leads?staff={{ staff_name }}" class="btn-action">
           <div>
             <div style="font-size: 1rem; margin-bottom: 0.15rem;"><i class="bi bi-person-lines-fill me-2" style="color: var(--blue);"></i>My Leads</div>
             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">{{ kpis.my_leads }} active leads assigned to you</div>
@@ -258,7 +257,7 @@
         </a>
       </div>
       <div class="col-12 col-md-4">
-        <a href="/crm/tasks/my?key={{ key }}&staff={{ staff_name }}" class="btn-action">
+        <a href="/crm/tasks/my?staff={{ staff_name }}" class="btn-action">
           <div>
             <div style="font-size: 1rem; margin-bottom: 0.15rem;"><i class="bi bi-list-check me-2" style="color: var(--yellow);"></i>My Tasks</div>
             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">{{ kpis.active_tasks }} open tasks assigned to you</div>
@@ -267,7 +266,7 @@
         </a>
       </div>
       <div class="col-12 col-md-4">
-        <a href="/crm/staff-performance-detail?key={{ key }}&staff={{ staff_name }}" class="btn-action">
+        <a href="/crm/staff-performance-detail?staff={{ staff_name }}" class="btn-action">
           <div>
             <div style="font-size: 1rem; margin-bottom: 0.15rem;"><i class="bi bi-graph-up me-2" style="color: var(--purple);"></i>Performance Detail</div>
             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">{{ kpis.admissions }} admissions · {{ staff_lb.conversion if staff_lb else 0 }}% conversion</div>

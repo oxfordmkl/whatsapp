@@ -353,7 +353,6 @@
     <!-- ── Filters ─────────────────────────────────────────────── -->
     <div class="filter-card mb-3">
       <form method="GET" action="/crm/leads" id="filter-form">
-        <input type="hidden" name="key" value="{{ key }}">
         <div class="row g-2 align-items-end">
           <!-- Search -->
           <div class="col-12 col-sm-6 col-lg-4">
@@ -399,7 +398,7 @@
             <button type="submit" class="btn-crm-primary" id="filter-btn">
               <i class="bi bi-funnel me-1"></i>Filter
             </button>
-            <a href="/crm/leads?key={{ key }}" class="btn-crm-reset" style="text-decoration:none;display:inline-flex;align-items:center;">
+            <a href="/crm/leads" class="btn-crm-reset" style="text-decoration:none;display:inline-flex;align-items:center;">
               <i class="bi bi-x-circle me-1"></i>Reset
             </a>
           </div>
@@ -422,7 +421,7 @@
       {% endif %}
     </div>
 
-    <!-- ── Result count + actions ──────────────────────────── -->
+    <!-- ── Result count + actions ──────────────────────────────── -->
     <div class="d-flex align-items-center justify-content-between mb-2 px-1 flex-wrap gap-2">
       <span class="result-count">
         {% if pagination.total == 0 %}
@@ -484,7 +483,7 @@
               <!-- Phone -->
               <td class="phone-cell">
                 {% set wa_phone = lead.phone | string | replace(' ', '') | replace('+', '') | replace('-', '') %}
-                <a href="/crm/lead/{{ lead.phone }}?key={{ key }}"
+                <a href="/crm/lead/{{ lead.phone }}"
                    style="color:var(--text-main);text-decoration:none;font-weight:500;"
                    title="Open lead detail">
                   {{ lead.phone }}
@@ -608,7 +607,7 @@
         <div class="empty-icon"><i class="bi bi-inbox"></i></div>
         {% if search or stage_filter or admitted_filter %}
         <p>No leads match your current filters.<br>
-           <a href="/crm/leads?key={{ key }}" style="color:var(--green);">Clear all filters</a>
+           <a href="/crm/leads" style="color:var(--green);">Clear all filters</a>
         </p>
         {% else %}
         <p>No leads in the database yet.<br>
@@ -627,7 +626,7 @@
         <!-- Previous -->
         <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
           <a class="page-link"
-             href="/crm/leads?key={{ key }}&page={{ pagination.prev_num }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}"
+             href="/crm/leads?page={{ pagination.prev_num }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}"
              aria-label="Previous">
             <i class="bi bi-chevron-left"></i>
           </a>
@@ -638,7 +637,7 @@
           {% if p %}
             <li class="page-item {% if p == pagination.page %}active{% endif %}">
               <a class="page-link"
-                 href="/crm/leads?key={{ key }}&page={{ p }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}">
+                 href="/crm/leads?page={{ p }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}">
                 {{ p }}
               </a>
             </li>
@@ -650,7 +649,7 @@
         <!-- Next -->
         <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
           <a class="page-link"
-             href="/crm/leads?key={{ key }}&page={{ pagination.next_num }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}"
+             href="/crm/leads?page={{ pagination.next_num }}&search={{ search }}&stage={{ stage_filter }}&admitted={{ admitted_filter }}"
              aria-label="Next">
             <i class="bi bi-chevron-right"></i>
           </a>

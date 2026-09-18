@@ -92,7 +92,6 @@
       
       <div class="d-flex align-items-center gap-3">
         <form method="GET" class="d-flex align-items-center gap-2 m-0">
-          <input type="hidden" name="key" value="{{ key }}">
           <label class="text-muted" style="font-size: 0.85rem; font-weight: 600;">Staff Context:</label>
           <select name="staff" class="form-select form-select-sm" style="background: var(--card-bg); color: var(--text-main); border-color: var(--border); width: 200px;" onchange="this.form.submit()">
             <option value="">-- Select Staff --</option>
@@ -101,7 +100,7 @@
             {% endfor %}
           </select>
         </form>
-        <a href="/crm/staff-dashboard?key={{ key }}&staff={{ staff_name }}" class="btn btn-outline-secondary btn-sm" style="border-color: var(--border); color: var(--text-main);">
+        <a href="/crm/staff-dashboard?staff={{ staff_name }}" class="btn btn-outline-secondary btn-sm" style="border-color: var(--border); color: var(--text-main);">
           <i class="bi bi-arrow-left me-1"></i>Dashboard
         </a>
       </div>
@@ -146,11 +145,11 @@
                 {{ lead.updated_at.strftime('%Y-%m-%d %H:%M') if lead.updated_at else 'N/A' }}
               </td>
               <td class="text-end">
-                <a href="/crm/lead/{{ lead.phone }}?key={{ key }}" class="btn-action">
+                <a href="/crm/lead/{{ lead.phone }}" class="btn-action">
                   <i class="bi bi-folder2-open"></i> Open Lead
                 </a>
                 <!-- We can just direct them to the lead page for Task creation or WA sending to reuse the existing robust UI -->
-                <a href="/crm/lead/{{ lead.phone }}?key={{ key }}#task" class="btn-action">
+                <a href="/crm/lead/{{ lead.phone }}#task" class="btn-action">
                   <i class="bi bi-calendar-plus"></i> Task
                 </a>
                 {% set wa_phone = lead.phone | string | replace(' ', '') | replace('+', '') | replace('-', '') %}
