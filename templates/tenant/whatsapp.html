@@ -50,6 +50,7 @@
       
       <div>
         <form action="{{ url_for('tenant.tenant_whatsapp_test') }}" method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="t-btn t-btn-secondary" {% if not has_token or not tenant.waba_phone_number_id %}disabled{% endif %} style="display:flex;align-items:center;gap:0.5rem;">
             <i class="bi bi-activity"></i> Test Connection
           </button>
@@ -61,6 +62,7 @@
     <div class="t-card">
       <div class="t-card-title">Configure Meta Credentials</div>
       <form action="{{ url_for('tenant.tenant_whatsapp_save') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="t-field" style="margin-bottom:1.25rem;">
           <label for="phone_number_id">Phone Number ID</label>
@@ -101,6 +103,7 @@
       <form action="{{ url_for('tenant.tenant_whatsapp_clear') }}" method="POST"
             onsubmit="return confirm('Disconnect WhatsApp for this account? The Phone Number ID and stored token are removed and the number becomes available to configure again. Your leads, conversations and messages are not affected.');"
             style="margin-top:0.75rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="t-btn t-btn-secondary"
                 style="display:flex;align-items:center;gap:0.5rem;width:100%;justify-content:center;">
           <i class="bi bi-x-circle"></i> Disconnect WhatsApp

@@ -38,6 +38,7 @@
 
     <form method="POST"
           action="{% if row %}{{ url_for('tenant.tenant_course_edit', row_id=row.id) }}{% else %}{{ url_for('tenant.tenant_course_create') }}{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <!-- ── Basics ─────────────────────────────────────────────── -->
       <div class="t-card">

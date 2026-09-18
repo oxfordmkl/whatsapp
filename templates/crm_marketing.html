@@ -995,7 +995,7 @@ async function startBroadcast() {
   try {
     const resp = await fetch(`/crm/marketing/start_job`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
       body: JSON.stringify({ phones: phones, message: msgTemplate, campaign_name: "Marketing Hub" })
     });
     const data = await resp.json();

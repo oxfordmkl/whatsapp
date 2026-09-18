@@ -101,11 +101,46 @@ def main():
             s["_user_id"] = str(uids[username])
             s["_fresh"] = True
 
+    def csrf_header(c):
+        """RC2.5.4c-x-6f2b-B1d: a valid Flask-WTF token for THIS client's session.
+
+        CSRF enforcement is active since B1b, and it runs BEFORE the route. A
+        tokenless request is rejected with 400 before authorization is ever
+        evaluated -- every check below would then be testing CSRF, not the
+        authorization it was written for. The raw secret is planted in the
+        client's own session and the signed token sent as X-CSRFToken, which is
+        exactly what the CRM pages send since B1c. CSRF is NOT disabled here.
+        """
+        from flask import session as _session
+        from flask_wtf.csrf import generate_csrf
+        with app.test_request_context():
+            token = generate_csrf()
+            raw = _session["csrf_token"]
+        with c.session_transaction() as s:
+            s["csrf_token"] = raw
+        return {"X-CSRFToken": token}
+
     def post_complete(username, task_id, phone="911"):
         with app.test_client() as c:
             login(c, username)
             return c.post("/crm/tasks/complete",
-                          json={"task_id": task_id, "phone": phone})
+                          json={"task_id": task_id, "phone": phone},
+                          headers=csrf_header(c))
+
+    print("=" * 72)
+    print("CSRF LAYER — authorization checks below must not be CSRF artefacts")
+    print("=" * 72)
+    with app.app_context():
+        probe_uid = seed_legacy("911", "Kiran", "CSRF probe")
+    with app.test_client() as c:
+        login(c, "Kiran")
+        r = c.post("/crm/tasks/complete", json={"task_id": probe_uid, "phone": "911"})
+    with app.app_context():
+        leaked = is_completed(probe_uid)
+    check("tokenless completion by the ASSIGNEE is rejected by CSRF -> 400",
+          r.status_code == 400 and not leaked,
+          f"HTTP {r.status_code}; completion written={bool(leaked)}")
+    print()
 
     print("=" * 72)
     print("LEGACY PATH — the B1-R defect (no Task row)")
@@ -218,13 +253,15 @@ def main():
         t3_id = t3.id
     with app.test_client() as c:
         login(c, "Bibin")
-        r = c.post(f"/crm/tasks/{t3_id}/update", json={"status": "IN_PROGRESS"})
+        r = c.post(f"/crm/tasks/{t3_id}/update", json={"status": "IN_PROGRESS"},
+                   headers=csrf_header(c))
     check("task update still 403 for other staff", r.status_code == 403,
           f"HTTP {r.status_code}")
     with app.test_client() as c:
         login(c, "Kiran")
         r = c.post(f"/crm/tasks/{t3_id}/update",
-                   json={"status": "IN_PROGRESS", "staff_notes": "on it"})
+                   json={"status": "IN_PROGRESS", "staff_notes": "on it"},
+                   headers=csrf_header(c))
     with app.app_context():
         row3 = Task.query.get(t3_id)
     check("task update still 200 for the assignee",

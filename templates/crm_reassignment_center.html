@@ -156,6 +156,7 @@
       const response = await fetch('/crm/reassignment-center/preview', {
         method: 'POST',
         headers: {
+          'X-CSRFToken': '{{ csrf_token() }}',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phones: phones, target_staff: targetStaff })
@@ -215,6 +216,7 @@
       const response = await fetch('/crm/reassignment-center/confirm', {
         method: 'POST',
         headers: {
+          'X-CSRFToken': '{{ csrf_token() }}',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phones: phones, target_staff: targetStaff })

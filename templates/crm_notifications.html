@@ -33,6 +33,7 @@
       </div>
       {% if unread %}
       <form method="POST" action="/crm/notifications/read-all?key={{ key }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="nc-btn" type="submit">
           <i class="bi bi-check2-all"></i> Mark all read
         </button>
@@ -83,6 +84,7 @@
 
           {% if not n.is_read %}
           <form method="POST" action="/crm/notifications/{{ n.id }}/read?key={{ key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="nc-read" type="submit" title="Mark read">
               <i class="bi bi-check2"></i>
             </button>

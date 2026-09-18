@@ -47,6 +47,7 @@
     <div class="t-card">
       <div class="t-card-title">Configure AI Persona</div>
       <form action="{{ url_for('tenant.tenant_ai') }}" method="POST" id="ai-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="t-field" style="margin-bottom:1.25rem;">
           <label for="ai_persona_name">Persona Name</label>

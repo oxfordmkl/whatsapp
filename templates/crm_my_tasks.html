@@ -262,7 +262,7 @@ async function completeTask(taskId, phone) {
   try {
     const res = await fetch('/crm/tasks/complete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskId, phone: phone, completed_by: '{{ staff_name or "Admin" }}' })
     });
     const data = await res.json();

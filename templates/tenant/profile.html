@@ -58,6 +58,7 @@
     <div class="t-card">
       <div class="t-card-title">Editable Fields</div>
       <form action="{{ url_for('tenant.tenant_profile') }}" method="POST" id="profile-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="t-field-row">
           <div class="t-field">

@@ -112,6 +112,7 @@
       <div class="crm-card-header"><i class="bi bi-filetype-csv me-2"></i>Upload CSV</div>
       <div class="crm-card-body">
         <form method="POST" action="/crm/leads/import" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input class="crm-input mb-3" type="file" name="file" accept=".csv,text/csv" required>
           <button class="btn-save" type="submit"><i class="bi bi-upload me-1"></i>Import</button>
         </form>

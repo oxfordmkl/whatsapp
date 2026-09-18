@@ -227,21 +227,25 @@
             <td class="text-end">
               {% if admin and not admin.email_verified_at %}
                 <form action="{{ url_for('admin.crm_super_resend_verification', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-action" style="color: #58a6ff; border: 1px solid rgba(88,166,255,0.4);" title="Resend Verification"><i class="bi bi-envelope"></i> Resend</button>
                 </form>
               {% endif %}
               
               {% if tenant.status == 'PENDING' %}
                 <form action="{{ url_for('admin.crm_super_approve_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-action btn-approve"><i class="bi bi-check-circle"></i> Approve</button>
                 </form>
               {% elif tenant.status == 'ACTIVE' or tenant.status == 'TRIAL' %}
                 <form action="{{ url_for('admin.crm_super_impersonate', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-action btn-impersonate" title="Login as this tenant"><i class="bi bi-box-arrow-in-right"></i> Impersonate</button>
                 </form>
-                <form action="{{ url_for('admin.crm_super_suspend_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Suspend {{ tenant.name }}? This will immediately block all access and WhatsApp activity.');"><button type="submit" class="btn btn-action btn-suspend"><i class="bi bi-pause-circle"></i> Suspend</button></form>
+                <form action="{{ url_for('admin.crm_super_suspend_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Suspend {{ tenant.name }}? This will immediately block all access and WhatsApp activity.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-action btn-suspend"><i class="bi bi-pause-circle"></i> Suspend</button></form>
               {% elif tenant.status == 'SUSPENDED' %}
                 <form action="{{ url_for('admin.crm_super_reactivate_tenant', tenant_id=tenant.id) }}" method="POST" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-action btn-reactivate"><i class="bi bi-play-circle"></i> Reactivate</button>
                 </form>
               {% endif %}

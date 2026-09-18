@@ -726,6 +726,7 @@
               <label class="form-label-crm" for="stage_id">Sales Pipeline Stage</label>
               <form method="POST" action="/crm/lead/{{ lead.phone }}/stage"
                     class="d-flex gap-2 align-items-center flex-wrap">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <select class="crm-input" name="stage_id" id="stage_id" style="flex:1;min-width:160px;">
                   {% for s in pipeline_stages %}
                   <option value="{{ s.stage_id }}"
@@ -754,6 +755,7 @@
             {% endif %}
 
             <form method="POST" action="/crm/lead/{{ lead.phone }}/update">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
               <!-- Lead Status -->
               <div class="mb-3">
@@ -927,6 +929,7 @@
             </div>
 
             <form method="POST" action="/crm/lead/{{ lead.phone }}/send">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <!-- Quick Replies -->
               <div class="mb-2">
                 <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Replies</div>
@@ -979,6 +982,7 @@
           <div class="crm-card-body">
             
             <form method="POST" action="/crm/tasks/create">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="phone" value="{{ lead.phone }}">
               
               <!-- Quick Templates -->
@@ -1169,6 +1173,7 @@
                 {% if tid in task_map and not task_map[tid].get('_completed') %}
                   <div class="mt-2">
                     <form method="POST" action="/crm/tasks/complete">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="phone" value="{{ lead.phone }}">
                       <input type="hidden" name="task_id" value="{{ tid }}">
                       <button type="submit" class="btn btn-sm btn-outline-success" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-color: var(--green); color: var(--green);">
@@ -1281,6 +1286,7 @@
         <form method="POST"
               action="/crm/course-admissions/{{ lead.phone }}"
               id="multi-course-admission-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
           <div class="d-flex flex-column gap-2 mb-3" id="course-admission-checklist">
             {% for course in course_journey.enquiries %}

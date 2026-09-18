@@ -104,6 +104,7 @@
             <td style="text-align:right;">
               <form action="{{ url_for('tenant.tenant_staff') }}" method="POST" style="display:inline;"
                 {% if staff.is_active %}onsubmit="return confirm('Deactivate {{ staff.username }}? They will lose CRM access immediately.');"{% endif %}>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="toggle">
                 <input type="hidden" name="user_id" value="{{ staff.id }}">
                 {% if staff.is_active %}
@@ -139,6 +140,7 @@
   <div class="modal-box">
     <div class="modal-title"><i class="bi bi-person-plus-fill me-2" style="color:var(--blue);"></i>Add Staff Member</div>
     <form action="{{ url_for('tenant.tenant_staff') }}" method="POST" id="create-staff-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="create">
       <div class="t-field" style="margin-bottom:1rem;">
         <label for="new-username">Username <span style="color:var(--blue);">*</span></label>

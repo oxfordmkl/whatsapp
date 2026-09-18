@@ -39,11 +39,13 @@ existing TWO-state contract instead of inventing a third.
 
 OUT OF SCOPE, NOT TOUCHED: tenant_identity_service, prompt_composer,
 catalogue_service, payment_link_service, app/bot/*, models, migrations.
-CSRF is a real, pre-existing, platform-wide gap (Flask-WTF is not installed
-and CSRFProtect is never initialised); this page matches the existing posture
-of /tenant/profile, /tenant/staff and /tenant/whatsapp/save rather than
-inventing a partial parallel one. It is scheduled for RC2.5.5d and is
-asserted-as-observed below, not claimed as solved.
+CSRF was, when this phase shipped, a real platform-wide gap (Flask-WTF was not
+installed and CSRFProtect was never initialised), and this suite asserted that
+absence as observed rather than claiming it solved. RC2.5.4c-x-6f2b-B1b/B1c
+closed it -- CSRFProtect is initialised in the factory and this page's form
+carries the token -- so that tripwire is INVERTED (RC2.5.4c-x-6f2b-B1d) to pin
+the protection instead. This suite still disables CSRF on its OWN app instance
+so its POST tests exercise the profile logic rather than the token plumbing.
 """
 import ast
 import json
@@ -549,11 +551,48 @@ class TestSourceContract:
                 f"{rel}::{name} changed, but only {sorted(AUTHORISED)} "
                 "is authorised in this phase")
 
-    def test_csrf_posture_is_unchanged_and_still_absent(self):
-        """Asserted as OBSERVED, not as solved. The platform has no CSRF
-        mechanism; this page matches the existing posture rather than adding
-        a partial one. Remediation is RC2.5.5d. If CSRF is ever introduced,
-        this test fails and forces the page to be included deliberately."""
-        src = _src("templates/tenant/profile.html")
-        assert "csrf_token" not in src
-        assert "CSRFProtect" not in _src("app/__init__.py")
+    def test_csrf_protection_is_present_and_covers_this_page(self):
+        """INVERTED BY RC2.5.4c-x-6f2b-B1d (was:
+        test_csrf_posture_is_unchanged_and_still_absent).
+
+        The original asserted CSRF was ABSENT -- "asserted as observed, not as
+        solved" -- and was written to fail the day CSRF arrived, forcing this
+        page to be included deliberately. B1b initialised CSRFProtect and B1c
+        put the token in this form, so the observation is inverted, not
+        deleted: it now pins the actual constructs, not merely a "csrf" string.
+
+        Enforcement is asserted on the SOURCE, because this suite turns
+        WTF_CSRF_ENABLED off on its own app instance (above) so its POST tests
+        exercise profile logic. The factory must never make that switch itself.
+        """
+        import re
+
+        tree = ast.parse(_src("app/__init__.py"))
+        assert any(isinstance(n, ast.ImportFrom) and n.module == "flask_wtf.csrf"
+                   and any(a.name == "CSRFProtect" for a in n.names)
+                   for n in tree.body), "CSRFProtect is not imported by app/__init__.py"
+        assert any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)
+                   and getattr(n.value.func, "id", None) == "CSRFProtect"
+                   and any(getattr(t, "id", None) == "csrf" for t in n.targets)
+                   for n in tree.body), "no module-level `csrf = CSRFProtect()`"
+        factory = next(n for n in tree.body
+                       if isinstance(n, ast.FunctionDef) and n.name == "create_app")
+        init_calls = [n for n in ast.walk(factory)
+                      if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                      and n.func.attr == "init_app"
+                      and getattr(n.func.value, "id", None) == "csrf"]
+        assert len(init_calls) == 1, "csrf.init_app(app) must run exactly once in create_app()"
+        assert "WTF_CSRF_ENABLED" not in _src("app/__init__.py"), (
+            "the factory must never switch CSRF enforcement off")
+
+        from flask_wtf.csrf import CSRFProtect
+        assert isinstance(_APP.extensions.get("csrf"), CSRFProtect), (
+            "the CSRF extension is not initialised on the application")
+
+        field = '<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">'
+        page = _src("templates/tenant/profile.html")
+        posts = re.findall(r"<form\b[^>]*method=[\"']?post[^>]*>(.*?)</form>",
+                           page, re.IGNORECASE | re.DOTALL)
+        assert len(posts) == 1, "expected exactly one POST form on the profile page"
+        assert posts[0].count(field) == 1, "the profile form must carry exactly one token"
+        assert posts[0].count('name="csrf_token"') == 1

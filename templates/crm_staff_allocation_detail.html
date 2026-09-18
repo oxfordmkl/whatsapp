@@ -207,6 +207,7 @@
       fetch("/crm/reassignment-center/confirm", {
         method: "POST",
         headers: {
+          "X-CSRFToken": "{{ csrf_token() }}",
           "Content-Type": "application/json"
         },
         body: JSON.stringify(currentPayload)

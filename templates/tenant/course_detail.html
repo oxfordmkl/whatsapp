@@ -49,6 +49,7 @@
         <form method="POST" action="{{ url_for('tenant.tenant_course_toggle', row_id=row.id) }}"
               style="display:inline;"
               onsubmit="return confirm('Deactivate this entry?\n\nIt will stop being used by your AI assistant, but stays here and can be reactivated at any time.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="active" value="0">
           <button type="submit"
                   style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.65rem 1.25rem;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--yellow);font-size:0.85rem;font-weight:600;font-family:inherit;cursor:pointer;">
@@ -58,6 +59,7 @@
       {% else %}
         <form method="POST" action="{{ url_for('tenant.tenant_course_toggle', row_id=row.id) }}"
               style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="active" value="1">
           <button type="submit"
                   style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.65rem 1.25rem;background:transparent;border:1px solid rgba(37,211,102,0.3);border-radius:8px;color:var(--green);font-size:0.85rem;font-weight:600;font-family:inherit;cursor:pointer;">

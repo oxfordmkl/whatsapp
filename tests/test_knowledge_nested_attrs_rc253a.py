@@ -957,6 +957,18 @@ class TestScope:
             "app/models.py",
             "migrations/versions/e6d1b9a37f24_rc2_5_4c_x_6f2a_payment_ledger.py",
             "tests/test_payment_ledger_rc254cx6f2a.py",
+            # WIDENED BY RC2.5.4c-x-6f2b-B1d: the CSRF foundation.
+            # B1b initialised CSRFProtect in the application factory and B1c
+            # put the token into 26 templates (templates/ is outside this
+            # tripwire's app//tests//migrations/ scope, so they need no entry
+            # here and are pinned by the B1c suite instead). B1d aligned one
+            # legacy route script that POSTs to CSRF-protected endpoints. Four
+            # explicit paths -- no directory, no wildcard -- so an unrelated
+            # app, test or migration change still fails here.
+            "app/__init__.py",
+            "tests/test_csrf_foundation_rc254cx6f2b_b1b.py",
+            "tests/test_csrf_templates_rc254cx6f2b_b1c.py",
+            "tests/test_legacy_completion_auth_16_5a7d.py",
         }
         for scope in ("app/", "tests/", "migrations/"):
             out = subprocess.run(["git", "status", "--porcelain", "--", scope],

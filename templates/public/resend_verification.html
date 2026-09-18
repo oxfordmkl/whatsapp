@@ -39,6 +39,7 @@
         {% endwith %}
 
         <form action="{{ url_for('public.resend_verification') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-4">
                 <label class="form-label text-muted small fw-bold">Email address</label>
                 <input type="email" name="email" class="form-control" placeholder="name@company.com" required autofocus>

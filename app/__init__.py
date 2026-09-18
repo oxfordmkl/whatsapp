@@ -1,6 +1,8 @@
 from flask import Flask
 import logging
 
+from flask_wtf.csrf import CSRFProtect
+
 from app.config import (
     DATABASE_URL, SECRET_KEY, AUTH_MODE,
     EMAIL_PROVIDER, BREVO_API_KEY, BREVO_SENDER_EMAIL,
@@ -14,6 +16,65 @@ from app.config import (
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
+# ── Phase RC2.5.4c-x-6f2b-B1b: CSRF foundation (factory + exemptions) ───────
+#
+# WHY
+# ---
+# The platform had no CSRF mechanism at all: Flask-WTF was not installed and
+# CSRFProtect was never initialised, so every authenticated browser POST --
+# lead edits, staff management, tenant configuration -- rested on SameSite=Lax
+# alone. The x-6f2b-A audit named CSRF a HARD prerequisite for the future
+# staff payment-verification POST, which confirms money and triggers an
+# irreversible customer message.
+#
+# WHAT THIS IS NOT
+# ----------------
+# CSRF answers exactly one question: "did this state-changing request
+# originate from a page served to this browser session?" It does NOT answer
+# "is this user allowed to do this" (role decorators) or "does this row belong
+# to this tenant" (tenant_query / tenant_filter / _actor_tenant_id). Those
+# checks are untouched by this phase and remain mandatory.
+#
+# ONE EXTENSION INSTANCE, INITIALISED PER APP
+# --------------------------------------------
+# The module-level singleton is the extension object, not an app -- the same
+# pattern as db/migrate in app.extensions. init_app() is called inside
+# create_app(), so no app is created at import time.
+csrf = CSRFProtect()
+
+# The ONLY endpoints exempt from CSRF. Endpoint names, not path prefixes and
+# not blueprints: /trigger-followup lives in the admin blueprint alongside 69
+# session-authenticated CRM routes, so a blueprint-wide exemption would silently
+# unprotect all of them.
+#
+# Each entry is exempt because it is NOT a browser-session request and already
+# carries a STRONGER, independent authenticity mechanism:
+#
+#   webhook.receive_message   Meta HMAC-SHA256 over the raw body, fail-closed
+#                             when META_APP_SECRET is unset (webhook.py).
+#   billing.razorpay_webhook  provider HMAC (X-Razorpay-Signature).
+#   billing.stripe_webhook    provider HMAC (Stripe-Signature).
+#   broadcast.*               X-API-Key header (BROADCAST_API_KEY).
+#   admin.trigger_followup    X-Admin-Key header (ADMIN_KEY).
+#
+# A custom request header cannot be set cross-origin without a CORS preflight,
+# and none of these carries a session cookie, so CSRF adds nothing to them --
+# while applying it would break inbound WhatsApp entirely, since Meta cannot
+# send a token.
+#
+# NOTE: exempting the two billing webhooks is only safe while their handlers
+# are inert stubs; their signature check fails OPEN when the secret is unset
+# (a pre-existing finding recorded by x-6f2, NOT addressed here).
+_CSRF_EXEMPT_ENDPOINTS = (
+    "webhook.receive_message",      # POST /webhook
+    "billing.razorpay_webhook",     # POST /webhooks/razorpay
+    "billing.stripe_webhook",       # POST /webhooks/stripe
+    "broadcast.broadcast",          # POST /broadcast
+    "broadcast.broadcast_template",  # POST /broadcast-template
+    "broadcast.upload_media_route",  # POST /upload-media
+    "admin.trigger_followup",       # POST /trigger-followup
 )
 
 def _check_default_secrets(app):
@@ -321,6 +382,36 @@ def create_app():
     app.register_blueprint(tenant_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(marketing_bp)
+
+    # ── Phase RC2.5.4c-x-6f2b-B1b: CSRF enforcement ───────────────────────
+    #
+    # Initialised AFTER the blueprints so every exempt endpoint already exists
+    # in app.view_functions and can be resolved by name.
+    #
+    # Enforcement is CSRFProtect's own before_request hook, so a bad or missing
+    # token is rejected BEFORE any view body runs -- no business mutation can
+    # precede the check. No route performs its own CSRF check.
+    #
+    # WTF_CSRF_TIME_LIMIT = None makes the token SESSION-scoped rather than
+    # expiring after Flask-WTF's default hour: the CRM is a long-lived,
+    # multi-tab surface, and a token that dies while an operator is still
+    # logged in produces mysterious failures on a form that looks fine. The
+    # token still dies with the session -- logout calls session.clear().
+    app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
+    csrf.init_app(app)
+
+    for _endpoint in _CSRF_EXEMPT_ENDPOINTS:
+        _view = app.view_functions.get(_endpoint)
+        if _view is None:
+            # A renamed or removed endpoint must not degrade into "silently not
+            # exempt": the Meta webhook would start rejecting Meta's own POSTs.
+            # Fail at boot, loudly, rather than at 3am on an inbound message.
+            raise RuntimeError(
+                f"CSRF exemption target {_endpoint!r} is not a registered "
+                "endpoint -- refusing to start with an unenforceable "
+                "exemption contract."
+            )
+        csrf.exempt(_view)
 
     # ── Phase 1.5.5D: State Engine UnitOfWork teardown safety net ─────────
     # Gated by STATE_UOW_CONTEXT (default OFF → no-op). The webhook's

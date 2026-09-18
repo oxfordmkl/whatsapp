@@ -187,6 +187,7 @@
           </div>
           <div class="crm-card-body">
             <form id="campaignForm" method="POST" action="/crm/campaigns/send">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <div class="mb-3">
                 <label class="form-label text-muted fw-semibold" style="font-size: 0.8rem;">Campaign Name</label>
                 <input type="text" class="form-control" name="campaign_name" placeholder="e.g. Diwali Admission Drive" required>
@@ -265,7 +266,7 @@
       try {
         const response = await fetch(`/crm/campaigns/preview`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json'},
           body: JSON.stringify({ audience: val })
         });
         

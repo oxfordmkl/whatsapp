@@ -387,6 +387,7 @@ body {
       Tenant: <strong>{{ session.get('impersonate_tenant_name', 'Unknown') }}</strong>
     </div>
     <form action="{{ url_for('admin.crm_super_impersonate_exit') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" style="width: 100%; padding: 0.4rem; background: rgba(248,81,73,0.2); color: #fff; border: 1px solid rgba(248,81,73,0.4); border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
         <i class="bi bi-x-circle"></i> Exit Impersonation
       </button>
@@ -824,7 +825,7 @@ body {
       el.addEventListener('click', function () {
         fetch(qs('/crm/notifications/' + el.dataset.id + '/read'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
           body: '{}'
         });
       });
@@ -863,7 +864,7 @@ body {
     e.stopPropagation();
     fetch(qs('/crm/notifications/read-all'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
       body: '{}'
     }).then(function () { setBadge(0); loadRecent(); });
   });
