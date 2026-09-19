@@ -588,14 +588,49 @@ def stats():
 
 @admin_bp.route("/panel", methods=["GET"])
 def admin_panel():
+    # Phase RC2.5.4c-x-6f2b-B1e+3: this page carries the platform-wide
+    # BROADCAST_API_KEY, which sends WhatsApp messages as the primary tenant.
+    # Only a SUPER_ADMIN or an ADMIN of the primary tenant may load it. Both
+    # are decided from the signed-in session alone -- never from a request
+    # parameter -- and no response from this route may be cached.
+    from flask import make_response
+    from flask_login import current_user
+
+    def _no_store(rv):
+        resp = make_response(rv)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
     if not check_auth():
-        return (
+        return _no_store(((
             "<html><body style='font-family:sans-serif;text-align:center;"
             "padding:50px;background:#0a0f0d;color:#25D366'>"
             "<h2>🔒 Access Denied</h2>"
             "<p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>"
             "</body></html>"
-        ), 403
+        ), 403))
+    # admin_security_guard covers /crm/ paths only, so the forced password
+    # change and the billing check are applied here.
+    if getattr(current_user, "require_password_change", False):
+        return _no_store(redirect(url_for("admin.crm_setup_password")))
+    role = getattr(current_user, "role", None)
+    primary = current_app.config.get("PRIMARY_TENANT_ID")
+    is_primary_admin = (role == "ADMIN" and bool(primary)
+                        and str(_actor_tenant_id()) == str(primary))
+    if role != "SUPER_ADMIN" and not is_primary_admin:
+        return _no_store(((
+            "<html><body style='font-family:sans-serif;text-align:center;"
+            "padding:50px;background:#0a0f0d;color:#25D366'>"
+            "<h2>🔒 Access Denied</h2>"
+            "<p style='color:#888'>This page is restricted to platform administrators.</p>"
+            "</body></html>"
+        ), 403))
+    if is_primary_admin:
+        billing_redirect = check_billing_status()
+        if billing_redirect:
+            return _no_store(billing_redirect)
     try:
         import html as _html
         with open("templates/panel.html", "r", encoding="utf-8") as f:
@@ -623,7 +658,7 @@ def admin_panel():
             'value="' + _html.escape(_origin, quote=True) + '"',
             1,
         )
-        return page, 200, {"Content-Type": "text/html"}
+        return _no_store((page, 200, {"Content-Type": "text/html"}))
     except FileNotFoundError:
         return "templates/panel.html not found in project", 404
 
