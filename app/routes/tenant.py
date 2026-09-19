@@ -328,6 +328,26 @@ def tenant_staff():
             except IntegrityError:
                 db.session.rollback()
                 flash('Could not create staff member. Please try again.', 'danger')
+            else:
+                # Phase RC2.5.6a (P1-7): the new login must be able to verify
+                # its email, or /crm/login refuses it forever -- nothing else
+                # ever sent a STAFF account a link. Same call and same
+                # try/except as registration (public.register). It runs only
+                # after the commit, so a failed send never undoes the account;
+                # the member can request a new link via /resend-verification.
+                from app.services.email_service import email_service
+                try:
+                    sent = email_service.send_verification_email(user_email=email, user_name=username)
+                    if not sent:
+                        import logging
+                        logging.error("Failed to dispatch verification email to newly created staff member.")
+                        flash('The verification email could not be sent. The staff member can '
+                              'request a new one from the sign-in page.', 'warning')
+                except Exception as e:
+                    import logging
+                    logging.error(f"Email dispatch exception during staff creation: {str(e)}")
+                    flash('The verification email could not be sent. The staff member can '
+                          'request a new one from the sign-in page.', 'warning')
 
             return redirect(url_for('tenant.tenant_staff'))
 

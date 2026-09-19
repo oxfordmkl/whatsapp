@@ -249,11 +249,11 @@ class TestDuplicatePrevention:
 class TestEditStaff:
     def test_edit_updates_display_name_and_role(self, seeded):
         loc = post(seeded[OX], action="edit", staff_code="ANJU",
-                   display_name="Anju Menon", role="MANAGER", active="on")
+                   display_name="Anju Menon", role="ADMIN", active="on")
         assert "msg=" in loc
         u = staff_of(OX)["Anju"]
         assert u.display_name == "Anju Menon"
-        assert u.role == "MANAGER"
+        assert u.role == "ADMIN"
 
     def test_edit_does_not_rename_the_login(self, seeded):
         """display_name is the operator-facing label; username is a credential
@@ -439,7 +439,7 @@ class TestRollbackSafety:
                 assigned_staff=normalize_staff_name("Kiran")))
             db.session.commit()
         post(seeded[OX], action="edit", staff_code="KIRAN",
-             display_name="Renamed", role="MANAGER")
+             display_name="Renamed", role="STAFF")
         u = staff_of(OX)["Kiran"]
         assert u.is_active is True
         assert u.display_name != "Renamed", "blocked edit leaked a partial write"

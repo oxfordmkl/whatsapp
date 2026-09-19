@@ -175,7 +175,12 @@ def resend_verification():
             if not check_rate_limit(f"resend_email_{email}", 3, 900):
                 return "Too many requests. Please try again later.", 429
                 
-            user = User.query.filter_by(email=email, role="ADMIN").first()
+            # Phase RC2.5.6a (P1-7): STAFF are eligible too -- /crm/login admits
+            # ADMIN and STAFF and requires a verified email from both, so a
+            # STAFF account with no way to get a link could never sign in.
+            # SUPER_ADMIN stays excluded; the response below is unchanged.
+            user = User.query.filter(User.email == email,
+                                     User.role.in_(("ADMIN", "STAFF"))).first()
             if user and user.email_verified_at is None:
                 logging.info(f"RESEND_VERIFICATION_REQUESTED: User {user.id}")
                 success = email_service.send_verification_email(user.email, user.username)

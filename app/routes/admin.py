@@ -1988,6 +1988,15 @@ def crm_staff_management():
 
         action = request.form.get("action")
 
+        # Phase RC2.5.6a (P0): the ONLY roles a tenant ADMIN may assign here.
+        # The dropdown offers these two, but a crafted POST is not bound by it:
+        # the role was written verbatim, so an ADMIN could set SUPER_ADMIN on a
+        # user of their own tenant and sign in with it at /crm/super/login as
+        # the platform operator. A blank value keeps each branch's existing
+        # fallback (STAFF on add, the current role on edit); any other value is
+        # refused before anything is written or audited.
+        _assignable_roles = ("STAFF", "ADMIN")
+
         # ADR-021: never write without a resolved tenant. A SUPER_ADMIN who is
         # not impersonating has no tenant, and guessing one is how 18 lead_event
         # rows were mis-filed. Refuse rather than fall back.
@@ -1999,6 +2008,9 @@ def crm_staff_management():
             code = request.form.get("staff_code", "").strip().upper()
             display_name = request.form.get("display_name", "").strip()
             role = request.form.get("role", "STAFF").strip()
+            if role and role not in _assignable_roles:
+                return redirect(url_for("admin.crm_staff_management",
+                                        err="Invalid role — choose STAFF or ADMIN"))
             active = request.form.get("active") == "on"
 
             if not code or not display_name:
@@ -2060,6 +2072,10 @@ def crm_staff_management():
             return redirect(url_for("admin.crm_staff_management", msg="Staff added"))
 
         elif action == "edit":
+            _submitted_role = request.form.get("role", "").strip()
+            if _submitted_role and _submitted_role not in _assignable_roles:
+                return redirect(url_for("admin.crm_staff_management",
+                                        err="Invalid role — choose STAFF or ADMIN"))
             code = request.form.get("staff_code", "").strip().upper()
             staff = staff_service.resolve_code(_tenant, code, include_admins=True)
             if staff is None:
