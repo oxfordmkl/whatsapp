@@ -3,7 +3,6 @@
   Phase 9.7: Workspace Redesign + Marketing Hub Foundation
 
   Usage: include 'crm_sidebar.html'
-  Required context var: key (the ADMIN_KEY string)
 
   ╔══════════════════════════════════════════════════════════════╗
   ║  PHASE 10 AUTH PREPARATION — Navigation Visibility Layer    ║
@@ -396,7 +395,7 @@ body {
   {% endif %}
 
   <!-- Brand -->
-  <a class="crm-brand" href="/crm/home?key={{ key }}">
+  <a class="crm-brand" href="/crm/home">
     <div class="crm-brand-icon">O</div>
     <div class="crm-brand-text">
       <span class="crm-brand-name">Oxford CRM</span>
@@ -425,7 +424,7 @@ body {
       <div class="crm-notif-list" id="crmNotifList">
         <div class="crm-notif-empty">Loading…</div>
       </div>
-      <a class="crm-notif-all" href="/crm/notifications?key={{ key }}">
+      <a class="crm-notif-all" href="/crm/notifications">
         View all notifications
       </a>
     </div>
@@ -438,7 +437,7 @@ body {
     <!-- HOME — visible to ALL roles -->
     {% if actor.role in ['ADMIN', 'SUPER_ADMIN', 'STAFF'] %}
     <div class="nav-section">
-      <a class="nav-item" href="/crm/home?key={{ key }}" data-path="/crm/home">
+      <a class="nav-item" href="/crm/home" data-path="/crm/home">
         <i class="bi bi-house-fill"></i>
         <span class="nav-label">Home</span>
       </a>
@@ -451,24 +450,24 @@ body {
     <div class="nav-section">
       <div class="nav-section-label">Leads</div>
       {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
-      <a class="nav-item" href="/crm/leads?key={{ key }}" data-path="/crm/leads">
+      <a class="nav-item" href="/crm/leads" data-path="/crm/leads">
         <i class="bi bi-people-fill"></i>
         <span class="nav-label">All Leads</span>
       </a>
       {% endif %}
-      <a class="nav-item" href="/crm/my-leads?key={{ key }}" data-path="/crm/my-leads">
+      <a class="nav-item" href="/crm/my-leads" data-path="/crm/my-leads">
         <i class="bi bi-person-fill"></i>
         <span class="nav-label">My Leads</span>
       </a>
       {# Phase 10.7: visible to STAFF as well as ADMIN — pipeline visibility
          follows the existing lead visibility rules, and a STAFF member's
          counts are filtered to leads they own by the service layer. #}
-      <a class="nav-item" href="/crm/pipeline?key={{ key }}" data-path="/crm/pipeline">
+      <a class="nav-item" href="/crm/pipeline" data-path="/crm/pipeline">
         <i class="bi bi-funnel-fill"></i>
         <span class="nav-label">Sales Pipeline</span>
       </a>
       {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
-      <a class="nav-item" href="/crm/leads/unassigned?key={{ key }}" data-path="/crm/leads/unassigned">
+      <a class="nav-item" href="/crm/leads/unassigned" data-path="/crm/leads/unassigned">
         <i class="bi bi-inbox-fill"></i>
         <span class="nav-label">Unassigned</span>
       </a>
@@ -481,12 +480,12 @@ body {
     {% if actor.role in ['ADMIN', 'SUPER_ADMIN', 'STAFF'] %}
     <div class="nav-section">
       <div class="nav-section-label">Tasks</div>
-      <a class="nav-item" href="/crm/tasks/my?key={{ key }}" data-path="/crm/tasks/my">
+      <a class="nav-item" href="/crm/tasks/my" data-path="/crm/tasks/my">
         <i class="bi bi-calendar2-check-fill"></i>
         <span class="nav-label">My Tasks</span>
       </a>
       {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
-      <a class="nav-item" href="/crm/tasks/admin?key={{ key }}" data-path="/crm/tasks/admin">
+      <a class="nav-item" href="/crm/tasks/admin" data-path="/crm/tasks/admin">
         <i class="bi bi-list-check"></i>
         <span class="nav-label">Admin Tasks</span>
       </a>
@@ -602,7 +601,7 @@ body {
     {% if actor.role in ['ADMIN', 'SUPER_ADMIN'] %}
     <div class="nav-section">
       <div class="nav-section-label">Staff</div>
-      <a class="nav-item" href="/crm/staff-dashboard?key={{ key }}" data-path="/crm/staff-dashboard">
+      <a class="nav-item" href="/crm/staff-dashboard" data-path="/crm/staff-dashboard">
         <i class="bi bi-person-workspace"></i>
         <span class="nav-label">Staff Dashboard</span>
       </a>
@@ -610,7 +609,7 @@ body {
         <i class="bi bi-gear-fill"></i>
         <span class="nav-label">Staff Management</span>
       </a>
-      <a class="nav-item" href="/crm/reassignment-center?key={{ key }}" data-path="/crm/reassignment-center">
+      <a class="nav-item" href="/crm/reassignment-center" data-path="/crm/reassignment-center">
         <i class="bi bi-arrow-left-right"></i>
         <span class="nav-label">Reassignment</span>
       </a>
@@ -646,7 +645,7 @@ body {
         <i class="bi bi-building"></i>
         <span class="nav-label">Tenant Settings</span>
       </a>
-      <a class="nav-item" href="/panel?key={{ key }}" data-path="/panel" style="opacity:0.6;" title="Legacy panel — preserved">
+      <a class="nav-item" href="/panel" data-path="/panel" style="opacity:0.6;" title="Legacy panel — preserved">
         <i class="bi bi-grid-3x3-gap"></i>
         <span class="nav-label">Legacy Panel</span>
       </a>
@@ -727,7 +726,7 @@ body {
     <i class="bi bi-list"></i>
   </button>
   <span class="brand-mobile"><i class="bi bi-whatsapp me-1"></i>Oxford CRM</span>
-  <a href="/crm/home?key={{ key }}" style="color:var(--text-muted);font-size:0.8rem;text-decoration:none;">
+  <a href="/crm/home" style="color:var(--text-muted);font-size:0.8rem;text-decoration:none;">
     <i class="bi bi-house"></i>
   </a>
 </div>
@@ -777,8 +776,6 @@ body {
   var nReadAll= document.getElementById('crmNotifReadAll');
   if (!nBtn) return;
 
-  var KEY = {{ (key or '')|tojson }};
-  function qs(u) { return KEY ? u + (u.indexOf('?') > -1 ? '&' : '?') + 'key=' + encodeURIComponent(KEY) : u; }
 
   function setBadge(n) {
     if (n > 0) { nBadge.textContent = n > 99 ? '99+' : n; nBadge.hidden = false; }
@@ -796,9 +793,9 @@ body {
 
   // Click -> open the Lead, or the task list when it is a standalone task.
   function target(n) {
-    if (n.lead_phone) return qs('/crm/lead/' + encodeURIComponent(n.lead_phone));
-    if (n.task_id) return qs('/crm/tasks/my');
-    return qs('/crm/notifications');
+    if (n.lead_phone) return '/crm/lead/' + encodeURIComponent(n.lead_phone);
+    if (n.task_id) return '/crm/tasks/my';
+    return '/crm/notifications';
   }
 
   function esc(s) {
@@ -823,7 +820,7 @@ body {
     // Opening a notification marks it read, then follows the link.
     nList.querySelectorAll('.crm-notif-item').forEach(function (el) {
       el.addEventListener('click', function () {
-        fetch(qs('/crm/notifications/' + el.dataset.id + '/read'), {
+        fetch('/crm/notifications/' + el.dataset.id + '/read', {
           method: 'POST',
           headers: { 'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
           body: '{}'
@@ -833,14 +830,14 @@ body {
   }
 
   function loadRecent() {
-    fetch(qs('/crm/notifications/recent'), { headers: { 'Accept': 'application/json' } })
+    fetch('/crm/notifications/recent', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { if (d) { setBadge(d.count); render(d.items); } })
       .catch(function () { nList.innerHTML = '<div class="crm-notif-empty">Unavailable</div>'; });
   }
 
   function loadCount() {
-    fetch(qs('/crm/notifications/unread-count'), { headers: { 'Accept': 'application/json' } })
+    fetch('/crm/notifications/unread-count', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { if (d) setBadge(d.count); })
       .catch(function () { /* badge stays as-is */ });
@@ -862,7 +859,7 @@ body {
 
   nReadAll.addEventListener('click', function (e) {
     e.stopPropagation();
-    fetch(qs('/crm/notifications/read-all'), {
+    fetch('/crm/notifications/read-all', {
       method: 'POST',
       headers: { 'X-CSRFToken': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
       body: '{}'

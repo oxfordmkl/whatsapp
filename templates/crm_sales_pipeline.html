@@ -125,7 +125,7 @@
       <div class="crm-card-body">
         {% for s in open_stages %}
         {% if s.lead_count %}
-        <a class="stage-row" href="/crm/pipeline/stage/{{ s.stage_id }}?key={{ key }}">
+        <a class="stage-row" href="/crm/pipeline/stage/{{ s.stage_id }}">
         {% else %}
         <div class="stage-row empty">
         {% endif %}
@@ -150,7 +150,7 @@
       <div class="crm-card-body">
         {% for s in terminal_stages %}
         {% if s.lead_count %}
-        <a class="stage-row" href="/crm/pipeline/stage/{{ s.stage_id }}?key={{ key }}">
+        <a class="stage-row" href="/crm/pipeline/stage/{{ s.stage_id }}">
         {% else %}
         <div class="stage-row empty">
         {% endif %}

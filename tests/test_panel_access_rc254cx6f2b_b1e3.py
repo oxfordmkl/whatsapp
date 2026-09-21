@@ -63,7 +63,12 @@ from app.models import Tenant, User                                      # noqa:
 _APP = create_app()
 _APP.config["TESTING"] = True
 PRIMARY, OTHER = "t-primary", "t-other"
-ANON_TEXT = "URL-il ?key=YOUR_ADMIN_KEY add cheyyuka"
+# Phase RC2.5.11 (P2-13, R3): the denial body used to instruct the visitor to
+# "add ?key=YOUR_ADMIN_KEY", advice that cannot work under SESSION_ONLY and
+# that named the legacy mechanism to anonymous callers. Only the copy changed;
+# every assertion around it -- 403, no key carried, no-store headers, the whole
+# /panel access matrix -- is unchanged.
+ANON_TEXT = "Please sign in to continue."
 
 USERS = [
     # username,  role,          tenant,  require_password_change

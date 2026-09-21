@@ -311,7 +311,7 @@
     <div class="row g-3 mb-4">
       <!-- Quick Action Cards for STAFF -->
       <div class="col-6 col-lg-4">
-        <a class="quick-action-card" href="/crm/my-leads?key={{ key }}">
+        <a class="quick-action-card" href="/crm/my-leads">
           <div class="qa-icon kpi-green"><i class="bi bi-person-fill"></i></div>
           <div class="qa-title">My Leads</div>
           <div class="qa-desc">View and manage your assigned leads.</div>
@@ -319,7 +319,7 @@
         </a>
       </div>
       <div class="col-6 col-lg-4">
-        <a class="quick-action-card" href="/crm/tasks/my?key={{ key }}">
+        <a class="quick-action-card" href="/crm/tasks/my">
           <div class="qa-icon kpi-yellow"><i class="bi bi-calendar2-check-fill"></i></div>
           <div class="qa-title">My Tasks & Followups</div>
           <div class="qa-desc">Track today's followups and your scheduled tasks.</div>
@@ -327,7 +327,7 @@
         </a>
       </div>
       <div class="col-6 col-lg-4">
-        <a class="quick-action-card" href="/crm/staff-performance-detail?staff={{ actor.username if actor else '' }}&key={{ key }}">
+        <a class="quick-action-card" href="/crm/staff-performance-detail?staff={{ actor.username if actor else '' }}">
           <div class="qa-icon kpi-blue"><i class="bi bi-graph-up-arrow"></i></div>
           <div class="qa-title">My Performance</div>
           <div class="qa-desc">Review your metrics, conversions, and SLA.</div>

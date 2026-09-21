@@ -80,7 +80,7 @@
   <div class="container-fluid px-3 px-md-4 py-4" style="max-width:1100px;">
 
     <div class="mb-3">
-      <a class="btn-ghost text-decoration-none mb-2 d-inline-block" href="/crm/pipeline?key={{ key }}">
+      <a class="btn-ghost text-decoration-none mb-2 d-inline-block" href="/crm/pipeline">
         <i class="bi bi-arrow-left me-1"></i>Back to Pipeline
       </a>
       <h1 style="font-size:1.25rem;font-weight:700;margin:0;">
@@ -120,7 +120,7 @@
               <tr>
                 <td>
                   <div class="lead-name">
-                    <a href="/crm/lead/{{ lead.phone }}?key={{ key }}">{{ lead.name or 'Unknown' }}</a>
+                    <a href="/crm/lead/{{ lead.phone }}">{{ lead.name or 'Unknown' }}</a>
                   </div>
                   <div class="lead-phone">{{ lead.phone }}</div>
                 </td>
@@ -147,7 +147,7 @@
 
     {# Reuses the Phase 10.3 shared partial rather than a third copy of the nav. #}
     {% set base_url = '/crm/pipeline/stage/' ~ stage.id %}
-    {% set extra_qs = ('key=' ~ key) if key else '' %}
+    {% set extra_qs = '' %}
     {% include '_pagination.html' %}
 
   </div>

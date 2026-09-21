@@ -2,7 +2,7 @@
   crm_notifications.html — Notification Centre
   Phase 16.5A7 (ADR-021)
 
-  Context vars: key, actor, notifications (list[Notification]), unread (int)
+  Context vars: actor, notifications (list[Notification]), unread (int)
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -32,7 +32,7 @@
         </p>
       </div>
       {% if unread %}
-      <form method="POST" action="/crm/notifications/read-all?key={{ key }}">
+      <form method="POST" action="/crm/notifications/read-all">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="nc-btn" type="submit">
           <i class="bi bi-check2-all"></i> Mark all read
@@ -72,7 +72,7 @@
           <span class="nc-icon tone-{{ tone }}"><i class="bi {{ icon }}"></i></span>
 
           <a class="nc-body"
-             href="{% if n.lead_phone %}/crm/lead/{{ n.lead_phone }}?key={{ key }}{% elif n.task_id %}/crm/tasks/my?key={{ key }}{% else %}#{% endif %}">
+             href="{% if n.lead_phone %}/crm/lead/{{ n.lead_phone }}{% elif n.task_id %}/crm/tasks/my{% else %}#{% endif %}">
             <span class="nc-item-title">{{ n.title }}</span>
             {% if n.body %}<span class="nc-item-sub">{{ n.body }}</span>{% endif %}
             <span class="nc-meta">
@@ -83,7 +83,7 @@
           </a>
 
           {% if not n.is_read %}
-          <form method="POST" action="/crm/notifications/{{ n.id }}/read?key={{ key }}">
+          <form method="POST" action="/crm/notifications/{{ n.id }}/read">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="nc-read" type="submit" title="Mark read">
               <i class="bi bi-check2"></i>

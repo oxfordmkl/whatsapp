@@ -608,7 +608,7 @@ def admin_panel():
             "<html><body style='font-family:sans-serif;text-align:center;"
             "padding:50px;background:#0a0f0d;color:#25D366'>"
             "<h2>🔒 Access Denied</h2>"
-            "<p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>"
+            "<p style='color:#888'>Please sign in to continue.</p>"
             "</body></html>"
         ), 403))
     # admin_security_guard covers /crm/ paths only, so the forced password
@@ -800,7 +800,6 @@ def crm_home():
     if actor.get("role") == "STAFF":
         return render_template(
             "crm_home_staff.html",
-            key=request.args.get("key", ""),
             actor=actor
         )
 
@@ -808,7 +807,6 @@ def crm_home():
 
     return render_template(
         "crm_home.html",
-        key=request.args.get("key", ""),
         kpis=kpis,
     )
 
@@ -839,7 +837,6 @@ def crm_marketing():
 
     return render_template(
         "crm_marketing.html",
-        key=request.args.get("key", ""),
     )
 
 @admin_bp.route("/crm/marketing/start_job", methods=["POST"])
@@ -1070,7 +1067,6 @@ def crm_leads():
     search          = request.args.get("search", "").strip()
     stage_filter    = request.args.get("stage", "").strip()
     admitted_filter = request.args.get("admitted", "").strip()
-    key             = request.args.get("key", "")
 
     # \u2500\u2500 Build query safely \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Phase 10.3: the filter/scoping logic moved into _build_leads_query() so
@@ -1194,7 +1190,6 @@ def crm_leads():
         search=search,
         stage_filter=stage_filter,
         admitted_filter=admitted_filter,
-        key=key,
         page=page,
     )
 
@@ -1830,7 +1825,6 @@ def crm_sales_pipeline():
 
     return render_template(
         "crm_sales_pipeline.html",
-        key=request.args.get("key", ""),
         open_stages=[s for s in summary if not s["is_terminal"]],
         terminal_stages=[s for s in summary if s["is_terminal"]],
         metrics=metrics,
@@ -1866,7 +1860,6 @@ def crm_pipeline_stage(stage_id):
 
     return render_template(
         "crm_pipeline_stage.html",
-        key=request.args.get("key", ""),
         stage=stage,
         leads=pagination.items if pagination else [],
         pagination=pagination,
@@ -2286,7 +2279,6 @@ def crm_staff_management():
     
     return render_template(
         "crm_staff_management.html",
-        key=request.args.get("key", ""),
         staff_list=staff_list,
         msg=request.args.get("msg", ""),
         err=request.args.get("err", "")
@@ -2300,7 +2292,7 @@ def _deny():
         "<html><body style='font-family:sans-serif;text-align:center;"
         "padding:50px;background:#0a0f0d;color:#25D366'>"
         "<h2>\U0001f512 Access Denied</h2>"
-        "<p style='color:#888'>URL-il ?key=YOUR_ADMIN_KEY add cheyyuka</p>"
+        "<p style='color:#888'>Please sign in to continue.</p>"
         "</body></html>"
     ), 403
 
@@ -3502,7 +3494,6 @@ def crm_staff_performance():
     
     return render_template(
         "crm_staff_performance.html",
-        key=request.args.get("key", ""),
         data=data
     )
 
@@ -4281,7 +4272,6 @@ def crm_health():
     
     return render_template(
         "crm_health.html",
-        key=request.args.get("key", ""),
         data=data,
     )
 
@@ -4476,7 +4466,6 @@ def crm_action_center():
     
     return render_template(
         "crm_action_center.html",
-        key=request.args.get("key", ""),
         data=data,
     )
 
@@ -4708,7 +4697,6 @@ def crm_operations():
 
     return render_template(
         "crm_operations.html",
-        key=request.args.get("key", ""),
         data=data,
         intel=intel,
         automation=automation,
@@ -5466,7 +5454,6 @@ def crm_staff_workload():
     
     return render_template(
         "crm_staff_workload.html",
-        key=request.args.get("key", ""),
         workload_list=workload_list
     )
 
@@ -5507,7 +5494,6 @@ def crm_unassigned_leads():
 
     return render_template(
         "crm_unassigned_leads.html",
-        key=request.args.get("key", ""),
         leads=unassigned,
         pagination=pagination,
         recommendations=recommendations,
@@ -5528,10 +5514,9 @@ def crm_unassigned_assign():
         
     phone = request.form.get("phone")
     target_staff = request.form.get("target_staff", "").strip()
-    key = request.args.get("key", "")
     
     if not phone or not target_staff:
-        return redirect(url_for("admin.crm_unassigned_leads", key=key))
+        return redirect(url_for("admin.crm_unassigned_leads"))
         
     from app.models import ConversationState
     from app.extensions import db
@@ -5544,7 +5529,7 @@ def crm_unassigned_assign():
     # yielded first and could reassign ANOTHER tenant's lead.
     _tid = _actor_tenant_id()
     if not _tid:
-        return redirect(url_for("admin.crm_unassigned_leads", key=key))
+        return redirect(url_for("admin.crm_unassigned_leads"))
 
     # Phase H3-1B-d: the eighth and last assigned_staff write path to be
     # validated. REJECT, matching the other form paths (H3-1B-a) — the target
@@ -5563,7 +5548,7 @@ def crm_unassigned_assign():
     _owner = staff_identity_service.resolve_assignment(_tid, target_staff)
     if not _owner.ok:
         return redirect(url_for(
-            "admin.crm_unassigned_leads", key=key,
+            "admin.crm_unassigned_leads",
             err=f"'{_owner.value}' is not a current staff member of this "
                 f"institute — choose from the list."))
 
@@ -5591,7 +5576,7 @@ def crm_unassigned_assign():
         )
         db.session.commit()
         
-    return redirect(url_for("admin.crm_unassigned_leads", key=key))
+    return redirect(url_for("admin.crm_unassigned_leads"))
 
 @admin_bp.route("/crm/leads/unassigned/auto-assign-preview", methods=["POST"])
 @admin_required
@@ -6415,7 +6400,6 @@ def crm_notifications():
             if tenant_id else [])
     return render_template(
         "crm_notifications.html",
-        key=request.args.get("key", ""),
         actor=get_current_actor(),
         notifications=rows,
         unread=(notification_service.unread_count(tenant_id, me)
@@ -6490,7 +6474,6 @@ def crm_my_tasks():
 
     return render_template(
         "crm_my_tasks.html",
-        key=request.args.get("key", ""),
         staff_name=staff_name,
         active_staff=active_staff,
         overdue=overdue,
@@ -6577,7 +6560,7 @@ def crm_staff_dashboard():
     if not staff_name:
         if active_staff:
             staff_name = active_staff[0]
-            return redirect(url_for("admin.crm_staff_dashboard", key=request.args.get("key", ""), staff=staff_name))
+            return redirect(url_for("admin.crm_staff_dashboard", staff=staff_name))
             
     from app.models import ConversationState, LEAD_TERMINAL_STATUSES
     from sqlalchemy.sql import func
@@ -6674,7 +6657,6 @@ def crm_staff_dashboard():
 
     return render_template(
         "crm_staff_dashboard.html",
-        key=request.args.get("key", ""),
         staff_name=staff_name,
         active_staff=active_staff,
         kpis=kpis,
@@ -6738,7 +6720,6 @@ def crm_my_leads():
         
     return render_template(
         "crm_my_leads.html",
-        key=request.args.get("key", ""),
         staff_name=staff_name,
         active_staff=active_staff,
         pagination=pagination,
@@ -7010,7 +6991,6 @@ def crm_staff_allocation():
     
     return render_template(
         "crm_staff_allocation.html",
-        key=request.args.get("key", ""),
         staff_data=staff_data,
         total_crm_leads=total_crm_leads
     )
