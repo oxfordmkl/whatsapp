@@ -20,7 +20,6 @@ jobs:
       ADMIN_KEY: ci-admin
       BROADCAST_API_KEY: ci-broadcast
       GEMINI_API_KEY: ""
-      WABA_ENCRYPTION_KEY: "FZsAc8GY_ayHq0cAxKXMMlUvSbJO2hKhpZOdGnaxO18="
       PRIMARY_TENANT_ID: ""
       FLASK_ENV: development
     steps:
@@ -33,6 +32,15 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # Phase RC2.5.8 (P2-2): CI no longer carries a WABA encryption key of its
+      # own. The job-wide literal here was the PRODUCTION key, so every CI run,
+      # every fork and every log reader had it. Nothing in this pipeline needs a
+      # stable key -- the suites only need create_app() to boot -- so one is
+      # generated per run and written to the step environment, never echoed.
+      - name: Generate ephemeral WABA encryption key for this run
+        run: |
+          python -c "from cryptography.fernet import Fernet; print('WABA_ENCRYPTION_KEY=' + Fernet.generate_key().decode())" >> "$GITHUB_ENV"
 
       - name: Application import validation
         env:

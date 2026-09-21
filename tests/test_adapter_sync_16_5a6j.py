@@ -23,9 +23,12 @@ os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("ADMIN_KEY", "test_admin_key_not_a_secret_x9")
 os.environ.setdefault("SECRET_KEY", "test_secret_key_not_a_secret_x9")
 os.environ.setdefault("BROADCAST_API_KEY", "test_broadcast_key_not_a_secret_x9")
-os.environ.setdefault("WABA_ENCRYPTION_KEY",
-                      "FZsAc8GY_ayHq0cAxKXMMlUvSbJO2hKhpZOdGnaxO18=")
-
+# Phase RC2.5.8 (P2-2): this fixture carried the PRODUCTION Fernet key.
+# Nothing here encrypts or decrypts -- create_app() only needs A valid key
+# to boot -- so one is generated per run, as the RC2.5.6a suites already do.
+if not os.environ.get("WABA_ENCRYPTION_KEY"):
+    from cryptography.fernet import Fernet
+    os.environ["WABA_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 from flask import Flask                                    # noqa: E402
 from app.extensions import db                              # noqa: E402
 from app.models import (                                   # noqa: E402

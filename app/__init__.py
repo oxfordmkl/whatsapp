@@ -172,17 +172,20 @@ def create_app():
     app.config["WABA_ENCRYPTION_KEY"] = os.environ.get("WABA_ENCRYPTION_KEY", "")
     
     # Fail-fast validation at boot
-    if not app.config["WABA_ENCRYPTION_KEY"]:
-        # Only log a warning here if you don't want to break local dev without WABA yet.
-        # But instructions say "Fail-fast behavior" and "Startup validation".
-        # Let's import the service which handles validation in _get_cipher but wait, we want to validate on startup.
-        try:
-            from cryptography.fernet import Fernet
-            Fernet(app.config["WABA_ENCRYPTION_KEY"].encode('utf-8'))
-        except ValueError as e:
-            raise RuntimeError(f"CRITICAL: WABA_ENCRYPTION_KEY is missing or invalid. It must be a 32-byte base64 URL-safe string. Details: {e}")
-        except Exception as e:
-            raise RuntimeError(f"CRITICAL: Failed to initialize WABA encryption: {e}")
+    #
+    # Phase RC2.5.8 (P2-2): this guard ran ONLY when the key was empty, so an
+    # empty key failed at boot while a MALFORMED one booted happily and failed
+    # later, mid-request, at the first encrypt/decrypt -- the worst moment to
+    # discover it. The key is now validated whatever it holds; the message and
+    # the exception type are unchanged, and no key is ever generated,
+    # defaulted or logged here.
+    try:
+        from cryptography.fernet import Fernet
+        Fernet(app.config["WABA_ENCRYPTION_KEY"].encode('utf-8'))
+    except ValueError as e:
+        raise RuntimeError(f"CRITICAL: WABA_ENCRYPTION_KEY is missing or invalid. It must be a 32-byte base64 URL-safe string. Details: {e}")
+    except Exception as e:
+        raise RuntimeError(f"CRITICAL: Failed to initialize WABA encryption: {e}")
 
     from app.config import DEBUG, ADMIN_KEY
     if not ADMIN_KEY:
