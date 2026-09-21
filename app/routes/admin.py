@@ -815,16 +815,24 @@ def crm_home():
 
 # ── Phase 9.7: Marketing Hub ────────────────────────────────────────────────
 # Future Tenant Scope: Per-tenant broadcast configs and contact lists (Phase 11)
-# Future Auth Scope: ADMIN | SUPER_ADMIN only (Phase 10)
 
 @admin_bp.route("/crm/marketing", methods=["GET"])
+@admin_required
 def crm_marketing():
     """
     Phase 9.7: Marketing Hub — unified CRM shell wrapping broadcast functionality.
     The legacy /panel route is preserved and remains fully functional.
 
     # Future Tenant Scope: Load per-tenant server URL + broadcast API key here
-    # Future Auth Scope: Check role == ADMIN or SUPER_ADMIN
+
+    Phase RC2.5.6d (P2-14): the role gate Phase 9.7 deferred. check_auth() only
+    answers "is someone signed in" under SESSION_ONLY, so every STAFF session
+    loaded this page -- the send controls included -- while the nav had hidden
+    it from them since RC2.3E-10C. The sends themselves were never reachable
+    (start_job below is @admin_required and the legacy broadcast endpoints are
+    key-authenticated), so this closes a UI/route exposure, not an execution
+    privilege. @admin_required is the same decorator start_job already uses:
+    ADMIN and SUPER_ADMIN pass, STAFF gets 403.
     """
     if not check_auth():
         return _deny()
