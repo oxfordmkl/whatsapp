@@ -447,6 +447,15 @@ def create_app():
     from app.services.followup_service import init_followup_service
     init_followup_service(app)
 
+    # ── Phase RC2.5.10 (P2-1, R1-A): CRM Sheets writer needs the same app ref
+    # Its two writers run in bare threads with no context of their own, and
+    # they must resolve each tenant's spreadsheet from TenantSettings before
+    # writing. Without this the module's _app stays None and every write is
+    # refused -- a CRM that writes nowhere, never one that writes to the wrong
+    # tenant. Starts no thread; captures the app object only.
+    from app.services.crm_service import init_crm_service
+    init_crm_service(app)
+
     # ── Phase 8.2C.3: Campaign worker (CAMPAIGN_ENGINE_V2 gated, default OFF) ─
     # Mirrors the FollowUpJob startup pattern exactly. The worker thread is a
     # daemon and will not prevent process exit. With the flag OFF (production

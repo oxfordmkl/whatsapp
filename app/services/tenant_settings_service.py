@@ -68,6 +68,57 @@ def get_section(tenant_id, key):
         return {}
 
 
+#: Phase RC2.5.10 (P2-1, R1-A): the one section whose value is a routing
+#: destination rather than tenant-local content, so it carries a uniqueness
+#: rule the other sections do not need.
+SHEETS_SECTION = "sheets"
+
+
+def _assert_spreadsheet_unused(tenant_id, value):
+    """Refuse a spreadsheet_id already registered to a DIFFERENT tenant.
+
+    R1-A gives each tenant its own spreadsheet, and that separation IS the
+    tenant boundary for Google Sheets -- crm_service addresses rows by phone
+    number alone, so two tenants pointed at one document would be back to
+    overwriting each other's rows (P2-1). One mistyped id during onboarding
+    would silently undo the isolation, which is why this is enforced at the
+    write rather than left to operator care.
+
+    Scoped deliberately narrowly: only the `sheets` section, only when an
+    id is actually supplied, and a tenant may always re-save its own id.
+    A section without a spreadsheet_id is not a duplicate -- it is simply
+    incomplete, and crm_service refuses to write for it anyway.
+
+    Raises ValueError on collision. The message names NO spreadsheet id and
+    no other tenant: a rejection must not become a way to enumerate either.
+    """
+    from app.models import TenantSettings
+
+    incoming = str((value or {}).get("spreadsheet_id") or "").strip()
+    if not incoming:
+        return
+
+    for row in TenantSettings.query.filter(
+            TenantSettings.tenant_id != tenant_id).all():
+        try:
+            blob = json.loads(row.settings or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(blob, dict):
+            continue
+        section = blob.get(SHEETS_SECTION)
+        if not isinstance(section, dict):
+            continue
+        if str(section.get("spreadsheet_id") or "").strip() == incoming:
+            logger.warning(
+                "[tenant_settings] refused sheets destination for tenant=%s "
+                "-- already registered to another tenant", tenant_id
+            )
+            raise ValueError(
+                "That spreadsheet is already registered to another tenant."
+            )
+
+
 def set_section(tenant_id, key, value):
     """Replace one top-level section, preserving every sibling key.
 
@@ -85,6 +136,11 @@ def set_section(tenant_id, key, value):
         raise ValueError("set_section requires a tenant_id")
     if not isinstance(value, dict):
         raise TypeError("section value must be a dict")
+
+    # RC2.5.10: destination uniqueness, before anything is written. Every
+    # other section keeps its previous behaviour untouched.
+    if key == SHEETS_SECTION:
+        _assert_spreadsheet_unused(tenant_id, value)
 
     row = TenantSettings.query.filter_by(tenant_id=tenant_id).first()
     if row is None:
