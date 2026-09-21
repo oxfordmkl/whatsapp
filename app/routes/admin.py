@@ -38,7 +38,10 @@ def normalize_staff_name(name):
         return "Unassigned"
     return cleaned.title()
 
-from app.state import count_states, count_pending_followups, get_all_states, get_stage_breakdown
+# Phase RC2.5.12: the app.state import that stood here served ONLY the retired
+# /stats route (see the retirement note below). count_states() and
+# count_pending_followups() are still live -- app/routes/health.py imports them
+# directly -- so app/state.py itself is untouched.
 from app.services.whatsapp_service import send_text
 # Phase 10.9B.2: warn-only transition diagnostics. Safe to import at module
 # level — the engine imports no Flask and touches no database until called.
@@ -536,54 +539,34 @@ def inject_actor():
     return dict(get_current_actor=get_current_actor)
 
 
-@admin_bp.route("/trigger-followup", methods=["POST"])
-def trigger_followup():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    body    = request.get_json(silent=True) or {}
-    phone   = body.get("phone", "")
-    message = body.get("message", "")
-
-    if not phone or not message:
-        return jsonify({"error": "phone and message are required"}), 400
-
-    if not phone.startswith("91"):
-        phone = "91" + phone.lstrip("0")
-
-    # Phase RC2.4.1: LEGACY PRIMARY-TENANT-ONLY ENDPOINT, now explicit.
-    #
-    # This route authenticates with the single global X-Admin-Key and carries
-    # no tenant context of any kind. It has always sent through the primary
-    # tenant's WABA — previously by omitting tenant_id and letting the service
-    # layer guess. The guess is now refused, so the decision is stated here
-    # instead: one visible, greppable line rather than an invisible default.
-    # Making this multi-tenant is a separate product decision (per-tenant API
-    # keys), deliberately not taken in this phase.
-    r = send_text(phone, message,
-                  tenant_id=current_app.config.get("PRIMARY_TENANT_ID"))
-    return jsonify({"ok": r.status_code == 200, "status": r.status_code, "phone": phone})
-
-
-@admin_bp.route("/stats", methods=["GET"])
-def stats():
-    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    # Phase 14C: "active_conversations" removed. get_all_states() returned
-    # EVERY lead in EVERY tenant with name, stage, course and last message
-    # text — a full cross-customer PII dump behind a single static header key.
-    # Aggregate counts are what a monitoring probe needs and carry no personal
-    # data, so the endpoint keeps its operational value without the exposure.
-    # A caller needing per-lead data must use the authenticated CRM, which is
-    # tenant-scoped.
-    return jsonify({
-        "total_leads":          count_states(),
-        "pending_followups":    count_pending_followups(),
-        "stage_breakdown":      get_stage_breakdown(),
-        "active_conversations": None,
-        "note": "active_conversations removed in Phase 14C (PII); use the CRM",
-    })
+# ── Phase RC2.5.12: RETIRED — POST /trigger-followup and GET /stats ─────────
+#
+# Both routes were removed here, not disabled. They were the last two surfaces
+# authenticated by the single global X-Admin-Key header, and neither had a
+# consumer: the RC2.5.12 Gate A audit and operational dependency discovery
+# found no caller in this repository, no Railway cron or healthcheck, no
+# GitHub Actions step, no script, template or API collection, and no mention
+# in any runbook. The only callers were the tests that pinned them.
+#
+# POST /trigger-followup was NOT a follow-up trigger despite its name. It sent
+# an arbitrary WhatsApp text to an arbitrary phone number as the primary
+# tenant, straight to the Graph API: no lead lookup, no tenant context, no
+# database row, no audit entry, no rate limit, no idempotency, and CSRF-exempt.
+# A leaked header key meant unlimited, untraceable messaging under Oxford's own
+# WhatsApp identity. Gate A classified it HIGH risk; removal is the remedy.
+#
+# GET /stats returned platform-wide unscoped aggregates across every tenant,
+# including suspended ones. /health already publishes the same leads count and
+# pending-follow-up count, and RUNBOOK_MONITORING names /health -- never /stats
+# -- as the endpoint to check, so nothing operational is lost.
+#
+# ADMIN_KEY itself is deliberately UNCHANGED: this phase retires two routes,
+# not the authentication mechanism. Remaining ADMIN_KEY usage (check_auth,
+# get_current_actor, the boot-time default-secret warning) is a separate audit.
+#
+# Nothing replaces these routes. A caller needing lead data uses the
+# authenticated, tenant-scoped CRM; a caller needing to send a message uses the
+# authenticated CRM send path, which persists and audits what it sends.
 
 
 @admin_bp.route("/panel", methods=["GET"])
@@ -879,11 +862,12 @@ def crm_marketing_start_job():
 def normalize_lead_phone(raw):
     """Normalise a phone number to the storage form used by the WhatsApp path.
 
-    Mirrors the inline rule already applied in trigger_followup() and
-    broadcast.py ("91" + digits, leading zeros stripped) so a lead typed in by
-    hand collides with the SAME (phone, tenant_id) row that an inbound WhatsApp
-    message would create. Without this a walk-in entered as "09847312534" and
-    the same person messaging from "919847312534" become two leads.
+    Mirrors the inline rule already applied in broadcast.py ("91" + digits,
+    leading zeros stripped -- the retired trigger_followup() carried the same
+    rule) so a lead typed in by hand collides with the SAME (phone, tenant_id)
+    row that an inbound WhatsApp message would create. Without this a walk-in
+    entered as "09847312534" and the same person messaging from
+    "919847312534" become two leads.
 
     Returns "" when nothing usable remains; callers must reject that.
     """

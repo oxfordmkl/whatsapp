@@ -186,8 +186,10 @@ OTHER_TEMPLATE_SHA = {
 }
 
 _FORM_RE = re.compile(r"<form\b[^>]*>", re.IGNORECASE | re.DOTALL)
+# RC2.5.12 dropped "/trigger-followup": no template may address a retired
+# route, so it is no longer a path a fetch is ALLOWED to call without a token.
 _EXEMPT_PATHS = ("/webhook", "/webhooks/razorpay", "/webhooks/stripe", "/broadcast",
-                 "/broadcast-template", "/upload-media", "/trigger-followup")
+                 "/broadcast-template", "/upload-media")
 
 
 def _read(rel):
@@ -363,11 +365,14 @@ class TestFetchCoverage:
 
 class TestB1bContractIntact:
 
-    def test_exactly_seven_endpoints_remain_exempt(self):
+    def test_exactly_six_endpoints_remain_exempt(self):
+        """Seven until RC2.5.12 retired admin.trigger_followup. The set shrank
+        because its route was removed -- the B1b contract is that nothing is
+        ADDED here unnoticed, and that still holds."""
         assert set(_CSRF_EXEMPT_ENDPOINTS) == {
             "webhook.receive_message", "billing.razorpay_webhook", "billing.stripe_webhook",
             "broadcast.broadcast", "broadcast.broadcast_template",
-            "broadcast.upload_media_route", "admin.trigger_followup"}
+            "broadcast.upload_media_route"}
         assert csrf._exempt_blueprints == set()
 
     def test_the_b1b_enforcement_suite_is_present(self):

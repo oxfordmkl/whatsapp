@@ -15,6 +15,12 @@ untouched: check_auth(), get_current_actor(), ADMIN_KEY, AUTH_MODE and the
 two X-Admin-Key header routes are all out of scope and pinned here as
 UNCHANGED, so a later phase cannot quietly alter them under cover of cleanup.
 
+RC2.5.12 later retired those two header routes deliberately, after its own
+audit. Section F below is inverted in place to match, and check_auth(),
+get_current_actor(), ADMIN_KEY and AUTH_MODE remain pinned UNCHANGED -- route
+retirement is not authentication-mechanism removal, and this file still fails
+if a phase conflates the two.
+
 WHAT THIS SUITE PINS
 --------------------
   1. none of the six cleaned templates emits a key query parameter, and none
@@ -267,12 +273,18 @@ class TestOutOfScopeUntouched:
         assert 'is_key = request.args.get("key", "") == ADMIN_KEY' in body
         assert '"source": "ADMIN_KEY"' in body
 
-    def test_the_two_header_key_routes_are_untouched(self):
+    def test_the_two_header_key_routes_were_retired_by_a_later_phase(self):
+        """RC2.5.11 left both header-key routes deliberately untouched, and
+        this test pinned that. RC2.5.12 retired them outright after a Gate A
+        audit, so the pin is inverted rather than deleted: R3's own cleanup
+        must still not be what removes them, and nothing may reintroduce a
+        header-key route into this file without a phase deciding to.
+        """
         src = _read("app/routes/admin.py")
-        assert src.count('request.headers.get("X-Admin-Key") != ADMIN_KEY') == 2
-        for route in ('@admin_bp.route("/trigger-followup", methods=["POST"])',
-                      '@admin_bp.route("/stats", methods=["GET"])'):
-            assert route in src, route
+        assert 'request.headers.get("X-Admin-Key")' not in src
+        for route in ('@admin_bp.route("/trigger-followup"',
+                      '@admin_bp.route("/stats"'):
+            assert route not in src, route
 
     def test_admin_key_and_auth_mode_config_are_untouched(self):
         cfg = _read("app/config.py")

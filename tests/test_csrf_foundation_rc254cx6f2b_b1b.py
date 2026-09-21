@@ -64,8 +64,11 @@ EXPECTED_EXEMPT = {
     "broadcast.broadcast",
     "broadcast.broadcast_template",
     "broadcast.upload_media_route",
-    "admin.trigger_followup",
 }
+# Phase RC2.5.12 retired admin.trigger_followup, taking the seventh exemption
+# with it. The count assertion below is the point of this constant: a NEW
+# exemption must never appear unnoticed, and a removed one must be removed
+# deliberately, here, alongside its route.
 
 # Endpoints that must NEVER be exempt -- browser/session surfaces, including
 # the public auth forms the audit recommended protecting.
@@ -167,7 +170,13 @@ class TestInitialisation:
                 assert name != "Flask", "a module-level Flask app was created"
 
     def test_routes_are_unchanged(self):
-        assert len(list(_APP.url_map.iter_rules())) == 115
+        """115 until RC2.5.12 retired GET /stats and POST /trigger-followup.
+
+        The number is the point: adding CSRF must not register, unregister or
+        reshape a single route, and any future change to the surface has to
+        come here and say so. Two were removed deliberately, so this is 113.
+        """
+        assert len(list(_APP.url_map.iter_rules())) == 113
 
 
 # ── enforcement happens before any view body ────────────────────────────────
@@ -234,8 +243,12 @@ class TestEnforcement:
 class TestExemptionContract:
 
     def test_exactly_seven_endpoints_are_declared_exempt(self):
+        """Six since RC2.5.12 retired admin.trigger_followup. The NAME is kept
+        deliberately: tests/test_csrf_templates_rc254cx6f2b_b1c.py pins it by
+        name as part of the B1b contract, and renaming it would let the
+        contract check pass while this assertion had quietly disappeared."""
         assert set(_CSRF_EXEMPT_ENDPOINTS) == EXPECTED_EXEMPT
-        assert len(_CSRF_EXEMPT_ENDPOINTS) == 7
+        assert len(_CSRF_EXEMPT_ENDPOINTS) == 6
 
     def test_the_registered_exempt_views_match_the_declaration(self):
         registered = {v.rsplit(".", 1)[-1] for v in csrf._exempt_views}
@@ -243,8 +256,8 @@ class TestExemptionContract:
         assert registered == expected, f"registered={sorted(registered)}"
 
     def test_no_blueprint_is_exempt(self):
-        """A blueprint-wide exemption would unprotect 69 CRM routes alongside
-        /trigger-followup."""
+        """A blueprint-wide exemption would unprotect every session-
+        authenticated CRM route sharing that blueprint."""
         assert csrf._exempt_blueprints == set(), csrf._exempt_blueprints
 
     def test_no_wildcard_or_prefix_exemption_exists(self):
@@ -302,9 +315,14 @@ class TestExemptEndpointsAcceptTokenlessPosts:
         r = client.post("/upload-media", data={})
         assert r.status_code == 401
 
-    def test_trigger_followup_is_exempt_and_still_key_checked(self, client):
+    def test_trigger_followup_is_retired_and_exempts_nothing(self, client):
+        """RC2.5.12. A tokenless POST must now fail on the route not existing
+        (404) rather than on its key gate (401) -- and critically NOT on CSRF
+        (400), which would mean a phantom exemption entry had been left behind
+        for a path that no longer has an authenticity mechanism of its own."""
         r = client.post("/trigger-followup", json={})
-        assert r.status_code == 401
+        assert r.status_code == 404, r.status_code
+        assert "admin.trigger_followup" not in _CSRF_EXEMPT_ENDPOINTS
 
 
 # ── the pre-existing authenticity model is untouched ────────────────────────
@@ -332,7 +350,11 @@ class TestAuthenticityPreserved:
         # Four checks: /broadcast, /broadcast-template, /upload-media and the
         # /templates listing route.
         assert src.count('request.headers.get("X-API-Key") != BROADCAST_API_KEY') == 4
-        assert 'request.headers.get("X-Admin-Key") != ADMIN_KEY' in \
+        # RC2.5.12: admin.py carried exactly two X-Admin-Key gates, one per
+        # retired route. Both routes are gone, so no gate remains to preserve.
+        # Asserted as ZERO rather than deleted: a header-key surface must not
+        # reappear in this file without a phase deciding to put it there.
+        assert 'request.headers.get("X-Admin-Key")' not in \
                _src("app/routes/admin.py")
 
 

@@ -287,10 +287,13 @@ class TestCrmLeadSend:
 class TestLegacyEndpointsExplicit:
     KEY = "rc241-broadcast-key"
 
-    def test_trigger_followup_passes_primary_explicitly(self):
-        src = _fn_src(ADMIN_PY, "trigger_followup")
-        assert 'tenant_id=current_app.config.get("PRIMARY_TENANT_ID")' in src \
-            or "tenant_id=current_app.config.get('PRIMARY_TENANT_ID')" in src
+    def test_trigger_followup_no_longer_exists_to_bind(self):
+        """RC2.4.1 made this route's primary-tenant binding explicit rather than
+        implicit. RC2.5.12 retired the route, which settles the question a
+        stronger way: there is no unbound outbound path left here to regress."""
+        src = open(ADMIN_PY, encoding="utf-8").read()
+        assert '@admin_bp.route("/trigger-followup"' not in src
+        assert "def trigger_followup(" not in src
 
     @pytest.mark.parametrize("fn", ["templates_route", "upload_media_route",
                                     "broadcast", "broadcast_template"])
@@ -300,13 +303,16 @@ class TestLegacyEndpointsExplicit:
         assert "PRIMARY_TENANT_ID" in src, f"{fn} does not name the primary tenant"
         assert "tenant_id=_primary" in src, f"{fn} does not pass it"
 
-    def test_trigger_followup_still_works(self, seeded, spy, no_network):
+    def test_trigger_followup_sends_nothing_because_it_is_retired(
+            self, seeded, spy, no_network):
+        """The request that used to send a WhatsApp message with the header key
+        must now reach no handler and attempt no outbound call."""
         r = _APP.test_client().post(
             "/trigger-followup",
             headers={"X-Admin-Key": os.environ["ADMIN_KEY"]},
             json={"phone": "919000024001", "message": "hi"})
-        assert r.status_code == 200, r.status_code
-        assert spy == [OX], spy
+        assert r.status_code == 404, r.status_code
+        assert spy == [], "a retired route attempted an outbound send"
 
     def test_broadcast_still_works_and_binds_primary(self, seeded, spy, no_network):
         r = _APP.test_client().post(
@@ -325,12 +331,14 @@ class TestLegacyEndpointsExplicit:
         assert spy == [OX], spy
 
     def test_legacy_auth_unchanged(self, seeded):
+        """Broadcast's key gate is untouched by RC2.5.12; the trigger-followup
+        gate is gone along with the route it guarded (404, not 401)."""
         assert _APP.test_client().post(
             "/broadcast", json={"numbers": ["9"], "message": "x"}
         ).status_code == 401
         assert _APP.test_client().post(
             "/trigger-followup", json={"phone": "9", "message": "x"}
-        ).status_code == 401
+        ).status_code == 404
 
 
 # ═══ 12-14 existing outbound paths unchanged ═════════════════════════════════

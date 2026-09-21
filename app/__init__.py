@@ -45,9 +45,8 @@ logging.basicConfig(
 csrf = CSRFProtect()
 
 # The ONLY endpoints exempt from CSRF. Endpoint names, not path prefixes and
-# not blueprints: /trigger-followup lives in the admin blueprint alongside 69
-# session-authenticated CRM routes, so a blueprint-wide exemption would silently
-# unprotect all of them.
+# not blueprints: a blueprint-wide exemption would silently unprotect every
+# session-authenticated CRM route sharing that blueprint.
 #
 # Each entry is exempt because it is NOT a browser-session request and already
 # carries a STRONGER, independent authenticity mechanism:
@@ -57,7 +56,11 @@ csrf = CSRFProtect()
 #   billing.razorpay_webhook  provider HMAC (X-Razorpay-Signature).
 #   billing.stripe_webhook    provider HMAC (Stripe-Signature).
 #   broadcast.*               X-API-Key header (BROADCAST_API_KEY).
-#   admin.trigger_followup    X-Admin-Key header (ADMIN_KEY).
+#
+# Phase RC2.5.12 removed a seventh entry, admin.trigger_followup: that route was
+# retired outright, so the exemption had nothing left to exempt. The exemption
+# contract below fails at boot on a missing target, which is exactly why the
+# entry had to go with the route.
 #
 # A custom request header cannot be set cross-origin without a CORS preflight,
 # and none of these carries a session cookie, so CSRF adds nothing to them --
@@ -74,7 +77,6 @@ _CSRF_EXEMPT_ENDPOINTS = (
     "broadcast.broadcast",          # POST /broadcast
     "broadcast.broadcast_template",  # POST /broadcast-template
     "broadcast.upload_media_route",  # POST /upload-media
-    "admin.trigger_followup",       # POST /trigger-followup
 )
 
 def _check_default_secrets(app):

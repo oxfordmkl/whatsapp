@@ -7,6 +7,12 @@ Covers the four controls added in this phase:
   3. a startup warning when a secret is still its committed default
   4. billing webhook signature verification
 
+Phase RC2.5.12 retired /stats entirely. Control 2 is therefore now enforced by
+absence rather than by filtering, and its tests are inverted in place (see
+TestStatsEndpointRetired) rather than deleted: the PII assertions are kept and
+made STRONGER -- the marker strings must be absent from a response that is now
+a 404, and the configured ADMIN_KEY must no longer unlock anything.
+
 Phase RC2.5.5a changed the WhatsApp webhook half of this file. That control
 was OPT-IN: with no secret configured it allowed the request and warned. It is
 now FAIL-CLOSED — no secret means no inbound processing. The tests that pinned
@@ -336,25 +342,39 @@ class TestSignatureComparisonIsConstantTime:
         assert "hmac.compare_digest" in calls
 
 
-# ── 2. /stats no longer leaks PII ────────────────────────────────────────────
+# ── 2. /stats is retired; the PII it once exposed is unreachable ─────────────
 
-class TestStatsEndpoint:
+class TestStatsEndpointRetired:
+    """14C filtered the PII out of /stats. RC2.5.12 removed /stats.
+
+    These are the 14C assertions carried forward against the stronger control.
+    The route is gone, so the key cannot unlock it, the aggregates cannot be
+    read cross-tenant, and no response can carry a lead's name or message text.
+    """
+
     def _get(self, key):
         return _APP.test_client().get("/stats", headers={"X-Admin-Key": key})
 
-    def test_still_requires_the_admin_key(self, ctx):
-        assert self._get("wrong").status_code == 401
+    def test_the_route_is_no_longer_registered(self, ctx):
+        assert "/stats" not in {str(r) for r in _APP.url_map.iter_rules()}
+        assert "admin.stats" not in _APP.view_functions
 
-    def test_valid_key_still_returns_counts(self, ctx):
+    def test_a_wrong_key_gets_not_found_rather_than_unauthorized(self, ctx):
+        """401 would mean the surface still exists and is merely guarded."""
+        assert self._get("wrong").status_code == 404
+
+    def test_the_configured_admin_key_unlocks_nothing(self, ctx):
+        """The strongest form of the 14C control: the correct key is no longer
+        a key to anything here."""
         from app.config import ADMIN_KEY
         r = self._get(ADMIN_KEY)
-        assert r.status_code == 200
-        body = r.get_json()
-        assert "total_leads" in body and "stage_breakdown" in body
+        assert r.status_code == 404
+        assert r.get_json() is None or "total_leads" not in (r.get_json() or {})
 
-    def test_no_per_lead_pii_is_returned(self, ctx):
+    def test_no_per_lead_pii_is_reachable(self, ctx):
         """get_all_states() returned every lead's name, stage, course and last
-        message text across EVERY tenant, behind one static header key."""
+        message text across EVERY tenant, behind one static header key. 14C
+        stopped returning it; RC2.5.12 removed the door."""
         from app.config import ADMIN_KEY
         with _APP.app_context():
             db.session.add(ConversationState(
@@ -366,9 +386,21 @@ class TestStatsEndpoint:
         assert "SECRET-LEAD-NAME" not in raw
         assert "SECRET-MESSAGE-TEXT" not in raw
 
-    def test_active_conversations_is_no_longer_a_list_of_leads(self, ctx):
-        from app.config import ADMIN_KEY
-        assert self._get(ADMIN_KEY).get_json().get("active_conversations") is None
+    def test_the_route_source_is_gone_not_merely_unregistered(self, ctx):
+        """A commented-out or decorator-stripped handler would still be a
+        handler waiting to be re-enabled."""
+        src = open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "app", "routes", "admin.py"),
+            encoding="utf-8").read()
+        assert '@admin_bp.route("/stats"' not in src
+        assert "def stats(" not in src
+
+    def test_health_still_reports_the_same_counts(self, ctx):
+        """/stats is retired, not replaced -- the operational signal it carried
+        was already available here, and must not have been broken with it."""
+        body = _APP.test_client().get("/health").get_json()
+        assert "leads_in_memory" in body
+        assert "pending_followups" in body
 
 
 # ── 3. Default-secret detection ──────────────────────────────────────────────

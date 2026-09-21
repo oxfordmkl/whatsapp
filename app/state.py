@@ -284,7 +284,15 @@ def count_pending_followups() -> int:
 
 
 def get_all_states() -> list:
-    """All conversation states — used by admin /stats endpoint."""
+    """All conversation states, every tenant, with per-lead PII.
+
+    UNREFERENCED. Phase 14C removed its only caller (the /stats
+    "active_conversations" field) because it returned every lead's name, stage,
+    course and last message text across every tenant. Phase RC2.5.12 retired
+    /stats itself. Kept only because it predates both phases and removing it is
+    a separate cleanup; nothing in the application calls it. Any new caller
+    must scope by tenant first.
+    """
     from app.models import ConversationState
     return [
         {
@@ -299,7 +307,16 @@ def get_all_states() -> list:
 
 
 def get_stage_breakdown() -> dict:
-    """Stage counts — used by admin /stats endpoint."""
+    """Stage counts across ALL tenants — no longer called by any route.
+
+    Its only caller was the /stats endpoint, retired in RC2.5.12. Deliberately
+    NOT deleted: three live operational documents name this function as a
+    verification step (PHASE_16_5A6 rollback and production-verification
+    checklists, ADR-019), and RC2.5.12 was not authorised to rewrite them.
+    Removing it is a documentation-coupled cleanup for a later phase.
+
+    Note for any future caller: the counts are platform-wide and unscoped.
+    """
     from app.models import ConversationState
     stages = {
         "new", "goal_selection", "course_recommendation", "course_viewed",
