@@ -256,20 +256,34 @@ class TestP214Unchanged:
 
 # ── F. out-of-scope surfaces are untouched ──────────────────────────────────
 
+def _fn_body(rel, name):
+    """The WHOLE of one top-level function, not a fixed-width slice.
+
+    REPAIRED BY RC2.5.13. These two checks originally sliced 900 and 1400
+    characters from the `def`, which silently assumed the docstring would never
+    grow. RC2.5.13 added explanatory lines to check_auth() and the assertion
+    below fell off the end of the window -- a green-to-red flip with no change
+    in behaviour whatsoever. Every assertion is unchanged; only the slice is,
+    and it now covers the function however long its docstring gets.
+    """
+    src = _read(rel)
+    start = src.index(f"def {name}(")
+    rest = src[start + 1:]
+    nxt = min((p for p in (rest.find("\ndef "), rest.find("\n@")) if p != -1),
+              default=-1)
+    return rest[:nxt] if nxt != -1 else rest
+
+
 class TestOutOfScopeUntouched:
 
     def test_check_auth_still_has_its_three_modes(self):
-        src = _read("app/routes/admin.py")
-        i = src.index("def check_auth(")
-        body = src[i:i + 900]
+        body = _fn_body("app/routes/admin.py", "check_auth")
         for mode in ("ADMIN_KEY_ONLY", "DUAL", "SESSION_ONLY"):
             assert mode in body, mode
         assert 'request.args.get("key", "") == ADMIN_KEY' in body
 
     def test_get_current_actor_still_resolves_the_key_source(self):
-        src = _read("app/routes/admin.py")
-        i = src.index("def get_current_actor(")
-        body = src[i:i + 1400]
+        body = _fn_body("app/routes/admin.py", "get_current_actor")
         assert 'is_key = request.args.get("key", "") == ADMIN_KEY' in body
         assert '"source": "ADMIN_KEY"' in body
 

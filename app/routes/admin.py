@@ -3956,8 +3956,8 @@ def calculate_revenue_analytics(tenant_id=None):
 def crm_revenue_analytics():
     """
     Phase 8.1: Revenue Analytics Dashboard.
-    Protected by ?key=ADMIN_KEY (same pattern as all CRM analytics pages).
-    Read-only. No writes. No schema changes.
+    Requires an authenticated session via check_auth() (same pattern as all
+    CRM analytics pages). Read-only. No writes. No schema changes.
     """
     if not check_auth():
         return _deny()
@@ -3976,7 +3976,9 @@ def crm_revenue_analytics():
 @admin_required
 def crm_course_admissions(phone):
     """
-    POST /crm/course-admissions/<phone>?key=ADMIN_KEY
+    POST /crm/course-admissions/<phone>
+
+    Requires an authenticated ADMIN/SUPER_ADMIN session (@admin_required).
 
     Receives a list of admitted_courses[] checkbox values from the
     Multi-Course Admissions form in crm_lead_detail.html.
@@ -4247,7 +4249,7 @@ def calculate_crm_health(tenant_id=None):
 def crm_health():
     """
     Phase 8.5: CRM Health & Data Quality Dashboard.
-    Protected by ?key=ADMIN_KEY. Read-only.
+    Requires an authenticated session via check_auth(). Read-only.
     """
     if not check_auth():
         return _deny()
@@ -4441,7 +4443,8 @@ def calculate_action_center(tenant_id=None):
 def crm_action_center():
     """
     Phase 8.6: CRM Action Center
-    Protected by ?key=ADMIN_KEY. Read-only operational dashboard.
+    Requires an authenticated session via check_auth(). Read-only operational
+    dashboard.
     """
     if not check_auth():
         return _deny()
@@ -4476,8 +4479,10 @@ def calculate_operations(tenant_id=None, actor=None):
     # tenant. Three panels below carry customer name AND phone
     # (data_issues, admission_ready, high_value_ops); production measured 38
     # of 90 customers reaching any staff actor, 25 of them owned by a
-    # colleague. The route's own docstring still claims "Protected by
+    # colleague. The route's own docstring claimed "Protected by
     # ?key=ADMIN_KEY", which is why this was never a deliberate decision.
+    # (RC2.5.13 corrected that docstring; the claim it made is recorded here
+    # because it is the evidence for the sentence above, not a live statement.)
     #
     # Same mechanism as _build_leads_query, deliberately: one ownership rule,
     # not a second implementation. owner_filter() keys on display_label() and
@@ -4648,7 +4653,7 @@ def calculate_operations(tenant_id=None, actor=None):
 def crm_operations():
     """
     Phase 8.8: CRM Operations Command Center
-    Protected by ?key=ADMIN_KEY. Read-only.
+    Requires an authenticated session via check_auth(). Read-only.
     """
     if not check_auth():
         return _deny()
@@ -7093,8 +7098,18 @@ def check_auth():
 
     AUTH_MODE = SESSION_ONLY
         -> allow session only
+
+    Phase RC2.5.13: the fallback is SESSION_ONLY, not ADMIN_KEY_ONLY.
+    create_app() always writes app.config["AUTH_MODE"], so the fallback is
+    unreachable in a normally constructed app -- but it decided what happens if
+    that line is ever missed, and it decided WRONG: an absent key made the
+    legacy credential the ONLY way in and stopped accepting sessions entirely.
+    A default that silently downgrades authentication is the wrong way round.
+    This changes nothing for any CONFIGURED mode; DUAL and ADMIN_KEY_ONLY
+    behave exactly as before where configuration still permits them.
+    Matches marketing.py::_auth_mode(), which already defaulted this way.
     """
-    mode = current_app.config.get("AUTH_MODE", "ADMIN_KEY_ONLY")
+    mode = current_app.config.get("AUTH_MODE", "SESSION_ONLY")
     key_valid = request.args.get("key", "") == ADMIN_KEY
     
     if mode == "ADMIN_KEY_ONLY":
@@ -7120,7 +7135,12 @@ def get_current_actor():
     """
     is_session = current_user.is_authenticated
     is_key = request.args.get("key", "") == ADMIN_KEY
-    mode = current_app.config.get("AUTH_MODE", "ADMIN_KEY_ONLY")
+    # Phase RC2.5.13: SESSION_ONLY fallback, for the reason given in
+    # check_auth(). Here the old default was the sharper of the two: it let the
+    # key branch below synthesise an ADMIN actor with no User row, which skips
+    # the staff ownership filter (actor["source"] == "SESSION" is False) and
+    # bypasses admin_security_guard entirely. Configured modes are unchanged.
+    mode = current_app.config.get("AUTH_MODE", "SESSION_ONLY")
     
     # Priority: If mode is SESSION_ONLY, ignore ADMIN_KEY
     if mode == "SESSION_ONLY" and is_session:
