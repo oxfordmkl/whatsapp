@@ -511,6 +511,17 @@ class TestMigration:
         assert "down_revision = 'c1a7e93b45d2'" in _MIG_SRC
 
     def test_there_is_exactly_one_head_in_the_chain(self):
+        """The guard is SINGLE-HEADEDNESS, not which revision is on top.
+
+        UPDATED BY RC2.5.15. This reads the versions directory rather than
+        git, so unlike the working-tree scope guards elsewhere in this suite
+        it does not resolve itself once a later phase commits -- a new
+        migration makes it fail permanently until the expected head is
+        restated. RC2.5.15 adds b7d2e4f91a35 (user phone identity), which
+        descends from e6d1b9a37f24, so the chain is still linear and still
+        has exactly one head. A FORK -- two heads -- still fails here, which
+        is the property worth protecting.
+        """
         import re
         versions = os.path.join(_ROOT, "migrations", "versions")
         revs = {}
@@ -524,7 +535,10 @@ class TestMigration:
             revs[rev.group(1)] = down.group(1) if down else None
         children = {d for d in revs.values() if d}
         heads = [r for r in revs if r not in children]
-        assert heads == ["e6d1b9a37f24"], f"expected one head, found {heads}"
+        assert heads == ["b7d2e4f91a35"], f"expected one head, found {heads}"
+        # This phase's revision must still descend from the payment ledger,
+        # i.e. nobody re-parented around it to avoid applying it.
+        assert revs["b7d2e4f91a35"] == "e6d1b9a37f24"
 
     def test_upgrade_creates_the_payments_table(self):
         assert "op.create_table(" in _MIG_SRC and "'payments'" in _MIG_SRC

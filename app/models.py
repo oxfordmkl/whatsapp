@@ -97,6 +97,32 @@ class User(UserMixin, db.Model):
     # ── Phase 15C.5-B: Email Verification ──────
     email_verified_at = db.Column(db.DateTime, nullable=True, index=True)
 
+    # ── Phase RC2.5.15: phone identity foundation ─────────────────────────
+    # The registration form has rendered a "Phone Number" field since Phase
+    # 13-A2B (templates/public/register.html) and public.py read it into a
+    # local variable and threw it away -- there was nowhere to put it. Every
+    # business that has ever signed up typed a number that went nowhere.
+    #
+    # nullable=True and NOT unique, deliberately. All 21 existing production
+    # users receive NULL (this phase backfills nothing), and the uniqueness
+    # POLICY is undecided: this table already carries BOTH precedents --
+    # email is globally unique, username is unique per tenant -- so there is
+    # no basis in the schema for choosing. Adding the wrong constraint is far
+    # harder to undo than adding the right one later, and nothing authenticates
+    # on this column yet, so a constraint would enforce nothing today.
+    #
+    # String(20) and indexed to match every customer-phone column in this file
+    # (ConversationState.phone and the rest). This is NOT one of those: those
+    # are CUSTOMER identities, this is a CRM USER identity. The two domains
+    # must not be conflated, however similar the storage looks.
+    phone = db.Column(db.String(20), nullable=True, index=True)
+
+    # Mirrors email_verified_at exactly. NULL means "not verified", which is
+    # every row today: no verification channel for phone exists yet, and this
+    # phase deliberately does not build one. A later, separately authorised
+    # phase owns that.
+    phone_verified_at = db.Column(db.DateTime, nullable=True, index=True)
+
     # ── Phase RC2.3A: operator-facing name, separate from the login ────────
     # username is a CREDENTIAL; display_name is what an operator reads. The
     # absence of this column is why display names were forced into username —

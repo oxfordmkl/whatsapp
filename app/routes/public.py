@@ -15,6 +15,57 @@ def generate_slug(name):
         slug = uuid.uuid4().hex[:8]
     return slug
 
+
+#: Maximum stored length — matches User.phone (String(20)). A longer input is
+#: refused rather than truncated: a silently cut number is a WRONG number, and
+#: a wrong number is worse than an absent one.
+_PHONE_MAX_LEN = 20
+
+
+def normalize_user_phone(raw):
+    """Normalise a CRM user's phone to a stored digit string. "" if unusable.
+
+    Deliberately NOT admin.normalize_lead_phone(). That function serves the
+    CUSTOMER domain and unconditionally prefixes "91", which is correct there:
+    an Indian education business's leads are domestic, and the rule exists so a
+    hand-typed walk-in collides with the same row as an inbound WhatsApp
+    message. Applying it here would silently turn a tenant owner's "+1 555 012
+    3456" into "915550123456" -- a real, different, Indian number. Storing a
+    corrupted identity is worse than storing none, so this rule differs in
+    exactly one respect:
+
+        input begins with "+"  -> already international; keep the digits as-is
+        otherwise              -> domestic: strip leading zeros, prefix 91
+
+    The "+" case is not hypothetical: the registration form's own placeholder
+    reads "+91 98765 43210", so the form actively invites that spelling.
+
+    The domestic branch is byte-for-byte the existing rule, so a user who
+    enters a bare Indian number is stored in the SAME form as the lead tables
+    use. That matters for a later phase that may need to relate the two.
+
+    NOT promoted to a service module yet: registration is the only writer in
+    this phase. The phase that adds phone login should move it, with its tests.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    international = s.startswith("+")
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if not digits:
+        return ""
+    if international:
+        # Trust the caller's country code. Leading zeros are not stripped:
+        # in an E.164 number there are none to strip, and removing a digit
+        # from an explicit international number would corrupt it.
+        return digits if len(digits) <= _PHONE_MAX_LEN else ""
+    digits = digits.lstrip("0")
+    if not digits:
+        return ""
+    if not digits.startswith("91"):
+        digits = "91" + digits
+    return digits if len(digits) <= _PHONE_MAX_LEN else ""
+
 @public_bp.route("/", methods=["GET"])
 def index():
     return render_template("public/index.html")
@@ -33,11 +84,33 @@ def register():
             flash("Please fill in all required fields.", "danger")
             return redirect(url_for("public.register"))
 
-        # Duplicate email protection
+        # Phase RC2.5.15: normalise BEFORE any use. An empty result means the
+        # field was blank or held nothing usable; phone is optional, so that
+        # stores NULL rather than rejecting an otherwise valid registration.
+        phone_normalised = normalize_user_phone(phone)
+
+        # Duplicate email protection.
+        #
+        # RC2.5.15: this used to answer "This email is already registered",
+        # which told any visitor, unauthenticated and unlimited, whether a
+        # given address holds an account. /crm/login is already careful to
+        # answer identically for a bad password and an unknown user; this
+        # route handed back the fact that login refuses to.
+        #
+        # The response is now INDISTINGUISHABLE from a successful signup: same
+        # flash, same redirect. The duplicate is still not created -- we simply
+        # stop announcing why.
+        #
+        # Known trade-off, stated rather than hidden: a legitimate visitor who
+        # forgot they had signed up now sees "check your email" and receives
+        # nothing. Closing that properly means mailing the existing address
+        # "you already have an account", which needs a new template and a new
+        # email_service method -- out of this phase's scope. The enumeration
+        # oracle is the security defect; the UX gap is a follow-up.
         existing_user = User.query.filter_by(email=email).first()
         if existing_user:
-            flash("This email is already registered. Please login or use a different email.", "danger")
-            return redirect(url_for("public.register"))
+            flash("Registration successful. Check your email to verify your account.", "success")
+            return redirect(url_for("public.pending"))
 
         # Generate slug and handle duplicates
         slug = generate_slug(business_name)
@@ -65,6 +138,14 @@ def register():
             new_user = User(
                 username=username,
                 email=email,
+                # Phase RC2.5.15: the form has collected this since 13-A2B and
+                # the value was discarded for want of a column. "" -> None so
+                # an absent number is NULL, not an empty string: two spellings
+                # of "no phone" would defeat any future uniqueness rule.
+                phone=phone_normalised or None,
+                # phone_verified_at is deliberately NOT set. Supplying a number
+                # at registration proves nothing about holding it, and no
+                # verification channel exists yet. A later phase owns that.
                 password_hash=generate_password_hash(password),
                 role='ADMIN',
                 tenant_id=new_tenant.id,

@@ -507,6 +507,13 @@ class TestOutOfScopeUntouched:
             # the RC2.5.3a widening above -- the set is pinned, so an
             # unexpected THIRD migration still fails here.
             "migrations/versions/e6d1b9a37f24_rc2_5_4c_x_6f2a_payment_ledger.py",
+            # WIDENED BY RC2.5.15: the user phone identity migration, the
+            # third authorised migration in this session. Two nullable
+            # columns on users (phone, phone_verified_at), additive, no
+            # backfill, no uniqueness constraint. Same treatment as the two
+            # widenings above -- the set is pinned, so an unexpected FOURTH
+            # migration still fails here.
+            "migrations/versions/b7d2e4f91a35_rc2_5_15_user_phone_identity.py",
         }
         unexpected = [c for c in changed if c not in allowed]
         assert not unexpected, f"unexpected migrations/ changes: {unexpected}"
