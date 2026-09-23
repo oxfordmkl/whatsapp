@@ -80,11 +80,96 @@ def log_audit(action: str, actor: str = None, tenant_id: str = None,
                          action, actor, target)
 
 
+#: Phase RC2.5.17 Gate A.1 — THE TRUST BOUNDARY, stated once.
+#:
+#: This application terminates behind Railway's edge proxy and is not reachable
+#: except through it (no public port, no direct container address). The edge is
+#: therefore the ONLY hop that may be trusted to describe the client, and this
+#: is the platform behaviour the resolution below depends on:
+#:
+#:   * Railway strips client-supplied X-Forwarded-For at the edge, so a client
+#:     cannot prepend a value; the FIRST XFF entry is the real connecting IP.
+#:   * Railway sets X-Real-IP as a single source of truth for that same
+#:     address, and overwrites it from Cf-Connecting-IP when (and only when)
+#:     the request genuinely arrives via Cloudflare.
+#:   (Railway staff statement, Railway Central Station, "Security-Critical
+#:    Questions on Edge Proxy Header Handling and Hop Count".)
+#:
+#: CORROBORATED, NOT ASSUMED. Community answers on that same thread claim the
+#: opposite -- that Railway appends and only the RIGHTMOST value is safe, with
+#: internal hops in 100.0.0.0/8. Production data refutes that reading: of the
+#: 70 distinct addresses this application has recorded across 5,593 audit rows,
+#: ZERO are private, loopback or CGNAT and all 70 are public IPv4. Had the code
+#: been reading an internal hop, those rows would be full of 100.x addresses.
+#:
+#: WHY THIS IS STILL WORTH HARDENING. The old one-liner was CORRECT on this
+#: platform and undefended everywhere else: it trusted a header unconditionally
+#: and returned whatever string it found, so the moment the app runs behind a
+#: different proxy, or none, an attacker chooses its own identity for every
+#: IP-keyed control. Nothing in the code recorded that dependency either.
+#:
+#: NOT SOLVED BY TAKING THE RIGHTMOST ENTRY. On this platform the rightmost
+#: entry is an INTERNAL hop, so preferring it would collapse every client onto
+#: one address and turn per-IP limits into a global lock. The hop count is not
+#: contractually documented and is explicitly not assumed here.
+#:
+#: NOT FILTERED BY RANGE. An earlier draft carried a private-prefix list to
+#: reject RFC1918/loopback candidates; it is deliberately absent. Rejecting
+#: private addresses would break every non-Railway deployment (local dev, a
+#: reverse proxy on the same host) while adding nothing here, because the edge
+#: never presents one -- all 70 addresses this application has recorded are
+#: public. Validity, not range, is what this boundary checks.
+
+
+def _valid_ip(value: str) -> str:
+    """Return `value` if it parses as an IP address, else "".
+
+    The previous implementation returned the header verbatim. Unvalidated, that
+    string becomes a rate-limit bucket key AND is persisted to
+    audit_log.ip_address (a String(45) column), so anything able to influence
+    the header could write arbitrary junk into the security record or mint
+    unlimited distinct limiter buckets. Parsing is cheap and removes the class.
+    """
+    import ipaddress
+    s = (value or "").strip()
+    if not s or len(s) > 45:
+        return ""
+    try:
+        ipaddress.ip_address(s)
+    except ValueError:
+        return ""
+    return s
+
+
 def request_ip() -> str:
-    """Best-effort client IP for the current request (proxy-aware, first hop)."""
+    """The client IP for the current request, per the trust boundary above.
+
+    Resolution order, most authoritative first:
+      1. X-Real-IP      -- Railway's designated single source of truth
+      2. X-Forwarded-For, FIRST entry -- the real connecting IP on this edge
+      3. request.remote_addr -- the immediate peer, when no proxy header exists
+
+    Every candidate must parse as an IP address or it is skipped, so a
+    malformed or hostile header degrades to the next source rather than
+    propagating. Returns "" when nothing usable remains; callers must treat ""
+    as "unknown", never as an identity to group by.
+
+    This is the ONE implementation. app.routes.public.get_client_ip delegates
+    here so the platform assumption lives in a single place and cannot drift
+    between the audit log and the rate limiter.
+    """
     try:
         from flask import request
-        fwd = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-        return fwd or request.remote_addr or ""
-    except Exception:
+
+        real = _valid_ip(request.headers.get("X-Real-IP"))
+        if real:
+            return real
+
+        fwd = request.headers.get("X-Forwarded-For") or ""
+        first = _valid_ip(fwd.split(",")[0])
+        if first:
+            return first
+
+        return _valid_ip(request.remote_addr)
+    except Exception:                                           # noqa: BLE001
         return ""

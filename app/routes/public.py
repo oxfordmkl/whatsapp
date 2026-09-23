@@ -70,9 +70,57 @@ def normalize_user_phone(raw):
 def index():
     return render_template("public/index.html")
 
+#: Phase RC2.5.17 Gate A.1: registration-abuse limit.
+#:
+#: /register was the only unauthenticated write surface on the platform with NO
+#: throttle at all, while /resend-verification, /forgot-password and
+#: /reset-password have had one since 15C.5-B. Each accepted POST creates a
+#: Tenant, a User, a sales pipeline, a settings blob and an outbound
+#: verification email, in one transaction -- the most expensive anonymous
+#: request the application serves.
+#:
+#: Deliberately generous. This is an ABUSE ceiling, not a product rule: a real
+#: business registers once, while a script can register thousands of times. A
+#: tight limit would start refusing legitimate retries (a mistyped password, a
+#: browser back-button resubmit) for no security gain, and several colleagues
+#: signing up from one office NAT must not lock each other out.
+_REGISTER_MAX_PER_IP = 5
+_REGISTER_WINDOW_SECONDS = 3600
+
+
 @public_bp.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
+        # ── Throttle FIRST, before any database work ──────────────────────
+        # Placed above form parsing and every query so a flood costs one dict
+        # lookup rather than a duplicate-email SELECT, a slug SELECT, a
+        # password hash and a five-table transaction.
+        #
+        # Keyed on IP ALONE, deliberately not on email: an attacker chooses the
+        # email freely, so an email-keyed bucket would be reset on every
+        # request and enforce nothing. IP is the only identity an anonymous
+        # caller does not fully control -- see the trust boundary in
+        # audit_service.request_ip().
+        #
+        # An unresolvable IP is NOT throttled. "" would otherwise become a
+        # single shared bucket, and one client with a malformed header could
+        # lock out every other unknown-IP visitor. Failing open for that narrow
+        # case is the lesser harm; it cannot be reached through Railway's edge,
+        # which always supplies an address.
+        _ip = get_client_ip()
+        if _ip and not check_rate_limit(f"register_ip_{_ip}",
+                                        _REGISTER_MAX_PER_IP,
+                                        _REGISTER_WINDOW_SECONDS):
+            # Byte-identical in shape to the three existing limiters
+            # (public.py:298, :392, :425): a plain body with 429, no flash and
+            # no redirect. Matching them matters -- a different shape here
+            # would be a second convention for the same condition.
+            #
+            # The message reveals nothing about any account: it is the same
+            # whether the email exists, is new, or was never valid, so the
+            # RC2.5.15 enumeration fix is not weakened.
+            return "Too many requests. Please try again later.", 429
+
         business_name = request.form.get("business_name", "").strip()
         admin_name = request.form.get("admin_name", "").strip()
         email = request.form.get("email", "").strip().lower()
@@ -297,7 +345,22 @@ def check_rate_limit(key: str, max_reqs: int, window_seconds: int) -> bool:
     return True
 
 def get_client_ip():
-    return request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    """Delegates to audit_service.request_ip(). ONE rule, not two.
+
+    RC2.5.17 Gate A.1. This used to be its own one-liner --
+        request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0]
+    -- a second, slightly different implementation of the same decision that
+    audit_service.request_ip() was already making for ~25 audit call sites.
+    Two copies of a trust boundary is one too many: hardening either alone
+    would have left the other trusting an unvalidated header, and they could
+    drift so that the rate limiter and the audit log disagreed about who made
+    a request. The trust boundary and its evidence are documented there.
+
+    Returns "" when no usable address exists. A caller keying a rate limit MUST
+    NOT treat "" as an identity -- every unknown client would share one bucket.
+    """
+    from app.services.audit_service import request_ip
+    return request_ip()
 
 # ── Password Policy Validation ────────────────────────────────────────────────
 def validate_password(password: str) -> bool:

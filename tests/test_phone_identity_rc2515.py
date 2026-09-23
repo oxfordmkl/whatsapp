@@ -78,6 +78,26 @@ def _pin_own_modules():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_register_throttle():
+    """RC2.5.17 Gate A.1 added a per-IP throttle to POST /register.
+
+    _RATE_LIMITS is a process-global dict and every test client here presents
+    the same address, so this suite's registrations accumulate into ONE bucket
+    and the sixth onward would be refused with 429 -- correct production
+    behaviour (one IP registering six businesses in an hour), surfacing here
+    only because the suite simulates many businesses from one client.
+
+    Clearing between tests isolates that global; no assertion is relaxed. This
+    is the convention test_staff_email_verification_rc256a.py already uses for
+    the resend limiter (see its lines 120 and 396).
+    """
+    import app.routes.public as _public
+    _public._RATE_LIMITS.clear()
+    yield
+    _public._RATE_LIMITS.clear()
+
+
 def _read(rel):
     with open(os.path.join(_ROOT, *rel.split("/")), encoding="utf-8") as fh:
         return fh.read()
