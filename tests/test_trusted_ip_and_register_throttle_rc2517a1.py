@@ -387,8 +387,20 @@ class TestScope:
         assert "request_ip" not in src
 
     def test_no_otp_rate_limit_table_was_added(self):
+        """INVERTED BY RC2.5.17 Gate B, which is the phase authorised to add
+        the durable counter table. This test did its job first: it failed, and
+        blocked that phase until the exception was made deliberately here.
+
+        Gate A.1's actual intent survives -- A.1 itself added no table, and
+        the table that now exists is the ONE the approved policy names. The
+        assertion therefore narrows from "no such class" to "exactly this
+        class, and still no reuse of otp_challenges for counting".
+        """
         src = _read("app/models.py")
-        for banned in ("class RateLimit", "rate_limits", "otp_rate"):
+        assert src.count("class RateLimit") == 1
+        assert "class RateLimitCounter(db.Model):" in src
+        assert "__tablename__ = 'rate_limit_counters'" in src
+        for banned in ("rate_limits", "otp_rate"):
             assert banned not in src, banned
 
     def test_crm_login_route_was_not_modified(self):
@@ -411,4 +423,9 @@ class TestScope:
         import glob
         names = [os.path.basename(p) for p in
                  glob.glob(os.path.join(_ROOT, "migrations", "versions", "*.py"))]
-        assert not [n for n in names if "rc2_5_17" in n or "rc2517" in n], names
+        # WIDENED BY RC2.5.17 Gate B: one additive migration, named here so an
+        # unexpected SECOND RC2.5.17 migration still fails this assertion.
+        allowed = {"a4f2c70b19de_rc2_5_17b_rate_limit_counters.py"}
+        unexpected = [n for n in names
+                      if ("rc2_5_17" in n or "rc2517" in n) and n not in allowed]
+        assert not unexpected, unexpected

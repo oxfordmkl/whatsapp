@@ -393,10 +393,20 @@ class TestScope:
         Word boundaries are still required: a bare substring search hits
         "fo-otp-rint" in app/state.py:56, the false positive the RC2.5.14 Gate
         A audit had to rule out before it could report that no OTP existed.
+
+        WIDENED AGAIN BY RC2.5.17 Gate B, by two files and for prose only:
+        phone_service.py and rate_limit_service.py each EXPLAIN, in their
+        docstrings, why they do not depend on the OTP primitive -- the
+        limiter's whole separation argument is written there. Neither contains
+        OTP code, and test_the_limiter_does_not_import_the_otp_primitive in
+        test_durable_rate_limit_rc2517b.py asserts that against docstring-
+        stripped source, which is the stronger check. The line below stays
+        untouched: OTP must still not reach public.py or admin.py.
         """
         import glob
         allowed = {"app/services/otp_service.py", "app/models.py",
-                   "app/config.py"}
+                   "app/config.py", "app/services/phone_service.py",
+                   "app/services/rate_limit_service.py"}
         for path in glob.glob(os.path.join(_ROOT, "app", "**", "*.py"),
                               recursive=True):
             rel = os.path.relpath(path, _ROOT).replace(os.sep, "/")

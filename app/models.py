@@ -2230,3 +2230,108 @@ class OtpChallenge(db.Model):
         # customer phone number can reach production logs through exactly that
         # kind of incidental path.
         return f"<OtpChallenge {self.id} purpose={self.purpose}>"
+
+
+class RateLimitCounter(db.Model):
+    """Phase RC2.5.17 Gate B — one durable counter bucket.
+
+    WHY A TABLE AND NOT THE EXISTING LIMITER
+    ----------------------------------------
+    app.routes.public._RATE_LIMITS is a process-local dict. It is adequate for
+    what it guards today and structurally useless for OTP: it evaporates on
+    every deploy, restart and crash, and it is per-worker, so the moment
+    WEB_CONCURRENCY rises above 1 each worker grants the full budget
+    independently. A per-destination OTP ceiling that a restart resets is not
+    a ceiling. The six existing call sites are deliberately NOT migrated --
+    that is a separate decision with its own blast radius.
+
+    WHY NOT REUSE otp_challenges
+    ----------------------------
+    Counting rows in otp_challenges would look cheaper and would be wrong in
+    three ways. Challenges are subject to latest-wins invalidation and to
+    retention sweeps, so the evidence a limiter depends on can legitimately
+    disappear underneath it. Verification ATTEMPTS are not rows at all --
+    attempt_count lives inside a challenge, so an aggregate across challenges
+    cannot be taken atomically. And it would couple the limiter to the OTP
+    primitive, when the limiter must be able to meter subjects that have no
+    challenge row (a denied create consumes no challenge, yet must count).
+
+    THE BUCKET IDENTITY
+    -------------------
+    (scope, subject, window_start) is unique. `scope` names the budget --
+    "otp_create", "otp_verify", "otp_create:tenant_signup" -- and `subject` is
+    the canonical destination or IP the budget is metered against. Canonical
+    is load-bearing: phone_service.normalize_destination and
+    audit_service._valid_ip both return ONE spelling per identity, so a caller
+    cannot mint a fresh budget by re-spelling its own address.
+
+    PII AND RETENTION
+    -----------------
+    `subject` holds a phone number in clear, which is why retention is 7 days
+    and why it is masked wherever it is logged. It is not hashed: a hash would
+    defeat nothing (the space of phone numbers is trivially enumerable) while
+    making an operator unable to answer "is this number being throttled?".
+    """
+    __tablename__ = 'rate_limit_counters'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Which budget. Not an enum column: budgets are policy and will be added
+    # by later phases, and an enum would require a migration to add one.
+    scope = db.Column(db.String(64), nullable=False)
+
+    # What is being metered -- a canonical destination or a canonical IP.
+    #
+    # WHY 64 AND NOT 45 (RC2.5.17 Gate B review)
+    # ------------------------------------------
+    # 45 is what the two subject kinds need TODAY: a canonical destination is
+    # at most 20 (phone_service._PHONE_MAX_LEN, matching User.phone and
+    # OtpChallenge.destination) and a canonical IP at most 45
+    # (AuditLog.ip_address, sized for IPv6). In THIS implementation the
+    # purpose is carried by `scope`, not by `subject`, so no composite
+    # subject is ever built and 45 would not truncate anything.
+    #
+    # It is still wrong to leave it at 45, because it is not future-safe. A
+    # composite subject of the form destination + "|" + purpose -- the shape
+    # a later phase would most naturally reach for -- is 20 + 1 + 32 = 53
+    # characters at maximum (32 = OtpChallenge.purpose's own width). That
+    # exceeds 45. On PostgreSQL an over-length varchar RAISES rather than
+    # truncating, so the failure mode would be a hard error at the exact
+    # moment a limiter is under load; on a backend that truncates silently it
+    # would be far worse -- two different subjects collapsing into one bucket,
+    # which is a rate-limit BYPASS that leaves no trace.
+    #
+    # 64 covers 53 with room, costs nothing (varchar is variable-length; the
+    # declared maximum is a constraint, not an allocation), and means the
+    # column never becomes the reason a later phase cannot compose a subject.
+    # Widening later would be a migration on a live limiter table; widening
+    # now is free.
+    subject = db.Column(db.String(64), nullable=False)
+
+    # Fixed window: the truncated hour this bucket counts. Naive UTC, the
+    # convention every other timestamp column in this file uses. A rolling
+    # window would need per-event rows; a fixed window needs one row per hour
+    # per subject, and the approved policy is a fixed hour.
+    window_start = db.Column(db.DateTime, nullable=False)
+
+    count = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # THE atomicity precondition. The UPSERT in rate_limit_service depends
+        # on this constraint existing: ON CONFLICT names it, and without it
+        # concurrent increments would insert duplicate buckets under READ
+        # COMMITTED and each would count only its own share. RC2.5.16 Gate B.1
+        # proved that exact phantom-insert failure on this database.
+        db.UniqueConstraint('scope', 'subject', 'window_start',
+                            name='uq_rate_limit_counters_bucket'),
+        # Retention sweeps delete by age.
+        db.Index('ix_rate_limit_counters_window_start', 'window_start'),
+    )
+
+    def __repr__(self):
+        # Never renders `subject`: it is a phone number. Same reason as
+        # OtpChallenge.__repr__.
+        return f"<RateLimitCounter {self.id} scope={self.scope}>"

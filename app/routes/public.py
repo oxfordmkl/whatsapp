@@ -16,55 +16,19 @@ def generate_slug(name):
     return slug
 
 
-#: Maximum stored length — matches User.phone (String(20)). A longer input is
-#: refused rather than truncated: a silently cut number is a WRONG number, and
-#: a wrong number is worse than an absent one.
-_PHONE_MAX_LEN = 20
-
-
+#: Phase RC2.5.17 Gate B: the canonicalisation rule moved to
+#: app/services/phone_service.py, exactly as RC2.5.15 said it should when
+#: something below the route layer needed it. The durable rate limiter keys
+#: buckets on a destination and MUST canonicalise identically to the writer,
+#: and a service importing from a route module is the wrong direction.
+#:
+#: This name is kept as a delegating alias so /register and its tests are
+#: unchanged by the move -- the behaviour is byte-for-byte the same function.
 def normalize_user_phone(raw):
-    """Normalise a CRM user's phone to a stored digit string. "" if unusable.
+    """Delegates to phone_service.normalize_destination(). ONE rule."""
+    from app.services.phone_service import normalize_destination
+    return normalize_destination(raw)
 
-    Deliberately NOT admin.normalize_lead_phone(). That function serves the
-    CUSTOMER domain and unconditionally prefixes "91", which is correct there:
-    an Indian education business's leads are domestic, and the rule exists so a
-    hand-typed walk-in collides with the same row as an inbound WhatsApp
-    message. Applying it here would silently turn a tenant owner's "+1 555 012
-    3456" into "915550123456" -- a real, different, Indian number. Storing a
-    corrupted identity is worse than storing none, so this rule differs in
-    exactly one respect:
-
-        input begins with "+"  -> already international; keep the digits as-is
-        otherwise              -> domestic: strip leading zeros, prefix 91
-
-    The "+" case is not hypothetical: the registration form's own placeholder
-    reads "+91 98765 43210", so the form actively invites that spelling.
-
-    The domestic branch is byte-for-byte the existing rule, so a user who
-    enters a bare Indian number is stored in the SAME form as the lead tables
-    use. That matters for a later phase that may need to relate the two.
-
-    NOT promoted to a service module yet: registration is the only writer in
-    this phase. The phase that adds phone login should move it, with its tests.
-    """
-    s = str(raw or "").strip()
-    if not s:
-        return ""
-    international = s.startswith("+")
-    digits = "".join(ch for ch in s if ch.isdigit())
-    if not digits:
-        return ""
-    if international:
-        # Trust the caller's country code. Leading zeros are not stripped:
-        # in an E.164 number there are none to strip, and removing a digit
-        # from an explicit international number would corrupt it.
-        return digits if len(digits) <= _PHONE_MAX_LEN else ""
-    digits = digits.lstrip("0")
-    if not digits:
-        return ""
-    if not digits.startswith("91"):
-        digits = "91" + digits
-    return digits if len(digits) <= _PHONE_MAX_LEN else ""
 
 @public_bp.route("/", methods=["GET"])
 def index():

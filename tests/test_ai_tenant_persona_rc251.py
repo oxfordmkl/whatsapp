@@ -525,6 +525,11 @@ class TestOutOfScopeUntouched:
             # authorised migration in this session -- an unexpected SIXTH still
             # fails here.
             "migrations/versions/d1b6c48e7f92_rc2_5_16_b2_otp_one_active_index.py",
+            # WIDENED BY RC2.5.17 Gate B: the durable rate-limit counter table.
+            # Purely additive -- one new table, no existing table touched, no
+            # backfill. Sixth authorised migration in this session; an
+            # unexpected SEVENTH still fails here.
+            "migrations/versions/a4f2c70b19de_rc2_5_17b_rate_limit_counters.py",
         }
         unexpected = [c for c in changed if c not in allowed]
         assert not unexpected, f"unexpected migrations/ changes: {unexpected}"

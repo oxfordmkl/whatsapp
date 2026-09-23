@@ -541,7 +541,10 @@ class TestMigration:
         # to avoid applying it.
         # UPDATED AGAIN BY RC2.5.16 Gate B.2, which adds d1b6c48e7f92 (the
         # one-active partial unique index) on top of the OTP table.
-        assert heads == ["d1b6c48e7f92"], f"expected one head, found {heads}"
+        # UPDATED AGAIN BY RC2.5.17 Gate B, which adds a4f2c70b19de (the
+        # durable rate_limit_counters table) on top of the one-active index.
+        assert heads == ["a4f2c70b19de"], f"expected one head, found {heads}"
+        assert revs["a4f2c70b19de"] == "d1b6c48e7f92"
         assert revs["d1b6c48e7f92"] == "c9e5a1f38b64"
         assert revs["c9e5a1f38b64"] == "b7d2e4f91a35"
         # This phase's revision must still descend from the payment ledger,

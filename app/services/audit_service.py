@@ -129,16 +129,25 @@ def _valid_ip(value: str) -> str:
     audit_log.ip_address (a String(45) column), so anything able to influence
     the header could write arbitrary junk into the security record or mint
     unlimited distinct limiter buckets. Parsing is cheap and removes the class.
+
+    RC2.5.17 Gate B: returns the CANONICAL form, not the spelling supplied.
+    The first version validated and then returned the raw string, so
+    2001:db8::1 and 2001:0db8:0000:0000:0000:0000:0000:0001 -- the same
+    address -- produced two different strings. As an audit value that is
+    merely untidy; as a RATE-LIMIT BUCKET KEY it is a bypass, because an
+    IPv6 client can re-spell its own address and mint a fresh budget each
+    time. Harmless so far only because all 70 addresses this application has
+    recorded are IPv4, which has one spelling.
     """
     import ipaddress
     s = (value or "").strip()
     if not s or len(s) > 45:
         return ""
     try:
-        ipaddress.ip_address(s)
+        parsed = ipaddress.ip_address(s)
     except ValueError:
         return ""
-    return s
+    return str(parsed)
 
 
 def request_ip() -> str:

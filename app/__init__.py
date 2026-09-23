@@ -467,4 +467,20 @@ def create_app():
         from app.marketing.campaign_worker import init_campaign_worker
         init_campaign_worker(app)
 
+    # ── Phase RC2.5.17 Gate B: rate-limit counter retention ───────────────
+    # Mirrors the FollowUpJob startup pattern. UNCONDITIONAL and ungated:
+    # rate_limit_counters.subject holds a phone number, so the approved 7-day
+    # retention is a privacy commitment, and a commitment behind a feature
+    # flag is not one. The limiter itself is dormant in this phase, so the
+    # table is empty and every pass deletes 0 rows until a later phase
+    # activates a caller -- but the sweeper is in place before the data is,
+    # which is the correct order.
+    #
+    # Needs no WEB_CONCURRENCY gate, unlike the campaign worker: it claims
+    # nothing and sends nothing, only a set-based DELETE over an already
+    # expired range, so concurrent copies converge. It never raises, and a
+    # failure to start leaves rate limiting completely unaffected.
+    from app.services.rate_limit_service import init_rate_limit_retention
+    init_rate_limit_retention(app)
+
     return app
