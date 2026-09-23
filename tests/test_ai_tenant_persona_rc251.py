@@ -514,6 +514,17 @@ class TestOutOfScopeUntouched:
             # widenings above -- the set is pinned, so an unexpected FOURTH
             # migration still fails here.
             "migrations/versions/b7d2e4f91a35_rc2_5_15_user_phone_identity.py",
+            # WIDENED BY RC2.5.16: the OTP challenge table, the fourth
+            # authorised migration in this session. Creates one empty table,
+            # alters nothing. Same treatment as the three widenings above --
+            # the set is pinned, so an unexpected FIFTH migration still fails.
+            "migrations/versions/c9e5a1f38b64_rc2_5_16_otp_challenges.py",
+            # WIDENED BY RC2.5.16 Gate B.2: the partial unique index that makes
+            # two live OTP challenges per (destination, purpose)
+            # unrepresentable. Adds one index, no column, no table. Fifth
+            # authorised migration in this session -- an unexpected SIXTH still
+            # fails here.
+            "migrations/versions/d1b6c48e7f92_rc2_5_16_b2_otp_one_active_index.py",
         }
         unexpected = [c for c in changed if c not in allowed]
         assert not unexpected, f"unexpected migrations/ changes: {unexpected}"

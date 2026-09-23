@@ -41,6 +41,34 @@ ADMIN_KEY            = os.environ.get("ADMIN_KEY", "oxford_admin_2026")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "{}")
 SECRET_KEY           = os.environ.get("SECRET_KEY", "oxford-crm-local-dev-key")
 
+# ── Phase RC2.5.16: OTP challenge HMAC key ────────────────────────────────
+# Keys the HMAC-SHA256 digest of every OTP challenge. A six-digit code has
+# only 10**6 possible values, so an unkeyed digest is exhaustible in
+# milliseconds if the database is ever read. The key lives in the environment
+# and NEVER in the database, so a leaked table alone yields nothing.
+#
+# DELIBERATELY ITS OWN SECRET. SECRET_KEY already serves two purposes (Flask
+# session signing and both itsdangerous token families via email_service), and
+# WABA_ENCRYPTION_KEY is a Fernet encryption key -- a different primitive
+# entirely. Reusing either would couple unrelated rotation schedules.
+#
+# DELIBERATELY NOT VALIDATED AT BOOT, unlike WABA_ENCRYPTION_KEY.
+# --------------------------------------------------------------
+# Production does not have this variable, and RC2.5.16 Gate B ships NO caller:
+# the OTP service exists and nothing invokes it. A boot-time requirement would
+# therefore turn a deployment of dormant code into an outage, which is exactly
+# the failure mode RC2.5.15 had to sequence around. Validation lives at the
+# point of use instead -- otp_service raises if the key is missing or too weak
+# -- so the primitive fails loudly the first time it is actually called, and
+# the phase that introduces a caller is the phase that must provision the key.
+#
+# Empty default follows the BREVO_API_KEY precedent: absent means the feature
+# is unavailable, not that the process should refuse to start.
+#
+# Rotating this key invalidates every in-flight challenge. With a five-minute
+# lifetime that is a five-minute window of failed verifications, not data loss.
+OTP_HMAC_KEY         = os.environ.get("OTP_HMAC_KEY", "")
+
 # Phase 15C.5-B: Email Configuration
 EMAIL_PROVIDER       = os.environ.get("EMAIL_PROVIDER", "brevo")
 BREVO_API_KEY        = os.environ.get("BREVO_API_KEY", "")

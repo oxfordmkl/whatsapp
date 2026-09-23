@@ -535,7 +535,15 @@ class TestMigration:
             revs[rev.group(1)] = down.group(1) if down else None
         children = {d for d in revs.values() if d}
         heads = [r for r in revs if r not in children]
-        assert heads == ["b7d2e4f91a35"], f"expected one head, found {heads}"
+        # UPDATED AGAIN BY RC2.5.16, which adds c9e5a1f38b64 (OTP challenge
+        # table) on top. The descent chain below is walked back to the payment
+        # ledger, so no later phase can re-parent around an unapplied revision
+        # to avoid applying it.
+        # UPDATED AGAIN BY RC2.5.16 Gate B.2, which adds d1b6c48e7f92 (the
+        # one-active partial unique index) on top of the OTP table.
+        assert heads == ["d1b6c48e7f92"], f"expected one head, found {heads}"
+        assert revs["d1b6c48e7f92"] == "c9e5a1f38b64"
+        assert revs["c9e5a1f38b64"] == "b7d2e4f91a35"
         # This phase's revision must still descend from the payment ledger,
         # i.e. nobody re-parented around it to avoid applying it.
         assert revs["b7d2e4f91a35"] == "e6d1b9a37f24"

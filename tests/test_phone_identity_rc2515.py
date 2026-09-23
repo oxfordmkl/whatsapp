@@ -361,16 +361,36 @@ class TestScope:
         assert "unique=True" not in src[i:i + 200]
 
     def test_no_otp_concept_was_introduced(self):
-        """Word-boundary matched, deliberately. A bare substring search hits
-        "fo-otp-rint" in app/state.py:56 -- the same false positive the
-        RC2.5.14 Gate A audit had to rule out before it could report that no
-        OTP concept exists."""
+        """INVERTED BY RC2.5.16, which is the phase authorised to introduce
+        the OTP primitive. This test did its job first: it failed, and blocked
+        that phase until the exception was made deliberately here.
+
+        RC2.5.15's actual intent survives unchanged -- OTP must not reach the
+        registration or login paths -- so the assertion narrows from "nowhere"
+        to "only in the primitive's own files". A stray OTP reference in
+        public.py or admin.py still fails, which is what this ever guarded.
+
+        Word boundaries are still required: a bare substring search hits
+        "fo-otp-rint" in app/state.py:56, the false positive the RC2.5.14 Gate
+        A audit had to rule out before it could report that no OTP existed.
+        """
         import glob
+        allowed = {"app/services/otp_service.py", "app/models.py",
+                   "app/config.py"}
         for path in glob.glob(os.path.join(_ROOT, "app", "**", "*.py"),
                               recursive=True):
+            rel = os.path.relpath(path, _ROOT).replace(os.sep, "/")
+            if rel in allowed:
+                continue
             src = open(path, encoding="utf-8", errors="replace").read()
             hits = re.findall(r"\bOTP\b|\botp\b", src)
-            assert not hits, f"{path}: {hits}"
+            assert not hits, f"{rel}: {hits}"
+
+    def test_otp_did_not_reach_registration_or_login(self):
+        """The half of the RC2.5.15 pin that must never be relaxed."""
+        for rel in ("app/routes/public.py", "app/routes/admin.py"):
+            src = _read(rel)
+            assert not re.findall(r"\bOTP\b|\botp\b", src), rel
 
     def test_password_hash_is_still_required(self):
         """Passwordless auth belongs to a later phase."""

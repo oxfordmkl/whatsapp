@@ -2075,3 +2075,158 @@ class Payment(db.Model):
     def __repr__(self):
         return (f"<Payment {self.id} t={self.tenant_id} {self.provider} "
                 f"{self.status}>")
+
+
+class OtpChallenge(db.Model):
+    """Phase RC2.5.16 — one server-side OTP challenge.
+
+    WHY A TABLE AND NOT A SIGNED TOKEN
+    ----------------------------------
+    email_service already issues itsdangerous tokens, and its own docstring
+    calls them "signed, stateless". Stateless is exactly what an OTP cannot
+    be: with no server-side row there is nothing to consume, so a code stays
+    replayable until it expires, attempts cannot be counted, and a resend
+    cannot revoke its predecessor. Those three properties ARE the primitive.
+
+    WHAT THIS TABLE IS NOT
+    ----------------------
+    It is not a delivery record and not an audit log. It does not know how a
+    code travelled, whether it arrived, or what the caller did with a success.
+    Delivery metadata, message ids, template names, user agents and geo data
+    are deliberately absent -- none is needed to answer the one question this
+    row exists for: "was this code, for this purpose and destination,
+    presented correctly, once, before it expired?"
+
+    IP ADDRESS IS DELIBERATELY ABSENT
+    ---------------------------------
+    Per-IP limiting belongs to the rate-limit layer, and AuditLog.ip_address
+    already exists for the security record. Storing it here would widen the
+    PII surface of a table that already holds phone numbers, for no
+    primitive-level benefit.
+
+    STATE IS DERIVED, NOT STORED
+    ----------------------------
+    There is no status column, because a status column can disagree with the
+    facts. State is computed from three nullable timestamps and the clock:
+
+        ACTIVE       consumed_at IS NULL AND invalidated_at IS NULL
+                     AND utcnow() < expires_at AND attempt_count < max_attempts
+        CONSUMED     consumed_at IS NOT NULL
+        INVALIDATED  invalidated_at IS NOT NULL      (superseded, latest-wins)
+        EXPIRED      utcnow() >= expires_at          (derived, never written)
+        EXHAUSTED    attempt_count >= max_attempts
+
+    Expiry is enforced in the verification predicate, never by a cleanup job:
+    a cleanup that fails must not be able to extend a code's life.
+
+    THE CODE ITSELF IS NEVER HERE
+    -----------------------------
+    code_hash is HMAC-SHA256 over a canonical encoding of
+    (purpose, destination, code), keyed by OTP_HMAC_KEY. The plaintext exists
+    in memory only long enough to hand to a delivery layer.
+    """
+    __tablename__ = 'otp_challenges'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # What the code authorises. Bound into the HMAC, so a tenant_signup code
+    # is structurally unusable as a phone_login code -- not merely rejected by
+    # a check someone could forget to write.
+    purpose = db.Column(db.String(32), nullable=False)
+
+    # The normalised phone this code was issued to. Bound into the HMAC for
+    # the same reason. PII: masked wherever it is logged.
+    destination = db.Column(db.String(20), nullable=False)
+
+    # HMAC-SHA256 hex digest. Never the code.
+    code_hash = db.Column(db.String(64), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # Absolute, computed once at creation -- never a TTL evaluated at read
+    # time, which would silently extend on a config change or clock skew.
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+    # Single-use. Set by the atomic consume, in the same statement that
+    # establishes success.
+    consumed_at = db.Column(db.DateTime, nullable=True)
+
+    # Latest-wins: set when a newer challenge supersedes this one.
+    invalidated_at = db.Column(db.DateTime, nullable=True)
+
+    attempt_count = db.Column(db.Integer, nullable=False, default=0,
+                              server_default='0')
+
+    # Stored PER ROW rather than read from config at verification time, so
+    # raising the policy later cannot retroactively re-open live challenges
+    # that had already exhausted their attempts.
+    max_attempts = db.Column(db.Integer, nullable=False, default=5,
+                             server_default='5')
+
+    # NULL for a pre-tenant signup: the tenant does not exist yet and must not
+    # be invented. AuditLog.tenant_id is nullable for the same reason
+    # (platform-level events), and User.tenant_id is NULL for SUPER_ADMIN.
+    tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'),
+                          nullable=True, index=True)
+
+    # NULL unless the challenge targets an existing user (a later phase's
+    # phone-change flow). Never set during signup -- there is no user yet.
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'),
+                        nullable=True, index=True)
+
+    __table_args__ = (
+        # The latest-wins lookup and the per-destination attempt aggregate the
+        # future rate limiter needs: "active challenges for this destination
+        # and purpose".
+        db.Index('ix_otp_challenges_destination_purpose',
+                 'destination', 'purpose'),
+        # Retention sweeps and "most recent challenge" ordering.
+        db.Index('ix_otp_challenges_expires_at', 'expires_at'),
+        # ── Phase RC2.5.16 Gate B.2: latest-wins as a DATABASE invariant ──
+        #
+        # Gate B.1 proved on PostgreSQL 18.4 that the application-level
+        # invalidate-then-insert in create_challenge() is NOT sufficient under
+        # READ COMMITTED: a concurrent transaction's INSERT is invisible to the
+        # other's invalidating UPDATE until it commits, so several creates for
+        # one (destination, purpose) each invalidated what they could see and
+        # then all inserted. Three concurrently created challenges verified
+        # independently -- three live credentials where policy allows one.
+        # SQLite serialises writers, which is why the SQLite suite could not
+        # see it. Application logic cannot fix a phantom insert; only the
+        # database can make it unrepresentable.
+        #
+        # WHY THE PREDICATE OMITS expires_at
+        # ----------------------------------
+        # A partial index predicate must be IMMUTABLE, so `expires_at > NOW()`
+        # is rejected outright:
+        #     ERROR: functions in index predicate must be marked IMMUTABLE
+        # That is not a limitation here, because this predicate describes a
+        # SUPERSET of ACTIVE: ACTIVE additionally requires expires_at > now.
+        # Uniqueness over a superset implies uniqueness over the subset, so
+        # this index is STRICTLY STRONGER than "at most one ACTIVE" -- it
+        # permits at most one row that is merely un-consumed and
+        # un-invalidated, expired or not. No expiry assumption is baked in and
+        # expiry remains derived, never stored.
+        #
+        # An expired row therefore still occupies the slot. That does not block
+        # legitimate creation, because create_challenge() invalidates rows
+        # matching EXACTLY this predicate before inserting -- the UPDATE's
+        # WHERE clause and this index's WHERE clause are deliberately the same
+        # set. Cleanup is not, and must not become, the boundary.
+        #
+        # Consumed and invalidated rows fall outside the predicate, so the
+        # full challenge history is retained without limit.
+        db.Index('uq_otp_challenges_one_active',
+                 'destination', 'purpose', unique=True,
+                 postgresql_where=db.text(
+                     'consumed_at IS NULL AND invalidated_at IS NULL'),
+                 sqlite_where=db.text(
+                     'consumed_at IS NULL AND invalidated_at IS NULL')),
+    )
+
+    def __repr__(self):
+        # NEVER renders destination or code_hash. A repr reaches tracebacks,
+        # Sentry payloads and debug output, and RC2.5.15 disclosed that a
+        # customer phone number can reach production logs through exactly that
+        # kind of incidental path.
+        return f"<OtpChallenge {self.id} purpose={self.purpose}>"
