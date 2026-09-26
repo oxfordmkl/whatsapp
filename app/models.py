@@ -746,6 +746,14 @@ class ConversationMessage(db.Model):
     __table_args__ = (
         db.Index("idx_conv_msg_phone_created", "phone", "created_at"),
         db.Index("idx_conv_msg_wa_id",         "wa_message_id"),
+        # Phase RC2.5.19-D: an inbound WhatsApp message id can be claimed once.
+        # The webhook inserts this row before any side effect; a duplicate
+        # delivery fails here and is not processed again. Outgoing rows and
+        # rows without an id are unconstrained.
+        db.Index("uq_conv_msg_incoming_wa_message_id", "wa_message_id",
+                 unique=True,
+                 postgresql_where=db.text("wa_message_id IS NOT NULL AND direction = 'incoming'"),
+                 sqlite_where=db.text("wa_message_id IS NOT NULL AND direction = 'incoming'")),
     )
 
 

@@ -295,13 +295,14 @@ class TestWebhookSignatureEnabled:
                                     content_type="application/json")
         assert r.status_code == 403
 
-    def test_get_handshake_is_unaffected(self, ctx, signed):
+    def test_get_handshake_is_unaffected(self, ctx, signed, monkeypatch):
         """VERIFY_TOKEN still governs the subscription handshake; the HMAC
-        applies only to POSTs."""
-        from app.config import VERIFY_TOKEN
+        applies only to POSTs. RC2.5.19-D: VERIFY_TOKEN has no committed
+        default, so the test configures its own."""
+        monkeypatch.setitem(_APP.config, "VERIFY_TOKEN", "14c-test-verify-token")
         r = _APP.test_client().get(
-            f"/webhook?hub.mode=subscribe&hub.verify_token={VERIFY_TOKEN}"
-            f"&hub.challenge=42")
+            "/webhook?hub.mode=subscribe&hub.verify_token=14c-test-verify-token"
+            "&hub.challenge=42")
         assert r.status_code == 200 and r.get_data(as_text=True) == "42"
 
 
@@ -406,16 +407,22 @@ class TestStatsEndpointRetired:
 # ── 3. Default-secret detection ──────────────────────────────────────────────
 
 class TestDefaultSecretWarning:
-    def test_warns_for_each_secret_left_on_its_committed_default(self, caplog):
+    def test_warns_for_each_secret_left_on_its_committed_default(self, caplog, monkeypatch):
+        import hashlib
         import app as app_pkg
         import app.config as cfg
+        # RC2.5.19-D: the formerly published VERIFY_TOKEN default is recognised
+        # by hash and no longer appears in source. Point the hash at a test
+        # value so the detection path is exercised without the real preimage.
+        monkeypatch.setattr(app_pkg, "_LEGACY_VERIFY_TOKEN_SHA256",
+                            hashlib.sha256(b"legacy-verify-default-under-test").hexdigest())
         originals = {n: getattr(cfg, n) for n in
                      ("SECRET_KEY", "ADMIN_KEY", "BROADCAST_API_KEY", "VERIFY_TOKEN")}
         try:
             cfg.SECRET_KEY = "oxford-crm-local-dev-key"
             cfg.ADMIN_KEY = "oxford_admin_2026"
             cfg.BROADCAST_API_KEY = "oxford_broadcast_2026"
-            cfg.VERIFY_TOKEN = "oxford2026"
+            cfg.VERIFY_TOKEN = "legacy-verify-default-under-test"
             with caplog.at_level("WARNING"):
                 app_pkg._check_default_secrets(_APP)
         finally:

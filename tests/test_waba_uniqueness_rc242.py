@@ -391,13 +391,15 @@ class TestWebhookUnchanged:
                 ".first()" in src), "webhook resolution was redesigned"
 
     def test_unknown_id_still_dropped(self):
-        src = _fn_src(WEBHOOK_PY, "receive_message")
-        assert "Unknown WABA Phone ID" in src
+        # RC2.5.19-D: resolution is per change, in _resolve_accepting_tenant().
+        src = _fn_src(WEBHOOK_PY, "_resolve_accepting_tenant")
+        assert "unknown WABA phone id" in src
 
     def test_non_active_tenant_still_rejected(self):
         # RC2.5.19-C (C7): the ACTIVE/TRIAL rule was extracted, unchanged, into
         # whatsapp_service so RC2.5.19-D can change it in one place.
-        src = _fn_src(WEBHOOK_PY, "receive_message")
+        # RC2.5.19-D: applied per change, in _resolve_accepting_tenant().
+        src = _fn_src(WEBHOOK_PY, "_resolve_accepting_tenant")
         assert "tenant_accepts_whatsapp_inbound(tenant)" in src
         from app.services import whatsapp_service as _wa
         assert _wa.INBOUND_ACCEPTED_TENANT_STATUSES == ("ACTIVE", "TRIAL")

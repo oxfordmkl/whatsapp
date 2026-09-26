@@ -241,20 +241,19 @@ Meta WhatsApp Cloud API
   ▼ POST /webhook
 webhook_bp.receive_message()
   │
-  ├── Parse JSON payload
-  ├── Extract phone_number_id → tenant routing
-  ├── Tenant.query.filter_by(waba_phone_number_id=...) → tenant_id
-  ├── Deduplication check (wa_message_id)
-  ├── Opt-out / opt-in check
-  ├── is_new_lead = not phone_exists(phone, tenant_id)
+  ├── verify X-Hub-Signature-256 → 403 if invalid (before parsing)
+  ├── for EVERY entry → change (RC2.5.19-D):
+  │     Tenant.query.filter_by(waba_phone_number_id=...) + ACTIVE/TRIAL gate
+  │     (unknown / inactive → that change only is dropped; no fallback)
+  ├── for EVERY message in an accepted change:
+  │     claim wamid: synchronous incoming ConversationMessage insert
+  │     (unique per inbound wamid — a duplicate stops here)
+  │     opt-out / opt-in check, is_new_lead
   │
-  ├── smart_reply(msg, name, phone, is_new_lead, tenant_id) [main thread]
-  │     └── returns (reply_text, new_stage)
-  │
-  ├── send_reply(phone, reply_text, tenant_id) [daemon thread]
-  ├── log_message_in_thread(...) [daemon thread]
-  ├── save_conversation_message_in_thread(...) [daemon thread]
-  ├── schedule_followups(phone, name, tenant_id) [if new lead]
+  │     smart_reply(msg, name, phone, is_new_lead, tenant_id) [main thread]
+  │     send_reply(phone, reply_text, tenant_id)               [main thread]
+  │     log_message_in_thread(...), outgoing ConversationMessage [daemon threads]
+  │     schedule_followups(phone, name, tenant_id) [if new lead]
   │
   ▼
 return jsonify({"status": "ok"}), 200 → Meta
@@ -318,7 +317,8 @@ threading.Thread(
 ).start()
 ```
 
-This keeps the WhatsApp webhook response fast (< 200ms) while logging happens asynchronously.
+Only logging runs asynchronously. The webhook response itself waits for the
+Gemini reply and the WhatsApp send, which both run in the request thread.
 
 ---
 

@@ -160,7 +160,11 @@ class TestDedupSemantics:
         full here would ALSO break dedup — in the other direction."""
         with open(WEBHOOK, encoding="utf-8") as fh:
             src = fh.read()
-        assert "filter_by(wa_message_id=wamid)" in src
+        # RC2.5.19-D: the lookup also scopes to direction="incoming" and
+        # may wrap across lines; the id is still matched in full.
+        import re
+        assert re.search(r"filter_by\(\s*wa_message_id=wamid[,)]", src), \
+            "the webhook no longer matches the full wa_message_id"
 
     def test_wa_message_id_column_is_wide_enough_for_observed_ids(self):
         """Production wamids run 62-78 chars against a 100 limit.

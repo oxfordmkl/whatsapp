@@ -58,15 +58,14 @@ This document describes how Oxford CRM integrates with Meta's WhatsApp Cloud API
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │                  webhook_bp.receive_message()             │    │
 │  │                                                          │    │
-│  │  1. Parse payload                                        │    │
-│  │  2. Extract phone_number_id                              │    │
-│  │  3. Tenant lookup (WABA routing)                         │    │
-│  │  4. Deduplication check                                  │    │
-│  │  5. Opt-out / opt-in check                               │    │
-│  │  6. smart_reply() → AI response                          │    │
-│  │  7. Async: send reply                                    │    │
-│  │  8. Async: log all events                                │    │
-│  │  9. Async: schedule_followups() [if new lead]            │    │
+│  │  1. Verify X-Hub-Signature-256 (403 if invalid)          │    │
+│  │  2. For EVERY entry → change:                            │    │
+│  │     tenant lookup by phone_number_id + status gate       │    │
+│  │  3. For EVERY message in an accepted change:             │    │
+│  │     claim wamid (sync insert, unique) → opt-out/opt-in   │    │
+│  │     → smart_reply() → send_reply() (both synchronous)    │    │
+│  │  4. Background threads: logs, lead events, Sheets        │    │
+│  │  5. schedule_followups() [if new lead]                   │    │
 │  │                                                          │    │
 │  │  return 200 OK → Meta                                    │    │
 │  └──────────────────────────────────────────────────────────┘    │
@@ -98,144 +97,136 @@ https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages
 
 ## 4. Inbound Webhook — Verification
 
-**Source:** `app/routes/webhook.py`, lines 15–23
+**Source:** `app/routes/webhook.py` — `verify_webhook()`
 
 **Route:** `GET /webhook`
 
-Meta sends a one-time verification request when the webhook is first configured:
+Meta sends a one-time verification request when the webhook is configured:
 
 ```
-GET /webhook?hub.mode=subscribe&hub.verify_token=oxford2026&hub.challenge=<random>
+GET /webhook?hub.mode=subscribe&hub.verify_token=<VERIFY_TOKEN>&hub.challenge=<random>
 
-if mode == "subscribe" AND token == VERIFY_TOKEN:
+if VERIFY_TOKEN is not configured: return "Forbidden", 403   ← fail-closed
+if mode == "subscribe" AND hmac.compare_digest(token, VERIFY_TOKEN):
     return challenge, 200  ← Confirms webhook ownership to Meta
 else:
     return "Forbidden", 403
 ```
 
-**`VERIFY_TOKEN`** is set via the `VERIFY_TOKEN` environment variable (default: `"oxford2026"`). This must be configured in the Meta Developer Portal to match.
+**`VERIFY_TOKEN`** comes from the `VERIFY_TOKEN` environment variable and has
+**no default** (Phase RC2.5.19-D). It must be set, and must match the value
+configured in the Meta Developer Portal. It is never logged.
+
+`VERIFY_TOKEN` authenticates only this handshake. Delivered messages are
+authenticated separately, by signature (section 5).
 
 ---
 
 ## 5. Inbound Webhook — Message Processing
 
-**Source:** `app/routes/webhook.py`, lines 26–240
+**Source:** `app/routes/webhook.py` — `receive_message()` and the helpers
+`_iter_change_values()`, `_resolve_accepting_tenant()`, `_process_change()`,
+`_process_message()`, `_claim_inbound()`
 
 **Route:** `POST /webhook`
 
-### Step-by-Step Processing
+### Authentication (Phase 14C, fail-closed since RC2.5.5a)
+
+The first statement of `receive_message()` is `verify_meta_signature()`:
+HMAC-SHA256 of the **raw request body** under `META_APP_SECRET`, compared with
+`hmac.compare_digest` against the `X-Hub-Signature-256` header. A missing
+secret, a missing or malformed header, or a mismatch returns **403** before
+the body is parsed or the database is touched.
+
+### Step-by-Step Processing (Phase RC2.5.19-D)
 
 ```
 POST /webhook (JSON payload from Meta)
 │
-├── Step 1: Parse JSON
-│   data = request.get_json(silent=True) or {}
-│   entry → changes → value → messages[], contacts[]
+├── Signature check → 403 on failure (nothing parsed, nothing written)
 │
-├── Step 2: Early exits
-│   if "statuses" in value: return 200 (delivery/read receipt — ignore)
-│   if not messages: return 200 (no message content)
+├── For EVERY entry[] → changes[] → value   (non-list / non-dict items skipped)
+│   │
+│   ├── No messages in this change (e.g. statuses only): skip THIS change
+│   │   (a status never suppresses messages elsewhere in the delivery)
+│   │
+│   ├── Tenant routing for THIS change (section 6) — dropped changes do not
+│   │   affect sibling changes or other tenants' entries
+│   │
+│   └── For EVERY message in the change   (a failure is isolated to it)
+│       ├── Parse text (text / interactive / button); other types ignored
+│       ├── CLAIM: insert the incoming ConversationMessage row synchronously
+│       │   (section 7) — a duplicate stops here, before any side effect
+│       ├── Opt-out / opt-in check
+│       ├── is_new_lead = resolve_is_new_lead(...)
+│       ├── Background threads: lead events, MessageLog, save_lead_to_sheets
+│       ├── Pending-message delivery (synchronous)
+│       ├── smart_reply() then send_reply()  — both SYNCHRONOUS in the request
+│       ├── Background threads: outbound MessageLog + ConversationMessage
+│       └── schedule_followups() if new lead
 │
-├── Step 3: Extract message fields
-│   from_number  = message.from
-│   msg_type     = message.type
-│   wamid        = message.id  (WhatsApp Message ID — for dedup)
-│   contact_name = contacts[0].profile.name
-│
-├── Step 4: Multi-Tenant Routing (Phase 13-B4D2)
-│   phone_number_id = value.metadata.phone_number_id
-│   tenant = Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
-│   if tenant:
-│       if tenant.status not in [ACTIVE, TRIAL]: drop + return 200
-│       tenant_id = tenant.id
-│   else:
-│       Grace fallback: if phone_number_id == config PHONE_NUMBER_ID → primary tenant
-│       else: log warning + return 200 (unknown WABA)
-│
-├── Step 5: Deduplication
-│   existing = ConversationMessage.query.filter_by(wa_message_id=wamid).first()
-│   if existing: return 200 {"reason": "duplicate"}
-│
-├── Step 6: Message type parsing
-│   text: msg_text = message.text.body
-│   interactive (button_reply): msg_text = button_reply.id
-│   interactive (list_reply): msg_text = list_reply.id
-│   button: msg_text = message.button.text
-│   other: return 200 (silently ignore)
-│
-├── Step 7: Opt-Out / Opt-In check
-│   if msg == "stop/unsubscribe/cancel": set is_opted_out=True, return 200
-│   if msg == "start/resume/unstop": set is_opted_out=False (continue processing)
-│
-├── Step 8: Lead detection
-│   is_new_lead = not phone_exists(from_number, tenant_id=tenant_id)
-│
-├── Step 9: AI Processing (main thread)
-│   reply_text, new_stage = smart_reply(msg_text, name, phone, is_new_lead, tenant_id)
-│
-├── Step 10: Async operations (daemon threads)
-│   Thread: send_reply(from_number, reply_text, tenant_id)
-│   Thread: log_message_in_thread(app, phone, "inbound", ...)
-│   Thread: save_conversation_message_in_thread(app, phone, "incoming", msg_text, ...)
-│   Thread: save_conversation_message_in_thread(app, phone, "outgoing", reply_text, ...)
-│   Thread: log_lead_event_in_thread(app, phone, event_type, ...)
-│   if is_new_lead:
-│       Thread: save_lead_to_sheets(name, phone, ...)
-│       Thread: schedule_followups(phone, name, tenant_id)
-│
-└── return jsonify({"status": "ok"}), 200 → Meta
+└── return jsonify({"status": "ok"}), 200 → Meta   (always, once signed)
 ```
+
+The acknowledgement is **always 200** once the signature is valid, including
+when an item fails: Meta retries non-2xx and can disable the subscription
+after sustained failures. Failures are logged by exception class only; phone
+numbers in webhook logs are masked to the last three digits.
 
 ---
 
 ## 6. Multi-Tenant Routing
 
-**Source:** `app/routes/webhook.py`, lines 49–72 (Phase 13-B4D2)
+**Source:** `app/routes/webhook.py` — `_resolve_accepting_tenant()`
 
-This is the **core tenant isolation mechanism** for WhatsApp.
+This is the **core tenant isolation mechanism** for WhatsApp. It runs once per
+change, so one delivery can safely carry several tenants' events.
 
 ```python
-phone_number_id = value.get("metadata", {}).get("phone_number_id", "")
+phone_number_id = value["metadata"]["phone_number_id"]   # must be a non-empty str
 tenant = Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
 
-if tenant:
-    # Known WABA — route to this tenant
-    if tenant.status not in ["ACTIVE", "TRIAL"]:
-        # Tenant suspended/cancelled — drop the message silently
-        return jsonify({"status": "ok"}), 200
-    tenant_id = tenant.id
+if tenant is None:
+    return None          # unknown / missing / malformed → change dropped
 
-else:
-    # Unknown WABA — check if it matches the primary Oxford phone number
-    if phone_number_id == current_app.config.get("PHONE_NUMBER_ID"):
-        tenant_id = current_app.config.get("PRIMARY_TENANT_ID")
-        # Grace-period fallback for legacy/primary tenant
-    else:
-        # Completely unknown — drop message
-        return jsonify({"status": "ok"}), 200
+if not tenant_accepts_whatsapp_inbound(tenant):   # ACTIVE or TRIAL only
+    return None          # PENDING / SUSPENDED / CANCELLED → change dropped
+
+return tenant.id
 ```
 
+There is **no fallback tenant**. The former grace fallback to
+`PRIMARY_TENANT_ID` was removed in Phase RC2.5.5a; an unregistered
+`phone_number_id` never resolves to any tenant, and `PRIMARY_TENANT_ID` and the
+global env credentials play no part in inbound routing.
+
 **Why this works:**
-- Every tenant registers their unique `waba_phone_number_id` in the tenant portal
-- Meta always includes the `phone_number_id` in the webhook metadata
-- This `phone_number_id` uniquely maps to one tenant
+- `tenants.waba_phone_number_id` has a partial unique index (RC2.4.2), so at
+  most one tenant owns a number
+- Binding a number is SUPER_ADMIN-only (RC2.5.19-C)
+- Meta sets `metadata.phone_number_id`, and the signature covers the whole body
+
+The WABA id (`entry[].id`) is currently neither stored nor checked.
 
 ---
 
 ## 7. Message Deduplication
 
-**Source:** `app/routes/webhook.py`, lines 74–79 (Phase 11-D1 Task C)
+**Source:** `app/routes/webhook.py` — `_claim_inbound()` (Phase RC2.5.19-D)
 
-Meta can occasionally deliver the same message twice (network retries). Deduplication prevents double-processing:
+Meta can deliver the same message more than once. Before any side effect, the
+webhook inserts the incoming `ConversationMessage` row **synchronously** and
+commits it. That row is the claim:
 
-```python
-if wamid:  # wamid = WhatsApp Message ID (e.g., "wamid.HBgLOTE...")
-    existing = ConversationMessage.query.filter_by(wa_message_id=wamid).first()
-    if existing:
-        return jsonify({"status": "ok", "reason": "duplicate"}), 200
-```
+- the partial unique index `uq_conv_msg_incoming_wa_message_id` on
+  `conversation_message(wa_message_id) WHERE wa_message_id IS NOT NULL AND
+  direction = 'incoming'` makes a second claim of the same inbound wamid fail;
+- a message whose wamid is already claimed — in the same delivery, a later
+  redelivery, or a concurrent request that lost the insert race — is skipped:
+  no reply, no lead events, no Sheets row.
 
-The `wa_message_id` is stored in the `ConversationMessage` record when the message is first logged. Subsequent deliveries of the same `wamid` are caught here and silently returned.
+Unsupported message types are not claimed. A message without an id is stored
+with `wa_message_id = NULL` and is not deduplicated.
 
 ---
 
@@ -434,15 +425,18 @@ The webhook handler deliberately keeps AI processing in the **main request threa
 | Operation | Thread | Why |
 |-----------|--------|-----|
 | Tenant routing | Main | Needs result to continue |
-| Deduplication check | Main | Must block before processing |
+| Inbound claim (dedup) | Main | Must commit before any side effect |
 | Opt-out/opt-in check | Main | State affects further processing |
 | `smart_reply()` | Main | Reply text needed for send |
-| `send_reply()` | Daemon | I/O — don't block main thread |
+| `send_reply()` | Main | Synchronous Graph call, bounded timeouts |
 | `log_message()` | Daemon | I/O — non-critical to response time |
-| `save_conversation_message()` | Daemon | I/O — non-critical |
-| `schedule_followups()` | Daemon | I/O — non-critical |
+| `save_conversation_message()` (outgoing) | Daemon | I/O — non-critical |
+| `schedule_followups()` | Main | Writes the follow-up schedule |
 
-Meta requires `200 OK` within 20 seconds. The main thread completes in < 500ms (just the `smart_reply()` Gemini call). All database writes happen asynchronously.
+The request is not fast by design: the Gemini call in `smart_reply()` and the
+Graph send in `send_reply()` both run inside it, before the `200 OK`. Only
+logging, lead events, the Sheets write and the outgoing conversation row run
+in background threads.
 
 ---
 
@@ -473,7 +467,6 @@ Meta requires `200 OK` within 20 seconds. The main thread completes in < 500ms (
 | Image/audio/video messages ignored | Leads who send media get no response | Phase 16 |
 | No pending message queue for 24-hour window | Messages outside session window may fail | `PendingMessage` model exists, queue not wired |
 | Follow-up templates hardcoded in English + Malayalam | Cannot be configured per tenant | Phase 16 |
-| Grace-period fallback uses config `PHONE_NUMBER_ID` | Won't work cleanly in multi-tenant future | Phase 16 |
 
 ---
 

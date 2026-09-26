@@ -830,7 +830,10 @@ class TestMigration:
             revs[r.group(1)] = dn.group(1) if dn else None
         children = {v for v in revs.values() if v}
         heads = [k for k in revs if k not in children]
-        assert heads == ["a4f2c70b19de"], heads
+        # UPDATED BY RC2.5.19-D: c7e19d4a2b58 (inbound wamid uniqueness)
+        # descends from this phase's revision; the chain stays single-headed.
+        assert heads == ["c7e19d4a2b58"], heads
+        assert revs["c7e19d4a2b58"] == "a4f2c70b19de"
 
     def test_it_is_additive_only(self):
         src = _code_only(self.MIG)

@@ -182,12 +182,13 @@ class TestFailClosedBehaviour:
                                     headers={"X-Hub-Signature-256": bad})
         assert r.status_code == 403, f"accepted {bad!r}"
 
-    def test_get_handshake_is_unaffected(self, ctx):
+    def test_get_handshake_is_unaffected(self, ctx, monkeypatch):
         """The subscription handshake is authenticated by VERIFY_TOKEN and must
-        keep working with no app secret involved."""
-        from app.config import VERIFY_TOKEN
+        keep working with no app secret involved. RC2.5.19-D: VERIFY_TOKEN has
+        no committed default, so the test configures its own."""
+        monkeypatch.setitem(_APP.config, "VERIFY_TOKEN", "rc255a-test-verify-token")
         r = _APP.test_client().get(
-            f"/webhook?hub.mode=subscribe&hub.verify_token={VERIFY_TOKEN}"
+            "/webhook?hub.mode=subscribe&hub.verify_token=rc255a-test-verify-token"
             "&hub.challenge=42")
         assert r.status_code == 200 and r.get_data(as_text=True) == "42"
 
@@ -325,17 +326,27 @@ class TestFallbackRemovalIsStructural:
         tenant branch looked like. A mutation that replaced this branch's
         `return` with `pass` proved it: the test stayed green.
         """
-        fn = _func("app/routes/webhook.py", "receive_message")
+        # RC2.5.19-D: tenant resolution moved, per change, into
+        # _resolve_accepting_tenant(); the unknown-id branch is now
+        # `if tenant is None:`. Same guarantee, same strictness: anchored on
+        # that exact test, unconditional, and returning None (no tenant).
+        fn = _func("app/routes/webhook.py", "_resolve_accepting_tenant")
         target = [n for n in ast.walk(fn)
-                  if isinstance(n, ast.If) and isinstance(n.test, ast.Name)
-                  and n.test.id == "tenant" and n.orelse]
-        assert len(target) == 1, "the `if tenant: ... else:` lookup is gone"
-        orelse = target[0].orelse
-        assert not any(isinstance(s, ast.If) for s in orelse), \
+                  if isinstance(n, ast.If) and isinstance(n.test, ast.Compare)
+                  and isinstance(n.test.left, ast.Name) and n.test.left.id == "tenant"
+                  and isinstance(n.test.ops[0], ast.Is)
+                  and isinstance(n.test.comparators[0], ast.Constant)
+                  and n.test.comparators[0].value is None]
+        assert len(target) == 1, "the `if tenant is None:` lookup is gone"
+        body = target[0].body
+        assert not target[0].orelse, "the unknown-phone-id branch grew an else"
+        assert not any(isinstance(s, ast.If) for s in body), \
             "the unknown-phone-id branch is conditional again — a fallback is back"
-        assert isinstance(orelse[-1], ast.Return), \
+        assert isinstance(body[-1], ast.Return), \
             "the unknown-phone-id branch no longer returns; execution falls " \
             "through into message processing with no tenant"
+        assert isinstance(body[-1].value, ast.Constant) and body[-1].value.value is None, \
+            "the unknown-phone-id branch returns a tenant"
 
 
 # ── 3. the dead v19 constant ─────────────────────────────────────────────────
@@ -440,7 +451,8 @@ class TestOutOfScopeFallbacksSurvive:
     def test_webhook_still_gates_on_tenant_status(self):
         # RC2.5.19-C (C7): the gate was extracted, unchanged, into
         # whatsapp_service.tenant_accepts_whatsapp_inbound().
-        fn = _func("app/routes/webhook.py", "receive_message")
+        # RC2.5.19-D: it is applied per change in _resolve_accepting_tenant().
+        fn = _func("app/routes/webhook.py", "_resolve_accepting_tenant")
         called = {n.func.id for n in ast.walk(fn)
                   if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
         assert "tenant_accepts_whatsapp_inbound" in called, \

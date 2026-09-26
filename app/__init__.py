@@ -1,4 +1,5 @@
 from flask import Flask
+import hashlib
 import logging
 
 from flask_wtf.csrf import CSRFProtect
@@ -79,6 +80,10 @@ _CSRF_EXEMPT_ENDPOINTS = (
     "broadcast.upload_media_route",  # POST /upload-media
 )
 
+# SHA-256 of the VERIFY_TOKEN default that was committed before RC2.5.19-D.
+_LEGACY_VERIFY_TOKEN_SHA256 = "546c19f1d68e28f4b802abd4037ebb79ceab1e1387e8778e9cde39d76a7ebb91"
+
+
 def _check_default_secrets(app):
     """Phase 14C: log a loud warning for every secret left on the fallback
     value committed to app/config.py.
@@ -93,9 +98,13 @@ def _check_default_secrets(app):
         "SECRET_KEY":        (_sk, "oxford-crm-local-dev-key"),
         "ADMIN_KEY":         (_ak, "oxford_admin_2026"),
         "BROADCAST_API_KEY": (_bk, "oxford_broadcast_2026"),
-        "VERIFY_TOKEN":      (_vt, "oxford2026"),
     }
     log = logging.getLogger(__name__)
+    # Phase RC2.5.19-D: VERIFY_TOKEN no longer has a committed default, but an
+    # environment could still be set to the formerly published one. It is
+    # recognised by hash so the old value is not re-committed in source.
+    if _vt and hashlib.sha256(_vt.encode("utf-8")).hexdigest() == _LEGACY_VERIFY_TOKEN_SHA256:
+        committed["VERIFY_TOKEN"] = (_vt, _vt)
     for name, (actual, default) in committed.items():
         if actual == default:
             log.warning(

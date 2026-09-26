@@ -767,8 +767,10 @@ class TestScope:
                 revs.add(r.group(1))
             if dn:
                 downs.add(dn.group(1))
-        assert revs - downs == {"a4f2c70b19de"}
-        assert len(revs) == 31
+        # UPDATED BY RC2.5.19-D: this phase added no migration; RC2.5.19-D
+        # adds exactly one, c7e19d4a2b58, on top of a4f2c70b19de.
+        assert revs - downs == {"c7e19d4a2b58"}
+        assert len(revs) == 32
 
     def test_register_route_is_untouched_by_this_phase(self):
         src = open(os.path.join(ROOT, "app", "routes", "public.py"),

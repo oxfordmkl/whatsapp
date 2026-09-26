@@ -1,6 +1,10 @@
 import os
 
-VERIFY_TOKEN         = os.environ.get("VERIFY_TOKEN", "oxford2026")
+# Phase RC2.5.19-D: no committed default. The previous default was published
+# in this repository and its docs; an unset VERIFY_TOKEN now makes the GET
+# subscription handshake refuse (fail-closed) instead of accepting a public
+# value. Delivered messages are authenticated by META_APP_SECRET, not this.
+VERIFY_TOKEN         = os.environ.get("VERIFY_TOKEN", "")
 ACCESS_TOKEN         = os.environ.get("ACCESS_TOKEN", "")
 # Phase 14C: Meta App Secret, used to verify the X-Hub-Signature-256 HMAC on
 # inbound webhook POSTs. VERIFY_TOKEN guards only the GET subscription
