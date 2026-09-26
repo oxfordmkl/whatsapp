@@ -79,6 +79,10 @@ def wa(monkeypatch):
     flags.wa_list_messages_enabled = lambda: flag["on"]
     monkeypatch.setitem(sys.modules, "app.flags", flags)
 
+    # RC2.5.18-A: whatsapp_service masks destinations via phone_service.
+    # Registered REAL (it has no imports), so masking is genuinely exercised.
+    _load("_p69_phone", "app/services/phone_service.py",
+          register_as="app.services.phone_service", monkeypatch=monkeypatch)
     mod = _load("_p69_wa", "app/services/whatsapp_service.py")
     monkeypatch.setattr(mod, "_get_waba_credentials", lambda tid=None: ("p", "t"))
     monkeypatch.setattr(mod, "send_text",
@@ -223,6 +227,11 @@ def env(monkeypatch):
                 register_as="app.bot.navigation", monkeypatch=monkeypatch)
     screens = _load("_p69_screens", "app/bot/screens.py",
                     register_as="app.bot.screens", monkeypatch=monkeypatch)
+    # RC2.5.18-A: whatsapp_service masks destinations in its logs via
+    # phone_service. Registered REAL (it has no imports), not stubbed, so the
+    # masking path is genuinely exercised here.
+    _load("_p69_phone", "app/services/phone_service.py",
+          register_as="app.services.phone_service", monkeypatch=monkeypatch)
     wa_mod = _load("_p69_wa2", "app/services/whatsapp_service.py",
                    register_as="app.services.whatsapp_service", monkeypatch=monkeypatch)
     _load("_p69_cta", "app/bot/cta_handlers.py",

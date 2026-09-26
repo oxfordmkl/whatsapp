@@ -240,12 +240,41 @@ def receive_message():
 
         # Phase 11-D3B2: Deliver Pending Messages (Interceptor Fallback)
         from app.models import PendingMessage
-        from app.services.whatsapp_service import send_text
+        from app.services.whatsapp_service import (
+            send_text, is_transport_failure, is_ambiguous)
         pending_msgs = PendingMessage.query.filter_by(phone=from_number, tenant_id=tenant_id).order_by(PendingMessage.created_at.asc()).all()
         if pending_msgs:
             logger.info(f"📦 Delivering {len(pending_msgs)} pending messages to {from_number}")
             for pm in pending_msgs:
-                send_text(from_number, pm.text, tenant_id=tenant_id)
+                r = send_text(from_number, pm.text, tenant_id=tenant_id)
+                # Phase RC2.5.18-A-FIX1: a queued row is removed once its send
+                # has an outcome, EXCEPT when the send provably never left.
+                #
+                #   success / Meta rejection -> delete (unchanged behaviour)
+                #   AMBIGUOUS transport      -> delete. The text may already be
+                #                               on the customer's phone; keeping
+                #                               the row would re-send it on the
+                #                               next inbound message.
+                #   NOT_SENT transport       -> KEEP, and stop. Nothing reached
+                #                               Meta, so it is retried on the
+                #                               contact's next message.
+                #
+                # Stopping at the first NOT_SENT does two things. It preserves
+                # created_at delivery order (ADR-024): sending message 2 while
+                # message 1 waits would deliver them out of order next time.
+                # And the network is down, so every further attempt would only
+                # wait out another connect timeout on this request.
+                #
+                # Before RC2.5.18-A the send RAISED on a transport error, the
+                # handler's outer except swallowed it, and the uncommitted
+                # deletes rolled back -- keeping every row, including ones
+                # already delivered earlier in the loop (re-sent next time).
+                if is_transport_failure(r) and not is_ambiguous(r):
+                    logger.warning("📦 Pending delivery not sent (%s) — %d "
+                                   "message(s) kept for the next inbound",
+                                   r.error_name,
+                                   len(pending_msgs) - pending_msgs.index(pm))
+                    break
                 db.session.delete(pm)
             db.session.commit()
             

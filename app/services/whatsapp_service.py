@@ -84,12 +84,213 @@ def _wa_headers(access_token: str) -> dict:
         "Content-Type": "application/json",
     }
 
+
+# ── Phase RC2.5.18-A: transport hardening ───────────────────────────────────
+#
+# Used only when app.config is a stub that predates the settings. Several test
+# suites load this module against a hand-built app.config holding just the
+# names they need, and a top-level `from app.config import ...` would make the
+# module unimportable there. The real defaults, and the reasoning behind them,
+# live in app/config.py -- including why these are NOT a wall-clock limit.
+_FALLBACK_CONNECT_TIMEOUT_SECONDS = 3.05
+_FALLBACK_READ_TIMEOUT_SECONDS = 8.0
+
+#: Status code of a TransportFailure. Outside 4xx on purpose: the campaign
+#: dispatcher's provider-failure classifier treats every non-4xx as TRANSIENT,
+#: which is how its `except Exception` branch classified a RAISED transport
+#: error before RC2.5.18-A. It can never be mistaken for success.
+#: (Named descriptively, not by module: a layering test forbids this file
+#: from naming the campaign worker module at all, even in prose.)
+TRANSPORT_FAILURE_STATUS = 599
+
+#: Delivery state of a TransportFailure. The distinction a caller needs is not
+#: "did the call fail" but "could Meta have received it":
+#:
+#:   NOT_SENT   the request provably never left this process -- the connection
+#:              was never established. Nothing reached Meta.
+#:   AMBIGUOUS  the request may have been transmitted and processed; only the
+#:              RESPONSE was lost. The customer may already have the message.
+#:
+#: An AMBIGUOUS failure must never trigger an automatic second send: a format
+#: fallback or an immediate resend would deliver the message twice.
+NOT_SENT = "not_sent"
+AMBIGUOUS = "ambiguous"
+
+
+def _timeout() -> tuple:
+    """(connect, read) timeouts, read at call time so tests can vary them.
+
+    import_module("app.config") rather than `from app import config`: the
+    latter imports the parent `app` package, which suites that load this file
+    against stubbed app.* modules never import. import_module returns the
+    already-registered app.config -- real or stub -- without touching `app`.
+    """
+    import importlib
+    _cfg = importlib.import_module("app.config")
+    return (
+        getattr(_cfg, "WHATSAPP_CONNECT_TIMEOUT_SECONDS",
+                _FALLBACK_CONNECT_TIMEOUT_SECONDS),
+        getattr(_cfg, "WHATSAPP_READ_TIMEOUT_SECONDS",
+                _FALLBACK_READ_TIMEOUT_SECONDS),
+    )
+
+
+def _delivery_state(exc) -> str:
+    """NOT_SENT only when the request provably never left; else AMBIGUOUS.
+
+    Deliberately conservative -- the default is AMBIGUOUS, because wrongly
+    calling a transmitted request NOT_SENT is what causes a duplicate message,
+    while wrongly calling an unsent one AMBIGUOUS only forgoes a fallback.
+
+    NOT_SENT is proven by exactly two shapes, both of which mean the TCP
+    connection was never established:
+      * ConnectTimeout -- the connect phase timed out;
+      * a ConnectionError caused by urllib3's NewConnectionError (which
+        includes NameResolutionError) -- refused, unreachable, or DNS failure.
+
+    A bare ConnectionError is NOT evidence of non-delivery. Verified against a
+    real socket: a server that RECEIVES the request and then resets the
+    connection surfaces as a plain ConnectionError with no NewConnectionError
+    anywhere in its cause chain. ReadTimeout, ChunkedEncodingError and every
+    other failure after the connection opened are AMBIGUOUS for the same reason.
+    """
+    rexc = getattr(requests, "exceptions", None)
+    connect_timeout = getattr(rexc, "ConnectTimeout", None)
+    if connect_timeout is not None and isinstance(exc, connect_timeout):
+        return NOT_SENT
+
+    try:
+        from urllib3.exceptions import NewConnectionError
+    except Exception:                                           # noqa: BLE001
+        return AMBIGUOUS
+
+    # Walk the cause chain: requests wraps urllib3's MaxRetryError, whose
+    # .reason is the underlying connection error.
+    seen, stack = set(), [exc]
+    while stack:
+        cur = stack.pop()
+        if cur is None or id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        if isinstance(cur, NewConnectionError):
+            return NOT_SENT
+        stack.append(getattr(cur, "reason", None))
+        stack.append(cur.__cause__)
+        stack.append(cur.__context__)
+        stack.extend(a for a in getattr(cur, "args", ())
+                     if isinstance(a, BaseException))
+    return AMBIGUOUS
+
+
+def _transport_errors() -> tuple:
+    """requests' transport exception base class, or () if unavailable.
+
+    Resolved lazily rather than referenced at module level: several test suites
+    replace `requests` with a bare types.ModuleType holding only post/get, and
+    a module-level `requests.exceptions.RequestException` would make this file
+    unimportable under them. `except ()` is valid Python and catches nothing,
+    so under such a stub behaviour is exactly what it was before this phase.
+    """
+    exc = getattr(requests, "exceptions", None)
+    base = getattr(exc, "RequestException", None) if exc is not None else None
+    return (base,) if base is not None else ()
+
+
+class TransportFailure:
+    """Stands in for a requests.Response when the request never completed.
+
+    The four send functions have always RETURNED a response; callers read
+    .status_code, .text and .json() and nothing else. Raising a new exception
+    type from them would change that contract underneath every caller -- in
+    particular broadcast.py's per-number loops, which have no try/except and
+    would abort mid-broadcast without writing their BROADCAST_SEND audit row.
+    Returning a non-200 result keeps the contract: every existing caller
+    already knows how to handle a failed send.
+
+    Carries the exception CLASS name only. A requests exception message can
+    embed the request URL, and the text is surfaced by callers into logs and
+    campaign failure reasons.
+
+    RC2.5.18-A-FIX1: it is NOT just another non-200. `delivery_state` says
+    whether Meta could have received the message, and `ambiguous` is the
+    question every caller actually has to answer before sending again: "may
+    this already have been delivered?" Use is_ambiguous(response) rather than
+    inferring it from status_code.
+    """
+    status_code = TRANSPORT_FAILURE_STATUS
+    ok = False
+
+    def __init__(self, error_name: str, delivery_state: str = AMBIGUOUS):
+        self.error_name = error_name
+        self.delivery_state = delivery_state
+        self.text = f"transport failure: {error_name} ({delivery_state})"
+
+    @property
+    def ambiguous(self) -> bool:
+        return self.delivery_state != NOT_SENT
+
+    def json(self):
+        return {"error": {"message": self.text, "type": "transport",
+                          "code": None,
+                          "delivery_state": self.delivery_state}}
+
+
+def is_transport_failure(response) -> bool:
+    """True for a TransportFailure: the request did not get a Meta answer."""
+    return isinstance(response, TransportFailure)
+
+
+def is_ambiguous(response) -> bool:
+    """True when Meta may already have received the message.
+
+    Only a TransportFailure can be ambiguous. A real HTTP response -- 200 or a
+    Meta rejection -- is a definite answer, so this is False for it.
+    """
+    return is_transport_failure(response) and response.ambiguous
+
+
+def _mask(to) -> str:
+    """Masked destination for logs. Never the full number.
+
+    Imported lazily for the same reason as _timeout(): this module is loaded
+    under stubbed app.* modules in several suites.
+    """
+    from app.services.phone_service import mask_destination
+    return mask_destination(to)
+
+
+def _post_message(url: str, token: str, payload: dict):
+    """POST one message payload. Never raises for a transport failure.
+
+    The single transport path for the four send functions, which previously
+    each made an identical, unbounded requests.post.
+    """
+    try:
+        return requests.post(url, headers=_wa_headers(token), json=payload,
+                             timeout=_timeout())
+    except _transport_errors() as exc:
+        # Class name and delivery state only -- see TransportFailure. No URL,
+        # no destination, no payload: the payload of an authentication
+        # template IS the code.
+        state = _delivery_state(exc)
+        logger.error("❌ WhatsApp transport failure (%s, %s)",
+                     type(exc).__name__, state)
+        return TransportFailure(type(exc).__name__, state)
+
+
 def validate_token():
     global token_status
-    r = requests.get(
-        f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}",
-        headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}
-    )
+    try:
+        r = requests.get(
+            f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}",
+            headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
+            timeout=_timeout(),
+        )
+    except _transport_errors() as exc:
+        # Left "unknown", deliberately not "invalid": a timeout says nothing
+        # about whether the token is valid, and /health reports this value.
+        logger.error("❌ Token check failed: transport %s", type(exc).__name__)
+        return
     if r.status_code == 200:
         token_status = "valid"
         logger.info("✅ WhatsApp token valid")
@@ -109,8 +310,8 @@ def send_text(to: str, text: str, tenant_id: str = None) -> requests.Response:
         "type": "text",
         "text": {"body": text},
     }
-    r = requests.post(url, headers=_wa_headers(token), json=payload)
-    logger.info(f"📤 text → {to}  HTTP {r.status_code}")
+    r = _post_message(url, token, payload)
+    logger.info(f"📤 text → {_mask(to)}  HTTP {r.status_code}")
     return r
 
 REPLY_BUTTON_TITLE_MAX = 20
@@ -148,9 +349,20 @@ def send_interactive(to: str, body: str, preset, tenant_id: str = None) -> reque
     }
     from app.perf import mark as _perf_mark
     _perf_mark("send_start")
-    r = requests.post(url, headers=_wa_headers(token), json=payload)
+    r = _post_message(url, token, payload)
     _perf_mark("meta_response")
-    logger.info(f"📤 interactive[{preset}] → {to}  HTTP {r.status_code}")
+    logger.info(f"📤 interactive[{preset}] → {_mask(to)}  HTTP {r.status_code}")
+    if is_transport_failure(r):
+        # RC2.5.18-A-FIX1: NO fallback after a transport failure. The fallback
+        # exists because Meta REJECTED the interactive format; a network
+        # failure is not a format problem. If the failure is AMBIGUOUS the
+        # interactive message may already be on the customer's phone, and a
+        # text fallback would deliver it twice. If it is NOT_SENT the network
+        # is down, and a second call would only wait out another timeout on
+        # the request path.
+        logger.warning("⚠️  Interactive not confirmed (%s) — no fallback sent",
+                       r.delivery_state)
+        return r
     if r.status_code != 200:
         logger.warning("⚠️  Interactive failed — falling back to plain text")
         return send_text(to, body, tenant_id)
@@ -319,9 +531,15 @@ def send_list(to: str, body: str, button_label: str, sections: list,
 
     from app.perf import mark as _perf_mark
     _perf_mark("send_start")
-    r = requests.post(url, headers=_wa_headers(token), json=payload)
+    r = _post_message(url, token, payload)
     _perf_mark("meta_response")
-    logger.info(f"📤 list → {to}  HTTP {r.status_code}")
+    logger.info(f"📤 list → {_mask(to)}  HTTP {r.status_code}")
+    if is_transport_failure(r):
+        # RC2.5.18-A-FIX1: NO degrade after a transport failure -- same reason
+        # as send_interactive(). The list may already have been delivered.
+        logger.warning("⚠️  List not confirmed (%s) — no fallback sent",
+                       r.delivery_state)
+        return r
     if r.status_code != 200:
         logger.warning("⚠️  List message failed — falling back to legacy rendering")
         return _degrade()
@@ -342,11 +560,18 @@ def fetch_templates(tenant_id: str = None) -> list:
     if not WABA_ID or not _TOKEN:
         raise ValueError("Template registry unavailable: WABA_ID / ACCESS_TOKEN not configured.")
     url = f"https://graph.facebook.com/v21.0/{WABA_ID}/message_templates"
-    r = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {_TOKEN}"},
-        params={"fields": "name,status,category,language,components", "limit": 250},
-    )
+    try:
+        r = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {_TOKEN}"},
+            params={"fields": "name,status,category,language,components", "limit": 250},
+            timeout=_timeout(),
+        )
+    except _transport_errors() as exc:
+        # This function's contract is "raise ValueError on failure", and
+        # broadcast.templates_route catches exactly ValueError. A raw transport
+        # exception would escape that handler as a 500.
+        raise ValueError(f"Template fetch failed: transport {type(exc).__name__}")
     if r.status_code != 200:
         raise ValueError(f"Template fetch failed: HTTP {r.status_code} — {r.text}")
     return (r.json() or {}).get("data", [])
@@ -365,12 +590,18 @@ def upload_media(file_bytes: bytes, filename: str, content_type: str,
     """
     phone_id, token = _get_waba_credentials(tenant_id)
     url = f"https://graph.facebook.com/v21.0/{phone_id}/media"
-    r = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-        files={"file": (filename, file_bytes, content_type)},
-        data={"messaging_product": "whatsapp", "type": content_type},
-    )
+    try:
+        r = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": (filename, file_bytes, content_type)},
+            data={"messaging_product": "whatsapp", "type": content_type},
+            timeout=_timeout(),
+        )
+    except _transport_errors() as exc:
+        # Same contract as fetch_templates: broadcast.upload_media_route
+        # catches ValueError.
+        raise ValueError(f"Media upload failed: transport {type(exc).__name__}")
     if r.status_code != 200:
         raise ValueError(f"Media upload failed: HTTP {r.status_code} — {r.text}")
     media_id = (r.json() or {}).get("id")
@@ -391,32 +622,110 @@ def send_template(to: str, template: str, lang: str = "en", components: list | N
     }
     if components:
         payload["template"]["components"] = components
-    r = requests.post(url, headers=_wa_headers(token), json=payload)
+    r = _post_message(url, token, payload)
 
     # ── Diagnostics only (no behaviour change) ──────────────────────────────
-    # Surfaces the full Meta error body, which the broadcast route discards
-    # (it reads only r.status_code). The Authorization token lives in the
-    # request HEADERS, not this payload, so logging the payload leaks nothing.
+    # Surfaces Meta's error fields, which the broadcast route discards (it
+    # reads only r.status_code).
+    #
+    # Phase RC2.5.18-A: the previous comment here read "logging the payload
+    # leaks nothing". That held for marketing templates and is false for an
+    # AUTHENTICATION template, whose body and button parameters ARE the
+    # one-time code -- so any Meta rejection would have written a live
+    # credential to production logs. Three changes:
+    #   * the destination is masked;
+    #   * parameter VALUES are never logged, only the component shape;
+    #   * every value in the payload is scrubbed out of Meta's echoed fields
+    #     before they are logged, because an error describing a bad parameter
+    #     may quote it back.
+    # The raw response body is no longer logged: every useful field in it is
+    # already logged individually above, scrubbed. It is logged only when the
+    # body was not parseable JSON, and then scrubbed and truncated.
     if r.status_code != 200:
+        secrets = _payload_secrets(payload)
         try:
-            err = r.json().get("error", {})
-        except ValueError:
+            err = r.json().get("error", {}) or {}
+        except (ValueError, AttributeError):
             err = {}
-        logger.error(f"❌ template '{template}' → {to}  HTTP {r.status_code}")
+        if not isinstance(err, dict):
+            # A malformed body such as {"error": "..."} must not turn a failed
+            # send into an AttributeError on the next line.
+            err = {}
+        logger.error(f"❌ template '{template}' → {_mask(to)}  HTTP {r.status_code}")
         logger.info(f"   meta.code={err.get('code')} subcode={err.get('error_subcode')} "
               f"type={err.get('type')}")
-        logger.info(f"   meta.message={err.get('message')}")
-        logger.info(f"   meta.error_data={err.get('error_data')}")
-        logger.info(f"   meta.body={r.text}")
+        logger.info(f"   meta.message={_scrub(err.get('message'), secrets)}")
+        logger.info(f"   meta.error_data={_scrub(err.get('error_data'), secrets)}")
+        if not err:
+            logger.info(f"   meta.body={_scrub(getattr(r, 'text', ''), secrets)[:300]}")
         _components = payload["template"].get("components") or []
         _has_image_header = any(
             isinstance(c, dict) and c.get("type") == "header"
             and any(p.get("type") == "image" for p in c.get("parameters", []))
             for c in _components
         )
-        logger.info(f"   sent.components={_components or '<none>'}")
+        logger.info(f"   sent.components={_component_shape(_components)}")
         logger.info(f"   sent.has_image_header={_has_image_header}")
     return r
+
+
+#: Values shorter than this are not scrubbed from echoed Meta text. Scrubbing
+#: "1" or "en" would mangle every diagnostic line while protecting nothing; the
+#: values that matter here -- a six-digit code, a customer's name, a phone
+#: number -- are all longer.
+_SCRUB_MIN_LEN = 3
+
+
+def _payload_secrets(payload: dict) -> list:
+    """Every string value in a send payload that must not reach a log.
+
+    Collected structurally rather than by knowing the template: the recipient,
+    plus every `text` parameter in every component. That covers an
+    authentication template's code in the body AND in the COPY_CODE button,
+    and a marketing template's customer name, without this module needing to
+    know which template is which.
+    """
+    found = []
+    to = payload.get("to")
+    if to:
+        found.append(str(to))
+    for comp in (payload.get("template") or {}).get("components") or []:
+        if not isinstance(comp, dict):
+            continue
+        for p in comp.get("parameters") or []:
+            if isinstance(p, dict) and p.get("text") is not None:
+                found.append(str(p["text"]))
+    # Longest first, so a value that contains a shorter one is removed whole.
+    return sorted({s for s in found if len(s) >= _SCRUB_MIN_LEN},
+                  key=len, reverse=True)
+
+
+def _scrub(value, secrets: list) -> str:
+    """str(value) with every secret replaced. Safe on None and non-strings."""
+    s = "" if value is None else str(value)
+    for secret in secrets:
+        s = s.replace(secret, "<redacted>")
+    return s
+
+
+def _component_shape(components: list) -> str:
+    """Component types and parameter counts only, e.g. "body:1, button[url]:1".
+
+    Enough to diagnose "Number of parameters does not match" -- the commonest
+    template error -- without logging a single parameter value.
+    """
+    if not components:
+        return "<none>"
+    parts = []
+    for c in components:
+        if not isinstance(c, dict):
+            parts.append("?")
+            continue
+        label = str(c.get("type"))
+        if c.get("sub_type"):
+            label += f"[{c.get('sub_type')}]"
+        parts.append(f"{label}:{len(c.get('parameters') or [])}")
+    return ", ".join(parts)
 
 def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = None) -> requests.Response:
     """
@@ -447,24 +756,54 @@ def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = 
     if window_open:
         return send_text(to, text, tenant_id)
     else:
-        # Window closed: Queue the original message and send the template
-        pending = PendingMessage(phone=to, text=text, tenant_id=tenant_id)
-        db.session.add(pending)
-        db.session.commit()
-        
+        # Window closed: Queue the original message and send the template.
+        #
+        # Phase RC2.5.18-A-FIX1: REUSE an identical queued row rather than add
+        # a second one. The follow-up worker retries a job whose send returned
+        # non-200, and after an AMBIGUOUS failure (below) the first attempt's
+        # row is deliberately kept -- so without this, the retry would queue
+        # the same text twice and the customer would receive it twice when the
+        # inbound webhook flushes the queue. No schema change: an ordinary
+        # lookup on the columns the flush itself filters by.
+        pending = PendingMessage.query.filter_by(
+            phone=to, tenant_id=tenant_id, text=text).first()
+        created_here = pending is None
+        if created_here:
+            pending = PendingMessage(phone=to, text=text, tenant_id=tenant_id)
+            db.session.add(pending)
+            db.session.commit()
+
         components = [{
             "type": "body",
             "parameters": [{"type": "text", "text": name}]
         }]
-        
+
         response = send_template(to, "oxford_re_engagement_v1", lang="en", components=components, tenant_id=tenant_id)
-        if response.status_code != 200:
-            # If the template fails, rollback the pending message so it isn't orphaned
-            db.session.delete(pending)
-            db.session.commit()
-            logger.warning(f"⚠️  Template fallback failed for {to}: HTTP {response.status_code} - {response.text}")
+        if is_ambiguous(response):
+            # RC2.5.18-A-FIX1: the template MAY have been delivered -- only the
+            # response was lost. Keep the queued row: if the customer got the
+            # template and replies, the inbound webhook's existing flush
+            # delivers the queued text exactly as it would after a clean 200.
+            # Deleting it here would lose the message the customer was just
+            # invited to reply for. No resend: the caller's own retry policy
+            # decides what happens next.
+            logger.warning(f"⚠️  Template fallback not confirmed for {_mask(to)} "
+                           f"({response.delivery_state}) — queued message kept")
+        elif response.status_code != 200:
+            # A DEFINITE failure: Meta answered and rejected it, or the request
+            # provably never left. Nothing reached the customer, so the queued
+            # row is removed -- but only if THIS call created it. A reused row
+            # belongs to an earlier interception and is still valid.
+            if created_here:
+                db.session.delete(pending)
+                db.session.commit()
+            # Phase RC2.5.18-A: destination masked, and Meta's raw body dropped.
+            # send_template() has already logged the parsed error fields with
+            # every payload value -- here, the customer's name -- scrubbed out;
+            # repeating the raw body would undo that.
+            logger.warning(f"⚠️  Template fallback failed for {_mask(to)}: HTTP {response.status_code}")
         else:
-            logger.warning(f"🛑 Interceptor active: Template fallback sent to {to}")
-            
+            logger.warning(f"🛑 Interceptor active: Template fallback sent to {_mask(to)}")
+
         return response
 

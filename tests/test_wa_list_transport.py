@@ -67,6 +67,14 @@ def wa(monkeypatch):
     flags.wa_list_messages_enabled = lambda: flag["on"]
     monkeypatch.setitem(sys.modules, "app.flags", flags)
 
+    # RC2.5.18-A: whatsapp_service masks destinations via phone_service.
+    # Registered REAL (it has no imports), so masking is genuinely exercised.
+    _pspec = importlib.util.spec_from_file_location(
+        "_wa_phone", os.path.join(_ROOT, "app/services/phone_service.py"))
+    _phone = importlib.util.module_from_spec(_pspec)
+    _pspec.loader.exec_module(_phone)
+    monkeypatch.setitem(sys.modules, "app.services.phone_service", _phone)
+
     spec = importlib.util.spec_from_file_location(
         "_wa_service", os.path.join(_ROOT, "app/services/whatsapp_service.py"))
     mod = importlib.util.module_from_spec(spec)

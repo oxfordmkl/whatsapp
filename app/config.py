@@ -78,6 +78,42 @@ APP_URL              = os.environ.get("APP_URL", "http://localhost:5000")
 VERIFY_EMAIL_EXPIRY_SECONDS = int(os.environ.get("VERIFY_EMAIL_EXPIRY_SECONDS", "86400"))
 EMAIL_TIMEOUT_SECONDS = int(os.environ.get("EMAIL_TIMEOUT_SECONDS", "5"))
 
+# Phase RC2.5.18-A-FIX1: WhatsApp Graph API timeouts, as a (connect, read) pair.
+#
+# Until RC2.5.18-A none of the seven calls in whatsapp_service passed a timeout,
+# so a stalled Meta connection held its thread forever -- and a reply is sent
+# INLINE in POST /webhook, on the only sync gunicorn worker.
+#
+# WHAT THESE VALUES DO AND DO NOT GUARANTEE
+# -----------------------------------------
+# They are NOT a total wall-clock limit, and nothing here should be read as
+# one. requests applies CONNECT to establishing the connection and READ to
+# EACH gap between bytes of the response, so a response trickled one byte at
+# a time can run far past READ. DNS resolution is not covered at all. An
+# earlier version of this setting summed three per-call timeouts and presented
+# the sum as a wall-clock bound under gunicorn's worker timeout. That was
+# false: it treated a per-phase timeout as a total.
+#
+# What they DO bound is the common failure: an unreachable Meta fails after
+# about CONNECT; a Meta that accepts the request and then goes silent fails
+# after about CONNECT + READ.
+#
+# The POST /webhook request has no enforceable total budget in any case: the
+# Gemini call that precedes the reply (ai_service) has no timeout of its own.
+#
+# WHY THESE NUMBERS
+#   CONNECT 3.05 -- the requests documentation's own recommendation: slightly
+#                   above a multiple of 3s, the TCP SYN retransmission window,
+#                   so one lost SYN does not fail an otherwise healthy connect.
+#   READ    8    -- a Graph API send normally answers well inside 2s; 8 leaves
+#                   headroom for a slow Meta without holding the worker for
+#                   an unreasonable time.
+#
+# Env-overridable with the default in code, like EMAIL_TIMEOUT_SECONDS, so
+# production needs no new Railway variable.
+WHATSAPP_CONNECT_TIMEOUT_SECONDS = float(os.environ.get("WHATSAPP_CONNECT_TIMEOUT_SECONDS", "3.05"))
+WHATSAPP_READ_TIMEOUT_SECONDS = float(os.environ.get("WHATSAPP_READ_TIMEOUT_SECONDS", "8"))
+
 # Phase RC2.5.5a: WHATSAPP_API_URL removed. It pinned Graph v19.0 while every
 # live call in whatsapp_service.py targets v21.0, and nothing ever read it —
 # it was imported once and never dereferenced. Dead configuration built on a
