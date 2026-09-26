@@ -391,29 +391,78 @@ The worker is fully tenant-aware — `job.tenant_id` is passed through to `send_
 
 ## 13. WABA Configuration
 
-Each tenant configures their WABA credentials via the Tenant Portal at `/tenant/whatsapp`.
+A tenant's WhatsApp identity is `tenants.waba_phone_number_id` (inbound routing
+key, partial unique index since RC2.4.2) plus `tenants.waba_access_token_encrypted`
+(MultiFernet: `WABA_ENCRYPTION_KEY`, optional decrypt-only
+`WABA_ENCRYPTION_KEYS_PREVIOUS`, since RC2.5.19-C). It is set in one of two ways.
 
-| Field | Description | Storage |
-|-------|-------------|---------|
-| `waba_phone_number_id` | Meta-assigned phone number ID | Plaintext in `tenants` table |
-| `waba_access_token_encrypted` | Meta Graph API access token | Fernet-encrypted in `tenants` table |
+### 13.1 Manual binding (`/tenant/whatsapp`, `POST /tenant/whatsapp/save`)
 
-### Credential Flow
+| Actor | May |
+|-------|-----|
+| SUPER_ADMIN (`?tenant_id=`) | bind or change a tenant's Phone Number ID and token |
+| Tenant ADMIN | replace the token for the number **already bound** to their own tenant; cannot claim or change a number (RC2.5.19-C) |
+
+A number held by another tenant is refused (unique index). `POST
+/tenant/whatsapp/clear` releases the number, the token and any Embedded Signup
+connection together, and is audited.
+
+### 13.2 Embedded Signup (RC2.5.19-E, flag `WA_EMBEDDED_SIGNUP_ENABLED`, default OFF)
+
+Tech Provider onboarding for a tenant's own ADMIN. Available only when the flag
+is on, the configuration is complete, the tenant is ACTIVE or TRIAL, and the
+tenant has **no** existing binding (SUPER_ADMIN, impersonating sessions and
+bound tenants — including the primary tenant — are refused).
 
 ```
-Tenant Admin enters WABA credentials in /tenant/whatsapp
-    │
-    ▼ POST /tenant/whatsapp
-token_encrypted = Fernet(WABA_ENCRYPTION_KEY).encrypt(token.encode())
-tenant.waba_access_token_encrypted = token_encrypted
-tenant.waba_phone_number_id = phone_number_id
-db.session.commit()
-    │
-    ▼ Inbound webhook uses:
-Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
-    │
-    ▼ Outbound uses:
-token = Fernet(WABA_ENCRYPTION_KEY).decrypt(tenant.waba_access_token_encrypted)
+POST /tenant/whatsapp/es/start      pre-flight; one-time nonce (session, 10 min,
+                                    bound to user + tenant)
+FB.login (config_id, response_type=code, Embedded Signup v4)
+  message event WA_EMBEDDED_SIGNUP  origin must be facebook.com; waba_id /
+                                    phone_number_id are HINTS only
+POST /tenant/whatsapp/es/complete   within the code's 30-second lifetime:
+  GET  /oauth/access_token          client_id + client_secret + code
+                                    -> business integration system user token
+  GET  /debug_token                 Authorization: META_SYSTEM_USER_TOKEN;
+                                    WABA must be in whatsapp_business_management
+                                    target_ids and equal the hint
+  GET  /{waba_id}/phone_numbers     number must be listed and equal the hint
+  bind (row lock; tenant still unbound; unique phone + WABA indexes)
+  -> VERIFIED_PENDING_ACTIVATION
+POST /tenant/whatsapp/es/activate   tenant's 6-digit two-step PIN (never stored)
+  POST /{phone_number_id}/register
+  POST /{waba_id}/subscribed_apps   required for webhook delivery
+  -> CONNECTED (tenant must add a payment method in WhatsApp Manager)
+```
+
+The tenant always comes from the session, never the request. The code, the
+business token, the PIN and `META_SYSTEM_USER_TOKEN` are never logged, audited,
+returned or stored in the session; the business token is stored encrypted.
+Failures before the bind persist nothing; registration/subscription failures
+keep `VERIFIED_PENDING_ACTIVATION` and are retryable. A 401 from the tenant's
+Test Connection on a connected Embedded Signup tenant sets
+`RECONNECT_REQUIRED` (the customer removed the app).
+
+Connection columns (all NULL for a manual binding): `waba_id` (partial unique),
+`whatsapp_connection_status`, `waba_connection_source` (`embedded_signup`),
+`waba_token_obtained_at` (audit metadata; business tokens do not expire by
+default). Configuration (environment, no defaults): `META_APP_ID`,
+`META_ES_CONFIG_ID`, `META_SYSTEM_USER_TOKEN`, plus `META_APP_SECRET`.
+
+Still to be confirmed in the first flagged live-tenant test (not assumed):
+whether the exchange needs `redirect_uri`; whether `debug_token` accepts an app
+token instead of the System User token; registration idempotency; PIN retry /
+lockout; phone-number id stability; Graph v21.0 compatibility with Embedded
+Signup v4.
+
+### 13.3 Credential resolution
+
+```
+Inbound webhook:  Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
+Outbound:         _get_waba_credentials(tenant_id)
+                    tenant's DB id + MultiFernet-decrypted token, else
+                    env PHONE_NUMBER_ID / ACCESS_TOKEN ONLY for PRIMARY_TENANT_ID,
+                    else error (no cross-tenant fallback)
 ```
 
 ---
@@ -479,6 +528,8 @@ in background threads.
 | Per-tenant follow-up templates | 16 | Store templates in DB, not hardcoded |
 | WhatsApp template message management | 17 | Manage approved templates per tenant |
 | Read receipt tracking | 17 | Track message delivery and read status |
+| Embedded Signup production enablement | RC2.5.19-E | Flag ON after Meta prerequisites and a live test tenant |
+| Graph API upgrade from v21.0 | before 2027-01-21 | Separate authorised phase |
 
 ---
 

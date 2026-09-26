@@ -417,7 +417,9 @@ class TestIdempotency:
                     revs[r.group(1)] = re.findall(r"['\"](\w+)['\"]", d.group(1)) if d else []
         children = {p for ps in revs.values() for p in ps}
         heads = [r for r in revs if r not in children]
-        assert heads == ["c7e19d4a2b58"], heads
+        # UPDATED BY RC2.5.19-E: e2b7c41d9f63 descends from c7e19d4a2b58.
+        assert heads == ["e2b7c41d9f63"], heads
+        assert revs["e2b7c41d9f63"] == ["c7e19d4a2b58"]
 
 
 # ═══ 5. logs ════════════════════════════════════════════════════════════════

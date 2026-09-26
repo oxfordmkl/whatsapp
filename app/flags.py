@@ -50,6 +50,11 @@ CAMPAIGN_ENGINE_V2 = "CAMPAIGN_ENGINE_V2"
 STAFF_IDENTITY_DUAL_WRITE = "STAFF_IDENTITY_DUAL_WRITE"
 STAFF_IDENTITY_READ_FK = "STAFF_IDENTITY_READ_FK"
 
+# Phase RC2.5.19-E — WhatsApp Embedded Signup for tenant admins. Default OFF;
+# turning it on is a separately authorised production step, after the Meta
+# dashboard prerequisites are met. OFF hides the UI and 404s every endpoint.
+WA_EMBEDDED_SIGNUP_ENABLED = "WA_EMBEDDED_SIGNUP_ENABLED"
+
 
 def _enabled(name: str) -> bool:
     """Return True iff env var `name` is set to a truthy value (read live)."""
@@ -109,3 +114,12 @@ def staff_identity_read_fk_enabled() -> bool:
     flag in the Expand phase.
     """
     return _enabled(STAFF_IDENTITY_READ_FK)
+
+
+def wa_embedded_signup_enabled() -> bool:
+    """Phase RC2.5.19-E gate — WhatsApp Embedded Signup. Default OFF.
+
+    OFF: the Connect WhatsApp UI is not rendered and every /tenant/whatsapp/es/*
+    endpoint returns 404. Existing bindings are unaffected either way.
+    """
+    return _enabled(WA_EMBEDDED_SIGNUP_ENABLED)

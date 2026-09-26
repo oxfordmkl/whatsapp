@@ -81,6 +81,23 @@ SECRET_KEY           = os.environ.get("SECRET_KEY", "oxford-crm-local-dev-key")
 # lifetime that is a five-minute window of failed verifications, not data loss.
 OTP_HMAC_KEY         = os.environ.get("OTP_HMAC_KEY", "")
 
+# Phase RC2.5.19-E: WhatsApp Embedded Signup (Tech Provider). All three are
+# environment-only with NO default; if any is missing the feature reports
+# itself unavailable (embedded_signup_service.is_configured) rather than the
+# process refusing to start -- same rationale as OTP_HMAC_KEY above.
+#
+#   META_APP_ID            public app identifier (FB.init and code exchange)
+#   META_ES_CONFIG_ID      Facebook Login for Business configuration id
+#   META_SYSTEM_USER_TOKEN SECRET. Oxford's own System User token; used ONLY
+#                          as the Authorization of GET /debug_token to verify
+#                          which WABA a customer's business token was granted.
+#                          Never logged, returned, rendered or stored.
+#
+# The code exchange also uses META_APP_SECRET (above) as client_secret.
+META_APP_ID            = os.environ.get("META_APP_ID", "")
+META_ES_CONFIG_ID      = os.environ.get("META_ES_CONFIG_ID", "")
+META_SYSTEM_USER_TOKEN = os.environ.get("META_SYSTEM_USER_TOKEN", "")
+
 # Phase 15C.5-B: Email Configuration
 EMAIL_PROVIDER       = os.environ.get("EMAIL_PROVIDER", "brevo")
 BREVO_API_KEY        = os.environ.get("BREVO_API_KEY", "")

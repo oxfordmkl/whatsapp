@@ -48,6 +48,23 @@ class Tenant(db.Model):
     # NULL until WABA onboarding completes.
     waba_access_token_encrypted = db.Column(db.Text, nullable=True)
 
+    # ── Phase RC2.5.19-E: WhatsApp Embedded Signup connection ─────────────
+    # One connection per tenant. All NULL for a tenant bound manually before
+    # E (Oxford) -- no backfill; NULL status means "not managed by E".
+    #
+    # The WhatsApp Business Account the number belongs to, as VERIFIED
+    # server-side (debug_token + /{waba_id}/phone_numbers). Unique where set:
+    # one WABA can be connected to one tenant only.
+    waba_id                     = db.Column(db.String(50), nullable=True)
+    # NULL | VERIFIED_PENDING_ACTIVATION | CONNECTED | RECONNECT_REQUIRED
+    # (embedded_signup_service.STATUS_*).
+    whatsapp_connection_status  = db.Column(db.String(30), nullable=True)
+    # NULL (pre-E manual binding) | 'embedded_signup'
+    waba_connection_source      = db.Column(db.String(20), nullable=True)
+    # When the business token was obtained. Audit metadata ONLY: Meta's
+    # business tokens do not expire by default, so this is never enforced.
+    waba_token_obtained_at      = db.Column(db.DateTime, nullable=True)
+
     # ── Phase 13-A2B: Per-Tenant AI Persona Fields ────────────────────────
     # Bot display name shown to leads (e.g., "Oxford Nova", "Priya", "Rahul").
     # NULL = system default persona.
@@ -69,6 +86,13 @@ class Tenant(db.Model):
 
     # ── Audit ──────────────────────────────────────────────────────────────
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # Phase RC2.5.19-E: a WABA can be connected to one tenant only.
+        db.Index("uq_tenants_waba_id", "waba_id", unique=True,
+                 postgresql_where=db.text("waba_id IS NOT NULL"),
+                 sqlite_where=db.text("waba_id IS NOT NULL")),
+    )
 
 
 class User(UserMixin, db.Model):

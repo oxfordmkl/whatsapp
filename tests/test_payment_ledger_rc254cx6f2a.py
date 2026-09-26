@@ -545,7 +545,10 @@ class TestMigration:
         # durable rate_limit_counters table) on top of the one-active index.
         # UPDATED AGAIN BY RC2.5.19-D, which adds c7e19d4a2b58 (the inbound
         # wamid partial unique index) on top of the rate-limit table.
-        assert heads == ["c7e19d4a2b58"], f"expected one head, found {heads}"
+        # UPDATED AGAIN BY RC2.5.19-E, which adds e2b7c41d9f63 (tenant
+        # WhatsApp connection columns) on top of the wamid index.
+        assert heads == ["e2b7c41d9f63"], f"expected one head, found {heads}"
+        assert revs["e2b7c41d9f63"] == "c7e19d4a2b58"
         assert revs["c7e19d4a2b58"] == "a4f2c70b19de"
         assert revs["a4f2c70b19de"] == "d1b6c48e7f92"
         assert revs["d1b6c48e7f92"] == "c9e5a1f38b64"

@@ -97,6 +97,11 @@ PROTECTED_FETCH = sorted([
     ("templates/crm_staff_allocation_detail.html", "/crm/reassignment-center/confirm"),
     ("templates/crm_unassigned_leads.html", "/crm/leads/unassigned/auto-assign-preview"),
     ("templates/crm_unassigned_leads.html", "/crm/leads/unassigned/auto-assign-confirm"),
+    # ADDED BY RC2.5.19-E: the three Embedded Signup endpoints (session-auth,
+    # CSRF-protected JSON POSTs; not exempt).
+    ("templates/tenant/whatsapp.html", "/tenant/whatsapp/es/start"),
+    ("templates/tenant/whatsapp.html", "/tenant/whatsapp/es/complete"),
+    ("templates/tenant/whatsapp.html", "/tenant/whatsapp/es/activate"),
 ])
 
 EXEMPT_FETCH = sorted([
@@ -145,7 +150,10 @@ PRE_B1C_SHA = {
     # forms, the unbound notice, the read-only number field). The token
     # insertions are unchanged; the pre-C hash is kept.
     "templates/tenant/whatsapp.html": {"7897d78be46f0aacb6916a4b25c8c4ad796e2c79e6d1a1c46a7020bf3eff077e",
-                                       "9b1721d5a637f8692a4e70dfa8d57e1253f37cb9f3ba47f49d29c1df39f0c9c3"},
+                                       "9b1721d5a637f8692a4e70dfa8d57e1253f37cb9f3ba47f49d29c1df39f0c9c3",
+                                       # RC2.5.19-E: the Embedded Signup card, its
+                                       # script and three protected fetch() POSTs.
+                                       "5e741196338496578f2aa3151d6e039d8c874f2caf9f213e92b4e098099e53b6"},
 }
 
 # ADDED BY RC2.5.4c-x-6f2b-B1d: every template OUTSIDE the 26 B1c edited, pinned
@@ -319,9 +327,11 @@ class TestFetchCoverage:
     def _state_changing():
         return [f for f in _fetches() if f[1] in ("POST", "PUT", "PATCH", "DELETE")]
 
-    def test_there_are_16_state_changing_fetches_10_protected_6_exempt(self):
+    def test_there_are_19_state_changing_fetches_13_protected_6_exempt(self):
+        # RC2.5.19-E: was 16 / 10 / 6. whatsapp.html adds three protected
+        # POSTs (es/start, es/complete, es/activate); the exempt six are unchanged.
         rows = self._state_changing()
-        assert len(rows) == 16
+        assert len(rows) == 19
         assert sorted((r, u) for r, _m, u, _c in rows if not _is_exempt(u)) == \
             sorted((r, u) for r, u in PROTECTED_FETCH)
         assert len([1 for _r, _m, u, _c in rows if _is_exempt(u)]) == 6
@@ -346,8 +356,9 @@ class TestFetchCoverage:
     def test_get_fetches_are_untouched(self):
         assert [(r, u) for r, m, u, c in _fetches() if m == "GET" and "X-CSRFToken" in c] == []
 
-    def test_the_platform_holds_exactly_10_header_keys(self):
-        assert sum(_read(rel).count("X-CSRFToken") for rel in _templates()) == 10
+    def test_the_platform_holds_exactly_13_header_keys(self):
+        # RC2.5.19-E: was 10; one per new Embedded Signup fetch.
+        assert sum(_read(rel).count("X-CSRFToken") for rel in _templates()) == 13
 
     def test_panel_html_is_entirely_untouched(self):
         """Its only state-changing fetches are the exempt X-API-Key calls."""

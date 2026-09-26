@@ -176,7 +176,10 @@ class TestInitialisation:
         reshape a single route, and any future change to the surface has to
         come here and say so. Two were removed deliberately, so this is 113.
         """
-        assert len(list(_APP.url_map.iter_rules())) == 113
+        # RC2.5.19-E: 113 -> 116, three approved Embedded Signup routes:
+        # /tenant/whatsapp/es/start, /tenant/whatsapp/es/complete,
+        # /tenant/whatsapp/es/activate.
+        assert len(list(_APP.url_map.iter_rules())) == 116
 
 
 # ── enforcement happens before any view body ────────────────────────────────

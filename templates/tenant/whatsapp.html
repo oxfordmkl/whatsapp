@@ -58,6 +58,191 @@
       </div>
     </div>
 
+    {# Phase RC2.5.19-E: WhatsApp Embedded Signup. Rendered only when the
+       WA_EMBEDDED_SIGNUP_ENABLED flag is on and the viewer is the tenant's own
+       ADMIN; every endpoint re-checks those rules and the pre-flight server-side.
+       Nothing secret is ever placed in this page: app_id and config_id are
+       public identifiers. #}
+    {% if es_enabled %}
+    <div class="t-card" id="es-card" style="margin-bottom:1.5rem;">
+      <div class="t-card-title"><i class="bi bi-lightning-charge me-1"></i> Connect WhatsApp with Meta</div>
+
+      {% if es_status == es_statuses.STATUS_CONNECTED %}
+        <div style="color:var(--green);font-weight:600;"><i class="bi bi-check-circle-fill me-1"></i> Connected</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.4rem;">
+          Your number is registered and receiving messages. Before you can send messages,
+          add a payment method for your WhatsApp Business Account in Meta's WhatsApp Manager.
+        </div>
+
+      {% elif es_status == es_statuses.STATUS_PENDING_ACTIVATION %}
+        <div style="color:var(--yellow);font-weight:600;"><i class="bi bi-hourglass-split me-1"></i> Verified — activation needed</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin:0.4rem 0 1rem;">
+          Your WhatsApp Business Account and number are verified. Enter the 6-digit two-step
+          verification PIN for this number to register it and start receiving messages.
+          The PIN is sent to Meta only and is never stored.
+        </div>
+        <div class="t-field" style="margin-bottom:1rem;">
+          <label for="es-pin">Two-step verification PIN</label>
+          <input type="password" id="es-pin" inputmode="numeric" autocomplete="off"
+                 maxlength="6" pattern="[0-9]{6}" placeholder="6 digits">
+        </div>
+        <button type="button" id="es-activate" class="t-btn t-btn-primary"
+                style="display:flex;align-items:center;gap:0.5rem;width:100%;justify-content:center;">
+          <i class="bi bi-plug"></i> Activate number
+        </button>
+
+      {% elif es_status == es_statuses.STATUS_RECONNECT_REQUIRED %}
+        <div style="color:var(--red, #ef4444);font-weight:600;"><i class="bi bi-exclamation-triangle-fill me-1"></i> Reconnect required</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.4rem;">
+          Meta no longer accepts this connection — access may have been removed in Business
+          Settings. Disconnect below, then connect WhatsApp again.
+        </div>
+
+      {% elif es_blockers %}
+        <div style="font-size:0.85rem;color:var(--text-muted);">
+          <i class="bi bi-info-circle me-1"></i>
+          {% if 'already_bound' in es_blockers %}WhatsApp is already set up for this account.
+          {% elif 'tenant_inactive' in es_blockers %}Your account must be active before you can connect WhatsApp.
+          {% else %}WhatsApp signup is not available right now. Please contact support.{% endif %}
+        </div>
+
+      {% else %}
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
+          Sign in with Facebook, choose or create your WhatsApp Business Account and phone number,
+          and we will verify and connect it for you. You will then activate the number with its
+          two-step verification PIN.
+        </div>
+        <button type="button" id="es-connect" class="t-btn t-btn-primary"
+                style="display:flex;align-items:center;gap:0.5rem;width:100%;justify-content:center;">
+          <i class="bi bi-whatsapp"></i> Connect WhatsApp
+        </button>
+      {% endif %}
+
+      <div id="es-progress" role="status" aria-live="polite"
+           style="font-size:0.85rem;margin-top:0.75rem;color:var(--text-muted);"></div>
+    </div>
+
+    <script>
+    (function () {
+      var progress = document.getElementById('es-progress');
+      function say(text, tone) {
+        progress.textContent = text;
+        progress.style.color = tone === 'bad' ? 'var(--red, #ef4444)'
+                             : tone === 'good' ? 'var(--green)' : 'var(--text-muted)';
+      }
+      function done(res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          return {ok: res.ok, body: body};
+        });
+      }
+
+      var activateBtn = document.getElementById('es-activate');
+      if (activateBtn) {
+        activateBtn.addEventListener('click', function () {
+          var pinInput = document.getElementById('es-pin');
+          var pin = pinInput.value;
+          pinInput.value = '';
+          if (!/^[0-9]{6}$/.test(pin)) { say('Enter the 6-digit two-step verification PIN.', 'bad'); return; }
+          activateBtn.disabled = true;
+          say('Registering your number with Meta…');
+          fetch('/tenant/whatsapp/es/activate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': '{{ csrf_token() }}',
+            },
+            body: JSON.stringify({pin: pin}),
+          }).then(done).then(function (r) {
+            pin = null;
+            if (r.ok) { say('Connected. Reloading…', 'good'); window.location.reload(); }
+            else { say(r.body.message || 'Activation failed.', 'bad'); activateBtn.disabled = false; }
+          }).catch(function () { say('Could not reach the server. Please try again.', 'bad'); activateBtn.disabled = false; });
+        });
+      }
+
+      var connectBtn = document.getElementById('es-connect');
+      if (!connectBtn) { return; }
+
+      var ES = {appId: {{ es_config.app_id | tojson }}, configId: {{ es_config.config_id | tojson }},
+                version: {{ es_config.graph_version | tojson }}};
+      var session = null;   // {event, waba_id, phone_number_id} from Meta's message event
+
+      // Meta reports the signup outcome to this window. Only messages from a
+      // facebook.com origin are read, and their ids are HINTS: the server
+      // verifies both against Meta before anything is bound.
+      window.addEventListener('message', function (event) {
+        if (!/(^|\.)facebook\.com$/.test(new URL(event.origin).hostname)) { return; }
+        var data;
+        try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; }
+        catch (e) { return; }
+        if (!data || data.type !== 'WA_EMBEDDED_SIGNUP') { return; }
+        session = {event: data.event, waba_id: data.data && data.data.waba_id,
+                   phone_number_id: data.data && data.data.phone_number_id};
+      });
+
+      function complete(nonce, code, tries) {
+        if (!session && tries < 20) { return setTimeout(function () { complete(nonce, code, tries + 1); }, 150); }
+        if (!session || session.event === 'CANCEL' || session.event === 'ERROR') {
+          say('Signup was not completed. You can start again at any time.', 'bad'); connectBtn.disabled = false; return;
+        }
+        if (session.event === 'FINISH_ONLY_WABA') {
+          say('Signup finished without a phone number. Start again and add a phone number.', 'bad'); connectBtn.disabled = false; return;
+        }
+        if (session.event !== 'FINISH') {
+          say('This type of WhatsApp number cannot be connected here. Please contact support.', 'bad'); connectBtn.disabled = false; return;
+        }
+        say('Verifying your WhatsApp Business Account with Meta…');
+        fetch('/tenant/whatsapp/es/complete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token() }}',
+          },
+          body: JSON.stringify({nonce: nonce, code: code, waba_id: session.waba_id,
+                                phone_number_id: session.phone_number_id}),
+        }).then(done).then(function (r) {
+          if (r.ok) { say('Verified. Reloading to activate your number…', 'good'); window.location.reload(); }
+          else { say(r.body.message || 'Signup failed.', 'bad'); connectBtn.disabled = false; }
+        }).catch(function () { say('Could not reach the server. Please try again.', 'bad'); connectBtn.disabled = false; });
+      }
+
+      function launch(nonce) {
+        session = null;
+        FB.login(function (response) {
+          var code = response && response.authResponse && response.authResponse.code;
+          if (!code) { say('Signup was not completed. You can start again at any time.', 'bad'); connectBtn.disabled = false; return; }
+          complete(nonce, code, 0);   // the code expires in 30 seconds: exchange now
+        }, {config_id: ES.configId, response_type: 'code',
+            override_default_response_type: true, extras: {setup: {}}});
+      }
+
+      window.fbAsyncInit = function () {
+        FB.init({appId: ES.appId, autoLogAppEvents: true, xfbml: false, version: ES.version});
+      };
+
+      connectBtn.addEventListener('click', function () {
+        if (typeof FB === 'undefined') { say('Facebook could not be loaded. Check your connection and try again.', 'bad'); return; }
+        connectBtn.disabled = true;
+        say('Starting signup…');
+        fetch('/tenant/whatsapp/es/start', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token() }}',
+          },
+          body: '{}',
+        }).then(done).then(function (r) {
+          if (r.ok && r.body.nonce) { say('Continue in the Facebook window…'); launch(r.body.nonce); }
+          else { say(r.body.message || 'Signup is not available.', 'bad'); connectBtn.disabled = false; }
+        }).catch(function () { say('Could not reach the server. Please try again.', 'bad'); connectBtn.disabled = false; });
+      });
+    })();
+    </script>
+    {% if es_config and not es_status and not es_blockers %}
+    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+    {% endif %}
+    {% endif %}
+
     <!-- WhatsApp Settings Form -->
     <div class="t-card">
       <div class="t-card-title">Configure Meta Credentials</div>

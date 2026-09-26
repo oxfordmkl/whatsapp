@@ -769,8 +769,9 @@ class TestScope:
                 downs.add(dn.group(1))
         # UPDATED BY RC2.5.19-D: this phase added no migration; RC2.5.19-D
         # adds exactly one, c7e19d4a2b58, on top of a4f2c70b19de.
-        assert revs - downs == {"c7e19d4a2b58"}
-        assert len(revs) == 32
+        # UPDATED AGAIN BY RC2.5.19-E: e2b7c41d9f63 on top of c7e19d4a2b58.
+        assert revs - downs == {"e2b7c41d9f63"}
+        assert len(revs) == 33
 
     def test_register_route_is_untouched_by_this_phase(self):
         src = open(os.path.join(ROOT, "app", "routes", "public.py"),

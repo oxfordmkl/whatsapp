@@ -454,9 +454,20 @@ def tenant_whatsapp():
     # Phase RC2.5.19-C (C2): what this viewer may do. Presentation only -- the
     # save route enforces the same rule server-side.
     is_super = getattr(current_user, 'role', None) == 'SUPER_ADMIN'
+    # Phase RC2.5.19-E: Embedded Signup. es_enabled/es_blockers only decide
+    # what is SHOWN; every es/* endpoint re-checks the same rules itself.
+    from app.flags import wa_embedded_signup_enabled
+    from app.services import embedded_signup_service as es
+    es_enabled = wa_embedded_signup_enabled() and _es_actor_allowed()
     return render_template('tenant/whatsapp.html', tenant=tenant, has_token=has_token,
                            can_bind=is_super,
-                           wa_tenant_param=(tenant.id if is_super else None))
+                           wa_tenant_param=(tenant.id if is_super else None),
+                           es_enabled=es_enabled,
+                           es_blockers=(_es_preflight(tenant) if es_enabled else []),
+                           es_config=(es.public_config() if es_enabled else None),
+                           es_status=tenant.whatsapp_connection_status,
+                           es_source=tenant.waba_connection_source,
+                           es_statuses=es)
 
 
 @tenant_bp.route('/whatsapp/save', methods=['POST'])
@@ -542,6 +553,11 @@ def tenant_whatsapp_save():
         return redirect(_back)
 
     tenant.waba_phone_number_id = phone_number_id
+    if phone_number_id != _previous_id:
+        # Phase RC2.5.19-E: a manual (re)bind replaces any Embedded Signup
+        # connection wholesale -- its WABA id and status described the old
+        # number and must not outlive it.
+        _reset_es_connection(tenant)
 
     if access_token:
         # Encrypt and save new token
@@ -656,6 +672,9 @@ def tenant_whatsapp_clear():
     _released = tenant.waba_phone_number_id
     tenant.waba_phone_number_id = None
     tenant.waba_access_token_encrypted = None
+    # Phase RC2.5.19-E: releasing the identity releases the Embedded Signup
+    # connection with it (WABA id, status, source, obtained_at).
+    _reset_es_connection(tenant)
 
     try:
         db.session.commit()
@@ -718,6 +737,22 @@ def tenant_whatsapp_test():
 
     result = wa.check_tenant_whatsapp(tenant.id)
 
+    # Phase RC2.5.19-E: an Embedded Signup business token does not expire by
+    # default, but the customer can revoke it by removing the app. A 401 on a
+    # connected Embedded Signup tenant therefore means "run signup again".
+    from app.services import embedded_signup_service as es
+    if (result.status == wa.HEALTH_UNAUTHORIZED
+            and tenant.waba_connection_source == es.SOURCE_EMBEDDED_SIGNUP
+            and tenant.whatsapp_connection_status == es.STATUS_CONNECTED):
+        tenant.whatsapp_connection_status = es.STATUS_RECONNECT_REQUIRED
+        try:
+            db.session.commit()
+        except Exception as e:                              # noqa: BLE001
+            db.session.rollback()
+            import logging
+            logging.error('RC2.5.19-E: reconnect flag failed for tenant %s: %s',
+                          tenant.id, type(e).__name__)
+
     # Fixed, user-facing messages. Meta's response body is never shown; the
     # HTTP status and Meta's numeric error code are, because a tenant admin
     # needs them to raise a support ticket and they carry no secret.
@@ -743,6 +778,244 @@ def tenant_whatsapp_test():
                                   ('danger', 'Test connection failed.'))
     flash(text, category)
     return redirect(_back)
+
+
+# ── Phase RC2.5.19-E: WhatsApp Embedded Signup ────────────────────────────────
+#
+# Three JSON endpoints, all CSRF-protected (X-CSRFToken header), all 404 while
+# WA_EMBEDDED_SIGNUP_ENABLED is off, all tenant-ADMIN-only:
+#
+#   POST es/start     pre-flight + one-time nonce        -> {nonce}
+#   POST es/complete  nonce + code + popup hints         -> verified binding
+#   POST es/activate  6-digit PIN                        -> register + subscribe
+#
+# THE TENANT IS NEVER TAKEN FROM THE REQUEST. It is current_user.tenant_id,
+# pinned into the nonce at start and required to match at completion. There
+# is no ?tenant_id= path: SUPER_ADMIN, and anyone impersonating, is refused
+# (approved decision E-D3) -- signup authorises whichever Meta business the
+# person logged in to Facebook owns, so only the tenant's own admin may run it.
+#
+# NONCE AND REPLAY. The nonce lives in the Flask session, which in this
+# application is a SIGNED COOKIE (tamper-proof, not server-stored). It is
+# removed on first use and expires after _ES_NONCE_TTL. A replayed older
+# cookie cannot bind twice: a successful completion binds the tenant, and
+# every later completion is refused because the tenant is no longer unbound
+# (E-D4). A replayed failed attempt can only fail again.
+#
+# NOTHING SECRET LEAVES THE SERVER: responses carry a status and a fixed
+# message; the code, business token and PIN are never echoed, logged, audited
+# or put in the session.
+
+_ES_NONCE_TTL = 600          # seconds
+_ES_SESSION_KEY = 'wa_es'
+
+_ES_MESSAGES = {
+    'not_configured': 'WhatsApp signup is not available right now. Please contact support.',
+    'tenant_inactive': 'Your account must be active before you can connect WhatsApp.',
+    'already_bound': 'This account, number or WhatsApp Business Account is already '
+                     'connected. Disconnect first, or contact support.',
+    'invalid_session': 'Your signup session expired or is invalid. Please start again.',
+    'invalid_request': 'The signup did not complete. Please start again.',
+    'exchange_failed': 'Meta did not confirm the signup. Please start again.',
+    'waba_not_granted': 'Meta did not grant access to that WhatsApp Business Account. '
+                        'Please start again and select it.',
+    'phone_not_in_waba': 'That phone number is not part of the selected WhatsApp '
+                         'Business Account. Please start again.',
+    'transport': 'Could not reach Meta. Please try again shortly.',
+    'storage_failed': 'The connection could not be saved. Please try again.',
+    'invalid_pin': 'Enter the 6-digit two-step verification PIN.',
+    'not_pending': 'There is no WhatsApp connection waiting for activation.',
+    'register_failed': 'Meta did not register the phone number. Check the PIN and try again.',
+    'subscribe_failed': 'The number was registered but message delivery could not be '
+                        'enabled yet. Please try again.',
+    'unexpected': 'WhatsApp signup failed. Please try again or contact support.',
+}
+
+
+def _es_actor_allowed():
+    """Tenant ADMIN acting as themselves: not SUPER_ADMIN, not impersonating."""
+    from flask import session
+    return (getattr(current_user, 'role', None) == 'ADMIN'
+            and not session.get('impersonate_tenant_id'))
+
+
+def _es_preflight(tenant):
+    """Every reason this tenant may not start or complete signup right now."""
+    from app.services import embedded_signup_service as es
+    from app.services.whatsapp_service import tenant_accepts_whatsapp_inbound
+    blockers = []
+    if not es.is_configured():
+        blockers.append('not_configured')
+    if not tenant_accepts_whatsapp_inbound(tenant):          # ACTIVE / TRIAL (E-D2)
+        blockers.append('tenant_inactive')
+    if tenant.waba_phone_number_id or tenant.waba_access_token_encrypted:
+        blockers.append('already_bound')                     # unbound only (E-D4)
+    return blockers
+
+
+def _reset_es_connection(tenant):
+    tenant.waba_id = None
+    tenant.whatsapp_connection_status = None
+    tenant.waba_connection_source = None
+    tenant.waba_token_obtained_at = None
+
+
+def _es_endpoint(f):
+    """Flag gate (404) + authenticated tenant ADMIN acting as themselves (403)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        from app.flags import wa_embedded_signup_enabled
+        if not wa_embedded_signup_enabled():
+            abort(404)
+        if not current_user.is_authenticated:
+            abort(401)
+        if not _es_actor_allowed():
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _es_json(status_code, *, status, reason=None, **extra):
+    from flask import jsonify
+    body = {'status': status}
+    if reason:
+        body['reason'] = reason
+        body['message'] = _ES_MESSAGES.get(reason, 'WhatsApp signup failed.')
+    body.update(extra)
+    return jsonify(body), status_code
+
+
+def _es_audit(tenant_id, event, **detail):
+    """TENANT_SETTINGS_CHANGE audit row. Never a code, token or PIN."""
+    try:
+        from app.services.audit_service import log_audit, request_ip
+        log_audit('TENANT_SETTINGS_CHANGE',
+                  actor=getattr(current_user, 'email', None)
+                  or getattr(current_user, 'username', None),
+                  tenant_id=tenant_id, target='whatsapp_embedded_signup',
+                  detail={'event': event, **detail}, ip=request_ip())
+    except Exception:                                         # noqa: BLE001
+        import logging
+        logging.exception('RC2.5.19-E: audit write failed for %s', event)
+
+
+def _own_tenant():
+    from app.models import Tenant
+    tid = getattr(current_user, 'tenant_id', None)
+    return Tenant.query.get(tid) if tid else None
+
+
+@tenant_bp.route('/whatsapp/es/start', methods=['POST'])
+@login_required
+@_es_endpoint
+def tenant_whatsapp_es_start():
+    import secrets
+    import time
+    from flask import session
+    tenant = _own_tenant()
+    if tenant is None:
+        abort(403)
+    blockers = _es_preflight(tenant)
+    if blockers:
+        return _es_json(409, status='blocked', reason=blockers[0])
+    nonce = secrets.token_urlsafe(32)
+    session[_ES_SESSION_KEY] = {'nonce': nonce, 'tenant_id': tenant.id,
+                                'user_id': str(current_user.get_id()),
+                                'issued_at': int(time.time())}
+    return _es_json(200, status='started', nonce=nonce)
+
+
+@tenant_bp.route('/whatsapp/es/complete', methods=['POST'])
+@login_required
+@_es_endpoint
+def tenant_whatsapp_es_complete():
+    import hmac
+    import time
+    from flask import session
+    from app.services import embedded_signup_service as es
+
+    # Consume the nonce FIRST, whatever happens next: one attempt per nonce.
+    pending = session.pop(_ES_SESSION_KEY, None)
+    payload = request.get_json(silent=True) or {}
+    tenant = _own_tenant()
+    if tenant is None:
+        abort(403)
+
+    nonce = payload.get('nonce')
+    if (not isinstance(pending, dict) or not isinstance(nonce, str)
+            or not hmac.compare_digest(nonce.encode(), str(pending.get('nonce', '')).encode())
+            or pending.get('tenant_id') != tenant.id
+            or pending.get('user_id') != str(current_user.get_id())
+            or int(time.time()) - int(pending.get('issued_at', 0)) > _ES_NONCE_TTL):
+        return _es_json(400, status='failed', reason='invalid_session')
+
+    blockers = _es_preflight(tenant)
+    if blockers:
+        return _es_json(409, status='blocked', reason=blockers[0])
+
+    code = payload.get('code')
+    waba_hint = payload.get('waba_id')
+    phone_hint = payload.get('phone_number_id')
+    if not (isinstance(code, str) and code
+            and isinstance(waba_hint, str) and waba_hint.isdigit()
+            and isinstance(phone_hint, str) and phone_hint.isdigit()):
+        return _es_json(400, status='failed', reason='invalid_request')
+
+    try:
+        token = es.exchange_code(code)
+        waba_id = es.verified_waba_id(token, waba_hint)
+        phone_id = es.verify_phone(token, waba_id, phone_hint)
+        es.bind_connection(tenant.id, waba_id, phone_id, token)
+    except es.SignupError as e:
+        _es_audit(tenant.id, 'es_failed', category=e.category,
+                  http_status=e.http_status, meta_code=e.meta_code)
+        return _es_json(409 if e.category == es.ALREADY_BOUND else 502,
+                        status='failed', reason=e.category)
+    except Exception as e:                                    # noqa: BLE001
+        import logging
+        logging.error('RC2.5.19-E: signup completion failed for tenant %s: %s',
+                      tenant.id, type(e).__name__)
+        _es_audit(tenant.id, 'es_failed', category='unexpected')
+        return _es_json(500, status='failed', reason='unexpected')
+    finally:
+        token = None                                          # drop the reference
+
+    _es_audit(tenant.id, 'es_bound', waba_id=waba_id, phone_number_id=phone_id,
+              by_role=getattr(current_user, 'role', None))
+    return _es_json(200, status=es.STATUS_PENDING_ACTIVATION)
+
+
+@tenant_bp.route('/whatsapp/es/activate', methods=['POST'])
+@login_required
+@_es_endpoint
+def tenant_whatsapp_es_activate():
+    import re
+    from app.services import embedded_signup_service as es
+    tenant = _own_tenant()
+    if tenant is None:
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    pin = payload.get('pin')
+    if not isinstance(pin, str) or not re.fullmatch(r'[0-9]{6}', pin):
+        return _es_json(400, status='failed', reason='invalid_pin')
+    try:
+        status = es.activate(tenant.id, pin)
+    except es.SignupError as e:
+        _es_audit(tenant.id, 'es_activation_failed', category=e.category,
+                  http_status=e.http_status, meta_code=e.meta_code)
+        return _es_json(409 if e.category == es.NOT_PENDING else 502,
+                        status='failed', reason=e.category)
+    except Exception as e:                                    # noqa: BLE001
+        import logging
+        logging.error('RC2.5.19-E: activation failed for tenant %s: %s',
+                      tenant.id, type(e).__name__)
+        _es_audit(tenant.id, 'es_activation_failed', category='unexpected')
+        return _es_json(500, status='failed', reason='unexpected')
+    finally:
+        pin = None
+    _es_audit(tenant.id, 'es_activated', phone_number_id=tenant.waba_phone_number_id,
+              waba_id=tenant.waba_id)
+    return _es_json(200, status=status)
 
 
 # \u2500\u2500 Phase RC2.5.4a: Courses & Knowledge (READ-ONLY) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500

@@ -832,7 +832,10 @@ class TestMigration:
         heads = [k for k in revs if k not in children]
         # UPDATED BY RC2.5.19-D: c7e19d4a2b58 (inbound wamid uniqueness)
         # descends from this phase's revision; the chain stays single-headed.
-        assert heads == ["c7e19d4a2b58"], heads
+        # UPDATED AGAIN BY RC2.5.19-E: e2b7c41d9f63 (tenant WhatsApp
+        # connection columns) on top; still single-headed.
+        assert heads == ["e2b7c41d9f63"], heads
+        assert revs["e2b7c41d9f63"] == "c7e19d4a2b58"
         assert revs["c7e19d4a2b58"] == "a4f2c70b19de"
 
     def test_it_is_additive_only(self):
