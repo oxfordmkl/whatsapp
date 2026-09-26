@@ -46,6 +46,13 @@ VALID_ACTIONS = {
     # Phase 10.3: bulk CSV import. DATA_EXPORT (reserved since Sprint 3) is
     # now actually used by the lead export route.
     "LEAD_IMPORT",
+    # Phase RC2.5.19-C: tenant configuration changes -- WhatsApp credential
+    # save, token replacement and identity release. RC2.4.2's /whatsapp/clear
+    # has logged this action since it shipped, but it was never added here, so
+    # log_audit() rejected every one of those events and wrote nothing; the
+    # only test checked for the string "log_audit" in the source. The detail
+    # payload carries an `event` discriminator and never a token or key.
+    "TENANT_SETTINGS_CHANGE",
 }
 
 

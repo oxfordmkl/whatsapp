@@ -704,6 +704,13 @@ class TestBareStubsStillImport:
 
         cfg = types.ModuleType("app.config")
         cfg.ACCESS_TOKEN, cfg.PHONE_NUMBER_ID = "t", "p"   # no TIMEOUT
+        # RC2.5.19-C: the Graph base has NO fallback by design (a fallback
+        # would be a second copy of the version), so even a bare stub must
+        # declare it. The timeout settings are still deliberately absent.
+        cfg.GRAPH_API_BASE = "https://graph.facebook.com/" + re.search(
+            r'^GRAPH_API_VERSION\s*=\s*"([^"]+)"',
+            open(os.path.join(ROOT, "app", "config.py"), encoding="utf-8").read(),
+            re.M).group(1)
         monkeypatch.setitem(sys.modules, "app.config", cfg)
         consts = types.ModuleType("app.bot.constants")
         consts.BUTTON_PRESETS = {"COURSE": []}

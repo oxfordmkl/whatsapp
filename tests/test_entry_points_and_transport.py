@@ -26,6 +26,21 @@ import pytest
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _real_graph_base():
+    """Graph base URL built from the REAL app/config.py (RC2.5.19-C).
+
+    Stub app.config modules must now declare GRAPH_API_BASE, because
+    whatsapp_service reads it with no fallback (a fallback would be a second
+    copy of the version). Reading the version from the real file keeps this
+    harness in step with any future, authorised version change.
+    """
+    import os as _os, re as _re
+    _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    with open(_os.path.join(_root, "app", "config.py"), encoding="utf-8") as fh:
+        ver = _re.search(r'^GRAPH_API_VERSION\s*=\s*"([^"]+)"', fh.read(), _re.M).group(1)
+    return f"https://graph.facebook.com/{ver}"
+
+
 def _load(unique_name, relpath, register_as=None, monkeypatch=None):
     path = os.path.join(_ROOT, relpath)
     spec = importlib.util.spec_from_file_location(unique_name, path)
@@ -62,6 +77,7 @@ def wa(monkeypatch):
 
     cfg = types.ModuleType("app.config")
     cfg.ACCESS_TOKEN, cfg.PHONE_NUMBER_ID, cfg.WHATSAPP_API_URL = "t", "p", "u"
+    cfg.GRAPH_API_BASE = _real_graph_base()   # RC2.5.19-C
     monkeypatch.setitem(sys.modules, "app.config", cfg)
 
     consts = types.ModuleType("app.bot.constants")
@@ -211,6 +227,7 @@ def env(monkeypatch):
     monkeypatch.setitem(sys.modules, "requests", req)
     wacfg = types.ModuleType("app.config")
     wacfg.ACCESS_TOKEN = wacfg.PHONE_NUMBER_ID = wacfg.WHATSAPP_API_URL = "x"
+    wacfg.GRAPH_API_BASE = _real_graph_base()   # RC2.5.19-C
     wacfg.GEMINI_API_KEY, wacfg.GEMINI_MODEL = "k", "m"
     monkeypatch.setitem(sys.modules, "app.config", wacfg)
     perf = types.ModuleType("app.perf")

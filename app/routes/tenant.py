@@ -66,6 +66,19 @@ def tenant_admin_required(f):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _whatsapp_page_url(tenant):
+    """URL of the WhatsApp settings page for `tenant`, preserving context.
+
+    Phase RC2.5.19-C: a SUPER_ADMIN acts on another tenant through
+    ?tenant_id= (_get_current_tenant). Redirecting back without it would land
+    the super admin on their OWN (usually absent) tenant after every save,
+    test or clear. A tenant ADMIN's URL is unchanged.
+    """
+    if getattr(current_user, 'role', None) == 'SUPER_ADMIN' and tenant is not None:
+        return url_for('tenant.tenant_whatsapp', tenant_id=tenant.id)
+    return url_for('tenant.tenant_whatsapp')
+
+
 def _get_current_tenant():
     """
     Returns the Tenant object for the current user.
@@ -438,7 +451,12 @@ def tenant_whatsapp():
         return redirect(url_for('tenant.tenant_home'))
         
     has_token = bool(tenant.waba_access_token_encrypted)
-    return render_template('tenant/whatsapp.html', tenant=tenant, has_token=has_token)
+    # Phase RC2.5.19-C (C2): what this viewer may do. Presentation only -- the
+    # save route enforces the same rule server-side.
+    is_super = getattr(current_user, 'role', None) == 'SUPER_ADMIN'
+    return render_template('tenant/whatsapp.html', tenant=tenant, has_token=has_token,
+                           can_bind=is_super,
+                           wa_tenant_param=(tenant.id if is_super else None))
 
 
 @tenant_bp.route('/whatsapp/save', methods=['POST'])
@@ -455,10 +473,44 @@ def tenant_whatsapp_save():
 
     phone_number_id = request.form.get('phone_number_id', '').strip()
     access_token = request.form.get('access_token', '').strip()
+    _back = _whatsapp_page_url(tenant)
 
     if not phone_number_id or not phone_number_id.isdigit():
         flash('Valid numeric Phone Number ID is required.', 'danger')
-        return redirect(url_for('tenant.tenant_whatsapp'))
+        return redirect(_back)
+
+    # ── Phase RC2.5.19-C (C2): WHO MAY BIND A PHONE NUMBER ID ──────────────
+    #
+    # Before this phase any tenant ADMIN could claim ANY unclaimed Phone Number
+    # ID: the checks below prove only that the id is numeric and not already
+    # taken. Inbound webhooks are routed to a tenant by exactly this column, so
+    # a tenant that claimed another business's number before that business
+    # connected would receive that business's customer conversations.
+    #
+    # Proving ownership through Meta was considered and rejected as the
+    # boundary: Meta documents GET /<PHONE_NUMBER_ID> but not that a token
+    # without access to the owning WABA is refused, and one Tech Provider /
+    # system-user token can legitimately read several businesses' numbers.
+    # So binding is restricted to SUPER_ADMIN, who acts on an explicit
+    # ?tenant_id= (see _get_current_tenant). A tenant ADMIN may still REPLACE
+    # THE TOKEN for the number already bound to their own tenant -- that
+    # cannot claim anything, and it keeps token rotation self-service.
+    #
+    # This is the security boundary; the template only hides what is refused.
+    _is_super = getattr(current_user, 'role', None) == 'SUPER_ADMIN'
+    if not _is_super:
+        if not tenant.waba_phone_number_id:
+            flash('Connecting a WhatsApp number to your account is done by a '
+                  'platform administrator. Please contact support.', 'danger')
+            return redirect(_back)
+        if phone_number_id != tenant.waba_phone_number_id:
+            flash('The Phone Number ID can only be changed by a platform '
+                  'administrator. You can replace the access token for your '
+                  'current number.', 'danger')
+            return redirect(_back)
+
+    _previous_id = tenant.waba_phone_number_id
+    _had_token = bool(tenant.waba_access_token_encrypted)
 
     # Phase RC2.4.2: refuse another tenant's WhatsApp identity.
     #
@@ -487,7 +539,7 @@ def tenant_whatsapp_save():
         flash('That WhatsApp Phone Number ID is already configured for '
               'another account. Each WhatsApp number can belong to only one '
               'account.', 'danger')
-        return redirect(url_for('tenant.tenant_whatsapp'))
+        return redirect(_back)
 
     tenant.waba_phone_number_id = phone_number_id
 
@@ -496,9 +548,17 @@ def tenant_whatsapp_save():
         try:
             tenant.waba_access_token_encrypted = encrypt_token(access_token)
         except Exception as e:
-            flash(f'Encryption failed: {e}', 'danger')
-            return redirect(url_for('tenant.tenant_whatsapp'))
+            # Phase RC2.5.19-C (C8): fixed message to the user; the exception
+            # CLASS only to the log. Never the token, never the message text.
+            db.session.rollback()
+            import logging
+            logging.error('WhatsApp token encryption failed for tenant %s: %s',
+                          tenant.id, type(e).__name__)
+            flash('The access token could not be stored securely. No changes '
+                  'were saved.', 'danger')
+            return redirect(_back)
 
+    _id_changed = phone_number_id != _previous_id
     try:
         db.session.commit()
         flash('WhatsApp settings saved successfully.', 'success')
@@ -511,11 +571,45 @@ def tenant_whatsapp_save():
         flash('That WhatsApp Phone Number ID is already configured for '
               'another account. Each WhatsApp number can belong to only one '
               'account.', 'danger')
+        return redirect(_back)
     except Exception as e:
         db.session.rollback()
-        flash(f'Failed to save settings: {e}', 'danger')
+        import logging
+        logging.error('WhatsApp settings save failed for tenant %s: %s',
+                      tenant.id, type(e).__name__)
+        flash('WhatsApp settings could not be saved. Please try again.', 'danger')
+        return redirect(_back)
 
-    return redirect(url_for('tenant.tenant_whatsapp'))
+    # Phase RC2.5.19-C (C6): audit AFTER the commit -- log_audit() commits the
+    # session itself. Nothing is recorded for a no-op save. The Phone Number
+    # ID is configuration, not a secret (the clear route already records it);
+    # the token is NEVER recorded, only whether one was supplied.
+    if _id_changed or access_token:
+        if _id_changed:
+            _event = 'waba_credentials_saved'
+        else:
+            _event = 'waba_token_replaced' if _had_token else 'waba_token_saved'
+        _detail = {'event': _event,
+                   'phone_number_id': phone_number_id,
+                   'token_supplied': bool(access_token),
+                   'by_role': getattr(current_user, 'role', None)}
+        if _id_changed and _previous_id:
+            _detail['previous_phone_number_id'] = _previous_id
+        try:
+            from app.services.audit_service import log_audit, request_ip
+            log_audit('TENANT_SETTINGS_CHANGE',
+                      actor=getattr(current_user, 'email', None)
+                      or getattr(current_user, 'username', None),
+                      tenant_id=tenant.id,
+                      target='waba_credentials',
+                      detail=_detail,
+                      ip=request_ip())
+        except Exception:                                   # noqa: BLE001
+            # An audit failure must not undo a completed, committed save.
+            import logging
+            logging.exception('RC2.5.19-C: audit write failed for WABA save')
+
+    return redirect(_back)
 
 
 @tenant_bp.route('/whatsapp/clear', methods=['POST'])
@@ -557,7 +651,7 @@ def tenant_whatsapp_clear():
 
     if not tenant.waba_phone_number_id and not tenant.waba_access_token_encrypted:
         flash('No WhatsApp configuration to clear.', 'warning')
-        return redirect(url_for('tenant.tenant_whatsapp'))
+        return redirect(_whatsapp_page_url(tenant))
 
     _released = tenant.waba_phone_number_id
     tenant.waba_phone_number_id = None
@@ -567,8 +661,12 @@ def tenant_whatsapp_clear():
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        flash(f'Failed to clear WhatsApp settings: {e}', 'danger')
-        return redirect(url_for('tenant.tenant_whatsapp'))
+        # Phase RC2.5.19-C (C8): fixed message; exception class to the log only.
+        import logging
+        logging.error('WhatsApp settings clear failed for tenant %s: %s',
+                      tenant.id, type(e).__name__)
+        flash('WhatsApp settings could not be cleared. Please try again.', 'danger')
+        return redirect(_whatsapp_page_url(tenant))
 
     # Auditable through the existing mechanism (Constitution I.7). Records that
     # the binding was released and by whom; the id itself is configuration, not
@@ -590,38 +688,61 @@ def tenant_whatsapp_clear():
 
     flash('WhatsApp configuration cleared. This Phone Number ID is now '
           'available to be configured again.', 'success')
-    return redirect(url_for('tenant.tenant_whatsapp'))
+    return redirect(_whatsapp_page_url(tenant))
 
 
 @tenant_bp.route('/whatsapp/test', methods=['POST'])
 @login_required
 @tenant_admin_required
 def tenant_whatsapp_test():
-    import requests
-    from app.services.encryption_service import decrypt_token
-    
+    """Phase RC2.5.19-C (C4/C8): test the credential this tenant SENDS with.
+
+    Delegates to whatsapp_service.check_tenant_whatsapp(), which resolves the
+    credential through _get_waba_credentials() -- the outbound path -- with the
+    RC2.5.18 connect/read timeouts, and never raises. Previously this route
+    decrypted the token itself, called Graph with NO timeout (one stalled Meta
+    connection held the only web worker), hard-coded the Graph version, and
+    flashed Meta's raw response body and raw exception text to the user.
+    """
+    from app.services import whatsapp_service as wa
+
     tenant = _get_current_tenant()
     if not tenant:
         flash('No tenant associated with your account.', 'danger')
         return redirect(url_for('tenant.tenant_home'))
-        
+    _back = _whatsapp_page_url(tenant)
+
     if not tenant.waba_phone_number_id or not tenant.waba_access_token_encrypted:
         flash('Cannot test: Missing Phone Number ID or Access Token.', 'warning')
-        return redirect(url_for('tenant.tenant_whatsapp'))
-        
-    try:
-        token = decrypt_token(tenant.waba_access_token_encrypted)
-        url = f"https://graph.facebook.com/v21.0/{tenant.waba_phone_number_id}"
-        r = requests.get(url, headers={"Authorization": f"Bearer {token}"})
-        
-        if r.status_code == 200:
-            flash('WhatsApp connection successful! \u2705', 'success')
-        else:
-            flash(f'Meta API Error ({r.status_code}): {r.text}', 'danger')
-    except Exception as e:
-        flash(f'Test connection failed: {e}', 'danger')
+        return redirect(_back)
 
-    return redirect(url_for('tenant.tenant_whatsapp'))
+    result = wa.check_tenant_whatsapp(tenant.id)
+
+    # Fixed, user-facing messages. Meta's response body is never shown; the
+    # HTTP status and Meta's numeric error code are, because a tenant admin
+    # needs them to raise a support ticket and they carry no secret.
+    _ref = ''
+    if result.http_status:
+        _ref = f' (HTTP {result.http_status}'
+        _ref += f', Meta code {result.meta_code})' if result.meta_code else ')'
+    messages = {
+        wa.HEALTH_OK: ('success', 'WhatsApp connection successful! \u2705'),
+        wa.HEALTH_NOT_CONFIGURED: ('warning', 'Cannot test: WhatsApp is not fully configured.'),
+        wa.HEALTH_DECRYPT_FAILED: ('danger', 'The stored access token could not be read. '
+                                             'Please save the access token again.'),
+        wa.HEALTH_UNAUTHORIZED: ('danger', 'Meta rejected the access token. It may be '
+                                           'expired or revoked.' + _ref),
+        wa.HEALTH_REJECTED: ('danger', 'Meta refused this token for this Phone Number ID.' + _ref),
+        wa.HEALTH_META_ERROR: ('warning', 'Meta returned a server error. Please try again '
+                                          'shortly.' + _ref),
+        wa.HEALTH_UNEXPECTED: ('danger', 'Meta returned an unexpected response.' + _ref),
+        wa.HEALTH_NOT_SENT: ('warning', 'Could not reach Meta. Please try again shortly.'),
+        wa.HEALTH_AMBIGUOUS: ('warning', 'Meta did not respond in time. Please try again shortly.'),
+    }
+    category, text = messages.get(result.status,
+                                  ('danger', 'Test connection failed.'))
+    flash(text, category)
+    return redirect(_back)
 
 
 # \u2500\u2500 Phase RC2.5.4a: Courses & Knowledge (READ-ONLY) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500

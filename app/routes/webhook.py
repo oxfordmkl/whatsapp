@@ -108,7 +108,11 @@ def receive_message():
         from app.models import Tenant
         tenant = Tenant.query.filter_by(waba_phone_number_id=phone_number_id).first()
         if tenant:
-            if tenant.status not in ["ACTIVE", "TRIAL"]:
+            # Phase RC2.5.19-C: the status rule lives in whatsapp_service
+            # (INBOUND_ACCEPTED_TENANT_STATUSES) so RC2.5.19-D can change
+            # activation policy in one place. Behaviour is unchanged.
+            from app.services.whatsapp_service import tenant_accepts_whatsapp_inbound
+            if not tenant_accepts_whatsapp_inbound(tenant):
                 logger.warning(f"⚠️ Webhook dropped: Tenant {tenant.id} is {tenant.status}")
                 return jsonify({"status": "ok"}), 200
             tenant_id = tenant.id

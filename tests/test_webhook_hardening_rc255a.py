@@ -378,10 +378,15 @@ class TestLiveApiVersionUnchanged:
         return out
 
     def test_every_live_graph_url_is_v21(self):
-        lits = self._graph_literals("app/services/whatsapp_service.py")
-        assert lits, "no Graph URLs found — the file changed shape"
-        for lit in lits:
-            assert "/v21.0/" in lit, f"non-v21 Graph URL: {lit}"
+        # RC2.5.19-C (C3): the version is no longer a literal in each URL; it
+        # lives once in app.config.GRAPH_API_VERSION. The live version is
+        # still v21.0 -- centralisation, not an upgrade -- and no hard-coded
+        # Graph URL may remain in whatsapp_service.
+        from app import config as _cfg
+        assert _cfg.GRAPH_API_VERSION == "v21.0"
+        assert _cfg.GRAPH_API_BASE == "https://graph.facebook.com/v21.0"
+        assert self._graph_literals("app/services/whatsapp_service.py") == [], \
+            "a hard-coded Graph URL reappeared"
 
     def test_no_v19_remains_anywhere_in_the_app_package(self):
         offenders = []
@@ -433,7 +438,12 @@ class TestOutOfScopeFallbacksSurvive:
         assert found, "resolve_tenant_id leg 2 (C) was removed — out of scope"
 
     def test_webhook_still_gates_on_tenant_status(self):
+        # RC2.5.19-C (C7): the gate was extracted, unchanged, into
+        # whatsapp_service.tenant_accepts_whatsapp_inbound().
         fn = _func("app/routes/webhook.py", "receive_message")
-        consts = _string_constants(fn)
-        assert "ACTIVE" in consts and "TRIAL" in consts, \
+        called = {n.func.id for n in ast.walk(fn)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        assert "tenant_accepts_whatsapp_inbound" in called, \
             "the ACTIVE/TRIAL status gate was dropped"
+        from app.services import whatsapp_service as _wa
+        assert _wa.INBOUND_ACCEPTED_TENANT_STATUSES == ("ACTIVE", "TRIAL")

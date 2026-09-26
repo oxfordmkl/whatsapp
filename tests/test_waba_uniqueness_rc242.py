@@ -125,7 +125,9 @@ def seeded():
             return u.id
 
         ids = {"ox_admin": mk(OX, "ox_admin"), "tb_admin": mk(TB, "tb_admin"),
-               "tc_admin": mk(TC, "tc_admin"), "ox_staff": mk(OX, "ox_staff", "STAFF")}
+               "tc_admin": mk(TC, "tc_admin"), "ox_staff": mk(OX, "ox_staff", "STAFF"),
+               # RC2.5.19-C: binding a Phone Number ID is SUPER_ADMIN-only now.
+               "super": mk(None, "platform_super", "SUPER_ADMIN")}
     yield ids
     with _APP.app_context():
         db.session.remove()
@@ -141,6 +143,14 @@ def client(uid):
 
 def save(uid, phone_id, token=""):
     return client(uid).post("/tenant/whatsapp/save",
+                            data={"phone_number_id": phone_id,
+                                  "access_token": token},
+                            follow_redirects=True)
+
+
+def save_super(uid, tenant_id, phone_id, token=""):
+    """RC2.5.19-C: a SUPER_ADMIN binds a number for an explicit tenant."""
+    return client(uid).post(f"/tenant/whatsapp/save?tenant_id={tenant_id}",
                             data={"phone_number_id": phone_id,
                                   "access_token": token},
                             follow_redirects=True)
@@ -235,8 +245,16 @@ class TestDatabaseUniqueness:
 # ═══ 7-9 application collision protection ════════════════════════════════════
 
 class TestApplicationCollisionCheck:
-    def test_new_unused_id_is_accepted(self, seeded):
-        save(seeded["tc_admin"], FREE)
+    def test_new_unused_id_needs_a_platform_admin(self, seeded):
+        """INVERTED BY RC2.5.19-C. This was test_new_unused_id_is_accepted and
+        it asserted that a tenant ADMIN could claim any unused Phone Number ID
+        -- the exact ownership gap RC2.5.19-B classed CRITICAL, since inbound
+        webhooks route by that column. A tenant admin is now refused; binding
+        the same unused id as SUPER_ADMIN still succeeds."""
+        r = save(seeded["tc_admin"], FREE)
+        assert waba_of(TC)[0] is None, "a tenant admin claimed an unowned id"
+        assert b"platform administrator" in r.data
+        save_super(seeded["super"], TC, FREE)
         assert waba_of(TC)[0] == FREE
 
     def test_own_existing_id_is_accepted(self, seeded):
@@ -248,7 +266,11 @@ class TestApplicationCollisionCheck:
         assert b"already configured" not in r.data
 
     def test_another_tenants_id_is_rejected(self, seeded):
+        # RC2.5.19-C: a tenant admin is now stopped earlier (cannot change the
+        # bound id at all); a SUPER_ADMIN is stopped by the collision check.
         r = save(seeded["tb_admin"], PHONE_A)
+        assert b"platform administrator" in r.data
+        r = save_super(seeded["super"], TB, PHONE_A)
         assert b"already configured" in r.data
         assert waba_of(TB)[0] == PHONE_B, "Tenant B's own id must be untouched"
         assert waba_of(OX)[0] == PHONE_A, "Tenant A must be untouched"
@@ -291,13 +313,13 @@ class TestClearPath:
     def test_cleared_id_can_be_taken_by_another_tenant(self, seeded):
         """The whole point: release makes the number reusable."""
         clear(seeded["ox_admin"])
-        save(seeded["tc_admin"], PHONE_A)
+        save_super(seeded["super"], TC, PHONE_A)      # RC2.5.19-C: binding path
         assert waba_of(TC)[0] == PHONE_A
         assert waba_of(OX)[0] is None
 
     def test_clear_before_release_would_have_collided(self, seeded):
         """Same assignment WITHOUT clearing must still be refused."""
-        r = save(seeded["tc_admin"], PHONE_A)
+        r = save_super(seeded["super"], TC, PHONE_A)  # RC2.5.19-C: binding path
         assert b"already configured" in r.data
         assert waba_of(TC)[0] is None
 
@@ -337,9 +359,22 @@ class TestClearPath:
         assert "@login_required" in head
         assert "methods=['POST']" in head or 'methods=["POST"]' in head
 
-    def test_clear_is_audited(self):
-        src = _fn_src(TENANT_PY, "tenant_whatsapp_clear")
-        assert "log_audit" in src
+    def test_clear_is_audited(self, seeded):
+        """STRENGTHENED BY RC2.5.19-C. This only checked that the string
+        "log_audit" appeared in the route -- and every clear audit had in fact
+        been rejected, because TENANT_SETTINGS_CHANGE was missing from
+        audit_service.VALID_ACTIONS. It now requires a real row."""
+        import json as _json
+        from app.models import AuditLog
+        clear(seeded["ox_admin"])
+        with _APP.app_context():
+            rows = AuditLog.query.filter_by(action="TENANT_SETTINGS_CHANGE",
+                                            tenant_id=OX).all()
+            assert len(rows) == 1, "clear wrote no audit row"
+            detail = _json.loads(rows[0].detail)
+            assert detail["event"] == "waba_identity_released"
+            assert detail["released_phone_number_id"] == PHONE_A
+            assert "ox-tok" not in rows[0].detail
 
 
 # ═══ 14-17 webhook ═══════════════════════════════════════════════════════════
@@ -360,8 +395,12 @@ class TestWebhookUnchanged:
         assert "Unknown WABA Phone ID" in src
 
     def test_non_active_tenant_still_rejected(self):
+        # RC2.5.19-C (C7): the ACTIVE/TRIAL rule was extracted, unchanged, into
+        # whatsapp_service so RC2.5.19-D can change it in one place.
         src = _fn_src(WEBHOOK_PY, "receive_message")
-        assert "ACTIVE" in src and "TRIAL" in src
+        assert "tenant_accepts_whatsapp_inbound(tenant)" in src
+        from app.services import whatsapp_service as _wa
+        assert _wa.INBOUND_ACCEPTED_TENANT_STATUSES == ("ACTIVE", "TRIAL")
 
     def test_env_fallback_guard_removed_rc255a(self):
         """INVERTED by Phase RC2.5.5a.

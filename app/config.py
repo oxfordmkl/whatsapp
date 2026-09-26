@@ -18,6 +18,14 @@ PHONE_NUMBER_ID      = os.environ.get("PHONE_NUMBER_ID", "")
 # WhatsApp Business Account id — required to list approved message templates
 # (the message_templates edge lives on the WABA node, not the phone number).
 WABA_ID              = os.environ.get("WABA_ID", "")
+# Phase RC2.5.19-C: the ONE Meta Graph API version. It was a literal in eight
+# places (seven in whatsapp_service, one in routes/tenant). v21.0 expires on
+# 2027-01-21 per Meta's version table; an upgrade is a separate, authorised
+# change that now touches only this line. Deliberately NOT env-overridable: a
+# per-deployment override would let production silently drift from the
+# version the tests exercise.
+GRAPH_API_VERSION    = "v21.0"
+GRAPH_API_BASE       = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 SHEETS_ID            = os.environ.get("SHEETS_ID", "")
 # Phase 0 Sprint 2: explicit primary-tenant context. Replaces the
 # Tenant.query.first() crutch (_get_default_tenant_id) which resolves to an

@@ -135,6 +135,19 @@ def _timeout() -> tuple:
     )
 
 
+def _graph_base() -> str:
+    """The Graph API base URL (Meta's Graph host plus GRAPH_API_VERSION).
+
+    Phase RC2.5.19-C: the version lives in ONE place, app.config.GRAPH_API_VERSION.
+    Read lazily through import_module for the same reason as _timeout(): several
+    suites load this file against a stubbed app.config. There is deliberately
+    NO fallback value -- a fallback would be a second copy of the version, which
+    is exactly what this centralisation removes. A stub must declare it.
+    """
+    import importlib
+    return importlib.import_module("app.config").GRAPH_API_BASE
+
+
 def _delivery_state(exc) -> str:
     """NOT_SENT only when the request provably never left; else AMBIGUOUS.
 
@@ -282,7 +295,7 @@ def validate_token():
     global token_status
     try:
         r = requests.get(
-            f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}",
+            f"{_graph_base()}/{PHONE_NUMBER_ID}",
             headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
             timeout=_timeout(),
         )
@@ -302,7 +315,7 @@ threading.Thread(target=validate_token, daemon=True).start()
 
 def send_text(to: str, text: str, tenant_id: str = None) -> requests.Response:
     phone_id, token = _get_waba_credentials(tenant_id)
-    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    url = f"{_graph_base()}/{phone_id}/messages"
     
     payload = {
         "messaging_product": "whatsapp",
@@ -326,7 +339,7 @@ def send_interactive(to: str, body: str, preset, tenant_id: str = None) -> reque
     (Phase 1.6.6). Meta's 3-button / 20-char limits are enforced defensively.
     """
     phone_id, token = _get_waba_credentials(tenant_id)
-    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    url = f"{_graph_base()}/{phone_id}/messages"
 
     if isinstance(preset, (list, tuple)):
         buttons_data = list(preset)
@@ -526,7 +539,7 @@ def send_list(to: str, body: str, button_label: str, sections: list,
         return _degrade()
 
     phone_id, token = _get_waba_credentials(tenant_id)
-    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    url = f"{_graph_base()}/{phone_id}/messages"
     payload = build_list_payload(to, body, button_label, sections, header, footer)
 
     from app.perf import mark as _perf_mark
@@ -559,7 +572,7 @@ def fetch_templates(tenant_id: str = None) -> list:
     from app.config import WABA_ID, ACCESS_TOKEN as _TOKEN
     if not WABA_ID or not _TOKEN:
         raise ValueError("Template registry unavailable: WABA_ID / ACCESS_TOKEN not configured.")
-    url = f"https://graph.facebook.com/v21.0/{WABA_ID}/message_templates"
+    url = f"{_graph_base()}/{WABA_ID}/message_templates"
     try:
         r = requests.get(
             url,
@@ -589,7 +602,7 @@ def upload_media(file_bytes: bytes, filename: str, content_type: str,
     Content-Type: application/json).
     """
     phone_id, token = _get_waba_credentials(tenant_id)
-    url = f"https://graph.facebook.com/v21.0/{phone_id}/media"
+    url = f"{_graph_base()}/{phone_id}/media"
     try:
         r = requests.post(
             url,
@@ -612,7 +625,7 @@ def upload_media(file_bytes: bytes, filename: str, content_type: str,
 
 def send_template(to: str, template: str, lang: str = "en", components: list | None = None, tenant_id: str = None) -> requests.Response:
     phone_id, token = _get_waba_credentials(tenant_id)
-    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    url = f"{_graph_base()}/{phone_id}/messages"
     
     payload = {
         "messaging_product": "whatsapp",
@@ -807,3 +820,173 @@ def send_automation(to: str, text: str, name: str = "Student", tenant_id: str = 
 
         return response
 
+
+# ── Phase RC2.5.19-C: tenant-scoped WhatsApp health ─────────────────────────
+#
+# WHY THIS EXISTS
+# ---------------
+# /health's "whatsapp_token" reports validate_token(), which checks the GLOBAL
+# env ACCESS_TOKEN. Outbound sends use _get_waba_credentials(tenant_id), which
+# prefers the tenant's DB-stored token -- and for the primary tenant those two
+# tokens are verified to DIFFER in production (RC2.5.19-B). So /health can say
+# "valid" about a token that is never used to send. This check validates the
+# credential a tenant would actually send with.
+#
+# It is NOT part of /health and must never become part of it: /health is the
+# Railway deployment gate, and one tenant's Meta problem must not be able to
+# block every deploy or mark the whole service unhealthy.
+#
+# WHAT IS AND IS NOT INFERRED FROM META
+# -------------------------------------
+# The Graph call is GET /<PHONE_NUMBER_ID>, a documented read of the phone
+# number object (fields id, display_phone_number, verified_name). The result
+# is classified by HTTP status only. Meta's error `code` / `error_subcode` are
+# passed through for diagnostics but NOT mapped to meanings Meta's WhatsApp
+# docs do not state -- a 4xx is reported as "Meta refused this credential for
+# this number", without claiming why.
+
+HEALTH_OK = "ok"
+HEALTH_NOT_CONFIGURED = "not_configured"
+HEALTH_DECRYPT_FAILED = "decrypt_failed"
+HEALTH_UNAUTHORIZED = "unauthorized"             # HTTP 401
+HEALTH_REJECTED = "rejected_by_meta"             # other 4xx
+HEALTH_META_ERROR = "meta_server_error"          # 5xx
+HEALTH_UNEXPECTED = "unexpected_response"        # 2xx, but not this number
+HEALTH_NOT_SENT = "network_not_sent"             # never reached Meta
+HEALTH_AMBIGUOUS = "network_ambiguous"           # outcome unknown
+
+
+class TenantWhatsAppHealth:
+    """Result of check_tenant_whatsapp(). Carries no token and no full number."""
+
+    __slots__ = ("tenant_id", "status", "http_status", "meta_code",
+                 "meta_subcode", "verified_name", "display_phone_masked")
+
+    def __init__(self, tenant_id, status, http_status=None, meta_code=None,
+                 meta_subcode=None, verified_name=None,
+                 display_phone_masked=None):
+        self.tenant_id = tenant_id
+        self.status = status
+        self.http_status = http_status
+        self.meta_code = meta_code
+        self.meta_subcode = meta_subcode
+        self.verified_name = verified_name
+        self.display_phone_masked = display_phone_masked
+
+    @property
+    def ok(self) -> bool:
+        return self.status == HEALTH_OK
+
+    def __repr__(self):
+        return (f"<TenantWhatsAppHealth tenant={self.tenant_id} "
+                f"status={self.status} http={self.http_status}>")
+
+
+def _credential_failure_status(tenant_id) -> str:
+    """Why _get_waba_credentials() refused, decided from the row, not the text.
+
+    Parsing the ValueError message would couple this to wording. The row says
+    it directly: both columns present means the pair exists but did not
+    decrypt; anything else means not configured.
+    """
+    try:
+        from app.models import Tenant
+        t = Tenant.query.get(tenant_id)
+    except Exception:                                           # noqa: BLE001
+        return HEALTH_NOT_CONFIGURED
+    if t is not None and t.waba_phone_number_id and t.waba_access_token_encrypted:
+        return HEALTH_DECRYPT_FAILED
+    return HEALTH_NOT_CONFIGURED
+
+
+def check_tenant_whatsapp(tenant_id) -> TenantWhatsAppHealth:
+    """Validate the WhatsApp credential THIS tenant would send with.
+
+    Explicit tenant only: a falsy tenant_id raises ValueError, exactly as
+    outbound sending does (RC2.4.1) -- there is no "default tenant" to check.
+    Otherwise never raises. Uses _get_waba_credentials(), so the primary
+    tenant keeps its existing credential precedence and a non-primary tenant
+    can never be checked against the primary tenant's credentials.
+    """
+    if not tenant_id:
+        raise ValueError("check_tenant_whatsapp requires an explicit tenant_id.")
+
+    try:
+        phone_id, token = _get_waba_credentials(tenant_id)
+    except ValueError:
+        status = _credential_failure_status(tenant_id)
+        logger.warning("[wa-health] tenant=%s %s", tenant_id, status)
+        return TenantWhatsAppHealth(tenant_id, status)
+
+    try:
+        r = requests.get(
+            f"{_graph_base()}/{phone_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"fields": "id,display_phone_number,verified_name"},
+            timeout=_timeout(),
+        )
+    except _transport_errors() as exc:
+        state = _delivery_state(exc)
+        status = HEALTH_NOT_SENT if state == NOT_SENT else HEALTH_AMBIGUOUS
+        # A health check is a read: "ambiguous" only means the answer was lost.
+        logger.warning("[wa-health] tenant=%s %s (%s)", tenant_id, status,
+                       type(exc).__name__)
+        return TenantWhatsAppHealth(tenant_id, status)
+    finally:
+        token = None                       # drop the plaintext reference early
+
+    try:
+        body = r.json()
+        if not isinstance(body, dict):
+            body = {}
+    except (ValueError, AttributeError):
+        body = {}
+    err = body.get("error") if isinstance(body.get("error"), dict) else {}
+    code = r.status_code
+
+    if code == 200:
+        if str(body.get("id", "")) != str(phone_id):
+            status = HEALTH_UNEXPECTED
+        else:
+            status = HEALTH_OK
+    elif code == 401:
+        status = HEALTH_UNAUTHORIZED
+    elif 400 <= code < 500:
+        status = HEALTH_REJECTED
+    elif code >= 500:
+        status = HEALTH_META_ERROR
+    else:
+        status = HEALTH_UNEXPECTED
+
+    display = body.get("display_phone_number") if status == HEALTH_OK else None
+    result = TenantWhatsAppHealth(
+        tenant_id, status, http_status=code,
+        meta_code=err.get("code"), meta_subcode=err.get("error_subcode"),
+        verified_name=(body.get("verified_name") if status == HEALTH_OK else None),
+        display_phone_masked=_mask(display) if display else None,
+    )
+    # Status, HTTP code and Meta's error code only. Never the token, never the
+    # response body, never the full number.
+    logger.info("[wa-health] tenant=%s %s http=%s meta.code=%s", tenant_id,
+                status, code, result.meta_code)
+    return result
+
+
+# ── Phase RC2.5.19-C: inbound tenant-status policy (C7) ─────────────────────
+#
+# Which tenant statuses may RECEIVE inbound WhatsApp messages. Extracted from
+# webhook.receive_message() unchanged -- same two statuses, same behaviour --
+# so that RC2.5.19-D can implement an activation policy in ONE place.
+#
+# CURRENT BEHAVIOUR, DOCUMENTED NOT CHANGED: self-registered tenants are
+# created PENDING (routes/public.register) and leave PENDING only through a
+# super-admin action (routes/admin). A PENDING tenant's inbound messages are
+# therefore dropped (HTTP 200 to Meta, message discarded) even if its WhatsApp
+# number is connected. Whether PENDING should be accepted is a product
+# decision deferred to RC2.5.19-D; this constant must not be widened here.
+INBOUND_ACCEPTED_TENANT_STATUSES = ("ACTIVE", "TRIAL")
+
+
+def tenant_accepts_whatsapp_inbound(tenant) -> bool:
+    """True if this tenant's status allows inbound WhatsApp processing."""
+    return tenant is not None and tenant.status in INBOUND_ACCEPTED_TENANT_STATUSES

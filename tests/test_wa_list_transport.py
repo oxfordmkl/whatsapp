@@ -53,6 +53,12 @@ def wa(monkeypatch):
     cfg.ACCESS_TOKEN = "tok"
     cfg.PHONE_NUMBER_ID = "phone123"
     cfg.WHATSAPP_API_URL = "https://graph.facebook.com/v19.0/phone123/messages"
+    # RC2.5.19-C: whatsapp_service now reads its Graph base from app.config with
+    # no fallback. Built from the REAL config's GRAPH_API_VERSION, not a literal.
+    import re as _re
+    with open(os.path.join(_ROOT, "app", "config.py"), encoding="utf-8") as _fh:
+        _ver = _re.search(r'^GRAPH_API_VERSION\s*=\s*"([^"]+)"', _fh.read(), _re.M).group(1)
+    cfg.GRAPH_API_BASE = f"https://graph.facebook.com/{_ver}"
     monkeypatch.setitem(sys.modules, "app.config", cfg)
 
     consts = types.ModuleType("app.bot.constants")
