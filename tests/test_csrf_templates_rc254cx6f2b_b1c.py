@@ -140,7 +140,12 @@ PRE_B1C_SHA = {
     "templates/tenant/course_form.html": {"31d36843110a31632cddfcd9bd960d1ec88f222ae5d431c719a86aa4998b5ce6"},
     "templates/tenant/profile.html": {"55842a64779319720d64382c8ffe0c4b59b0e790d42b1721300d11fa11a663b6"},
     "templates/tenant/staff.html": {"61ea5f11087e2216ae3f90ab199d17a86e06fa40f3f39f792b93448c0123894b"},
-    "templates/tenant/whatsapp.html": {"7897d78be46f0aacb6916a4b25c8c4ad796e2c79e6d1a1c46a7020bf3eff077e"},
+    # WIDENED BY RC2.5.19-D follow-up: RC2.5.19-C (8d6f0e5) changed this
+    # template on purpose (SUPER_ADMIN-only binding: tenant_id on the three
+    # forms, the unbound notice, the read-only number field). The token
+    # insertions are unchanged; the pre-C hash is kept.
+    "templates/tenant/whatsapp.html": {"7897d78be46f0aacb6916a4b25c8c4ad796e2c79e6d1a1c46a7020bf3eff077e",
+                                       "9b1721d5a637f8692a4e70dfa8d57e1253f37cb9f3ba47f49d29c1df39f0c9c3"},
 }
 
 # ADDED BY RC2.5.4c-x-6f2b-B1d: every template OUTSIDE the 26 B1c edited, pinned
