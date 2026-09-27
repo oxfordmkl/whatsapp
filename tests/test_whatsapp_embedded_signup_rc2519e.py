@@ -369,12 +369,31 @@ class TestNonce:
         assert _complete(c, "not-the-nonce").get_json()["reason"] == "invalid_session"
         assert graph.calls == []
 
-    def test_expired_nonce_is_refused(self, seeded, configured, flag_on, graph):
+    # RC2.5.19-E nonce TTL fix: 600 s -> 1800 s. The old 601-second expiry test
+    # is replaced by the boundary tests below (the rule is age > TTL).
+    @staticmethod
+    def _aged(c, seconds):
+        with c.session_transaction() as s:
+            s["wa_es"]["issued_at"] -= seconds
+            s.modified = True
+
+    def test_ttl_is_thirty_minutes(self):
+        from app.routes import tenant as tenant_routes
+        assert tenant_routes._ES_NONCE_TTL == 1800
+
+    @pytest.mark.parametrize("age", [1799, 1800])
+    def test_nonce_within_ttl_is_accepted(self, age, seeded, configured, flag_on, graph):
         c = _client(seeded["a"])
         nonce = _start(c).get_json()["nonce"]
-        with c.session_transaction() as s:
-            s["wa_es"]["issued_at"] -= 601
-            s.modified = True
+        self._aged(c, age)
+        r = _complete(c, nonce)
+        assert r.status_code == 200, r.get_json()
+        assert graph.paths()[0] == "oauth/access_token"
+
+    def test_nonce_beyond_ttl_is_refused(self, seeded, configured, flag_on, graph):
+        c = _client(seeded["a"])
+        nonce = _start(c).get_json()["nonce"]
+        self._aged(c, 1801)
         assert _complete(c, nonce).get_json()["reason"] == "invalid_session"
         assert graph.calls == []
 
@@ -415,6 +434,98 @@ class TestNonce:
         r = _complete(c, _start(c).get_json()["nonce"], **over)
         assert r.status_code == 400 and r.get_json()["reason"] == "invalid_request"
         assert graph.calls == []
+
+
+# ═══ 2b. invalid_session diagnostics (RC2.5.19-E nonce TTL fix) ═════════════
+
+class TestInvalidSessionDiagnostics:
+    """Each of the five nonce checks is recorded server-side with a sub-reason
+    and the nonce age; the client response is identical for all five."""
+
+    def _last_failure(self, tid):
+        rows = [r for r in _audits(tid) if r.get("event") == "es_failed"
+                and r.get("category") == "invalid_session"]
+        return rows[-1] if rows else None
+
+    def _expect(self, r, tid, sub_reason):
+        assert r.status_code == 400
+        assert r.get_json() == {
+            "status": "failed", "reason": "invalid_session",
+            "message": "Your signup session expired or is invalid. Please start again."}
+        row = self._last_failure(tid)
+        assert row is not None and row["sub_reason"] == sub_reason
+        return row
+
+    def test_missing(self, seeded, configured, flag_on, graph):
+        row = self._expect(_complete(_client(seeded["a"]), "made-up"), TA, "missing")
+        assert row["age_s"] is None and graph.calls == []
+
+    def test_mismatch(self, seeded, configured, flag_on, graph):
+        c = _client(seeded["a"])
+        _start(c)
+        self._expect(_complete(c, "not-the-nonce"), TA, "mismatch")
+
+    def test_tenant(self, seeded, configured, flag_on, graph):
+        c1 = _client(seeded["a"])
+        nonce = _start(c1).get_json()["nonce"]
+        with c1.session_transaction() as s:
+            pending = dict(s["wa_es"])
+        pending["user_id"] = str(seeded["t"])
+        self._expect(_complete(_client(seeded["t"], wa_es=pending), nonce), TT, "tenant")
+
+    def test_user(self, seeded, configured, flag_on, graph):
+        c1 = _client(seeded["a"])
+        nonce = _start(c1).get_json()["nonce"]
+        with c1.session_transaction() as s:
+            pending = dict(s["wa_es"])
+        self._expect(_complete(_client(seeded["a2"], wa_es=pending), nonce), TA, "user")
+
+    def test_expired_records_the_age(self, seeded, configured, flag_on, graph):
+        c = _client(seeded["a"])
+        nonce = _start(c).get_json()["nonce"]
+        TestNonce._aged(c, 1801)
+        row = self._expect(_complete(c, nonce), TA, "expired")
+        assert row["age_s"] >= 1801 and graph.calls == []
+
+    def test_check_order_mismatch_before_expired(self, seeded, configured, flag_on, graph):
+        """Both wrong AND expired: the fixed order reports the first failing
+        check (missing, mismatch, tenant, user, expired)."""
+        c = _client(seeded["a"])
+        _start(c)
+        TestNonce._aged(c, 1801)
+        self._expect(_complete(c, "not-the-nonce"), TA, "mismatch")
+
+    def test_one_time_use_second_attempt_is_missing(self, seeded, configured, flag_on, graph):
+        c = _client(seeded["a"])
+        nonce = _start(c).get_json()["nonce"]
+        graph.overrides["oauth/access_token"] = _Resp(400, {"error": {"code": 100}})
+        assert _complete(c, nonce).status_code == 502
+        graph.overrides.clear()
+        self._expect(_complete(c, nonce), TA, "missing")
+
+    def test_new_start_overwrites_the_previous_nonce(self, seeded, configured, flag_on, graph):
+        c = _client(seeded["a"])
+        first = _start(c).get_json()["nonce"]
+        second = _start(c).get_json()["nonce"]
+        assert first != second
+        self._expect(_complete(c, first), TA, "mismatch")
+        assert graph.calls == []
+
+    def test_csrf_failure_writes_no_audit_row(self, seeded, configured, flag_on, monkeypatch):
+        monkeypatch.setitem(_APP.config, "WTF_CSRF_ENABLED", True)
+        assert _client(seeded["a"]).post("/tenant/whatsapp/es/complete", json={}).status_code == 400
+        assert self._last_failure(TA) is None
+
+    def test_no_secret_in_diagnostics(self, seeded, configured, flag_on, graph, caplog):
+        c = _client(seeded["a"])
+        nonce = _start(c).get_json()["nonce"]
+        TestNonce._aged(c, 1801)
+        with caplog.at_level(logging.DEBUG):
+            _complete(c, nonce, waba_id=WABA, phone_number_id=PHONE)
+        blob = caplog.text + json.dumps(_audits(TA))
+        for secret in (nonce, CODE) + SECRETS:
+            assert secret not in blob
+        assert "invalid_session" in caplog.text and "reason=expired" in caplog.text
 
 
 # ═══ 3. server-side verification ════════════════════════════════════════════

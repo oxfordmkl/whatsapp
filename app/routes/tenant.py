@@ -806,7 +806,11 @@ def tenant_whatsapp_test():
 # message; the code, business token and PIN are never echoed, logged, audited
 # or put in the session.
 
-_ES_NONCE_TTL = 600          # seconds
+# 30 minutes. Measured from es/start, i.e. BEFORE Meta's popup opens; the popup
+# can include creating a WABA and SMS verification, which exceeded the original
+# 10 minutes in the RC2.5.19-E live window #2. Replay of a successful signup is
+# blocked regardless of this value (E-D4: a bound tenant is refused).
+_ES_NONCE_TTL = 1800         # seconds
 _ES_SESSION_KEY = 'wa_es'
 
 _ES_MESSAGES = {
@@ -941,12 +945,32 @@ def tenant_whatsapp_es_complete():
     if tenant is None:
         abort(403)
 
+    # The same five checks as before, in a fixed order so a failure can be
+    # classified. The client sees one identical response for all five; only
+    # the server records which failed (reason + age), never the nonce, the
+    # session contents or anything the page sent.
     nonce = payload.get('nonce')
-    if (not isinstance(pending, dict) or not isinstance(nonce, str)
-            or not hmac.compare_digest(nonce.encode(), str(pending.get('nonce', '')).encode())
-            or pending.get('tenant_id') != tenant.id
-            or pending.get('user_id') != str(current_user.get_id())
-            or int(time.time()) - int(pending.get('issued_at', 0)) > _ES_NONCE_TTL):
+    age_s = None
+    if isinstance(pending, dict) and isinstance(pending.get('issued_at'), int):
+        age_s = int(time.time()) - pending['issued_at']
+    if not isinstance(pending, dict) or not isinstance(nonce, str):
+        sub_reason = 'missing'
+    elif not hmac.compare_digest(nonce.encode(), str(pending.get('nonce', '')).encode()):
+        sub_reason = 'mismatch'
+    elif pending.get('tenant_id') != tenant.id:
+        sub_reason = 'tenant'
+    elif pending.get('user_id') != str(current_user.get_id()):
+        sub_reason = 'user'
+    elif age_s is None or age_s > _ES_NONCE_TTL:
+        sub_reason = 'expired'
+    else:
+        sub_reason = None
+    if sub_reason is not None:
+        import logging
+        logging.warning('RC2.5.19-E: es/complete invalid_session tenant=%s reason=%s age_s=%s',
+                        tenant.id, sub_reason, age_s)
+        _es_audit(tenant.id, 'es_failed', category='invalid_session',
+                  sub_reason=sub_reason, age_s=age_s)
         return _es_json(400, status='failed', reason='invalid_session')
 
     blockers = _es_preflight(tenant)
