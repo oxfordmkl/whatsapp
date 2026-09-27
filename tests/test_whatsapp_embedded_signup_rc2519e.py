@@ -130,11 +130,19 @@ class FakeGraph:
     def __init__(self):
         self.calls = []
         self.overrides = {}
+        # Meta's registration state of PHONE: a successful /register makes it
+        # CONNECTED, as on Meta (RC2.5.19-E subscribe-only recovery).
+        self.phone_status = "PENDING"
 
     def route(self, method, path, kw):
         if path in self.overrides:
             out = self.overrides[path]
             return out(kw) if callable(out) else out
+        if path == PHONE and method == "get":
+            return _Resp(200, {"id": PHONE, "status": self.phone_status})
+        if path == f"{PHONE}/register":
+            self.phone_status = "CONNECTED"
+            return _Resp(200, {"success": True})
         if path == "oauth/access_token":
             return _Resp(200, {"access_token": BIZ_TOKEN, "token_type": "bearer"})
         if path == "debug_token":
@@ -671,8 +679,10 @@ class TestActivation:
         c = self._pending(seeded, graph)
         r = c.post("/tenant/whatsapp/es/activate", json={"pin": PIN})
         assert r.status_code == 200 and r.get_json()["status"] == es.STATUS_CONNECTED
-        assert graph.paths() == [f"{PHONE}/register", f"{WABA}/subscribed_apps"]
-        reg = graph.calls[0][2]
+        # Not yet registered on Meta: status read, then register, then subscribe.
+        assert graph.paths() == [PHONE, f"{PHONE}/register", f"{WABA}/subscribed_apps"]
+        assert graph.calls[0][2]["params"] == {"fields": "status"}
+        reg = graph.calls[1][2]
         assert reg["data"] == {"messaging_product": "whatsapp", "pin": PIN}
         assert reg["headers"]["Authorization"] == f"Bearer {BIZ_TOKEN}"
         assert _row(TA)["status"] == es.STATUS_CONNECTED
@@ -689,6 +699,96 @@ class TestActivation:
         graph.overrides.clear()
         assert c.post("/tenant/whatsapp/es/activate", json={"pin": PIN}).status_code == 200
         assert _row(TA)["status"] == es.STATUS_CONNECTED
+
+    # ── RC2.5.19-E subscribe-only recovery ───────────────────────────────────
+
+    def _activate(self, c):
+        return c.post("/tenant/whatsapp/es/activate", json={"pin": PIN})
+
+    def _last_activation_audit(self):
+        rows = [r for r in _audits(TA) if r.get("event", "").startswith("es_activat")]
+        return rows[-1] if rows else None
+
+    def test_already_connected_skips_register_and_subscribes(self, seeded, configured, flag_on, graph):
+        c = self._pending(seeded, graph)
+        graph.phone_status = "CONNECTED"          # registered on Meta, e.g. after a timed-out /register
+        r = self._activate(c)
+        assert r.status_code == 200 and r.get_json()["status"] == es.STATUS_CONNECTED
+        assert graph.paths() == [PHONE, f"{WABA}/subscribed_apps"]
+        assert _row(TA)["status"] == es.STATUS_CONNECTED
+        assert self._last_activation_audit()["event"] == "es_activated"
+
+    def test_pin_is_not_sent_when_register_is_skipped(self, seeded, configured, flag_on, graph):
+        c = self._pending(seeded, graph)
+        graph.phone_status = "CONNECTED"
+        self._activate(c)
+        assert all(PIN not in json.dumps(kw, default=str) for _m, _p, kw in graph.calls)
+
+    @pytest.mark.parametrize("failure,category", [
+        (RX.ReadTimeout("t"), "transport"),
+        (_Resp(400, {"error": {"code": 100}}), "register_failed"),
+        (_Resp(500, {"error": {"code": 1}}), "register_failed")])
+    def test_status_read_failure_sends_nothing_and_stays_pending(self, failure, category, seeded,
+                                                               configured, flag_on, graph):
+        c = self._pending(seeded, graph)
+        graph.overrides[PHONE] = failure
+        r = self._activate(c)
+        assert r.status_code == 502 and r.get_json()["reason"] == category
+        assert graph.paths() == [PHONE]            # neither /register nor subscribed_apps
+        assert _row(TA)["status"] == es.STATUS_PENDING_ACTIVATION
+        row = self._last_activation_audit()
+        assert row["event"] == "es_activation_failed" and row["category"] == category
+
+    @pytest.mark.parametrize("failure,category", [
+        (RX.ReadTimeout("t"), "transport"),
+        (_Resp(400, {"error": {"code": 100}}), "subscribe_failed"),
+        (_Resp(500, {"error": {"code": 1}}), "subscribe_failed")])
+    def test_subscribe_failure_after_skip_stays_pending(self, failure, category, seeded,
+                                                        configured, flag_on, graph):
+        c = self._pending(seeded, graph)
+        graph.phone_status = "CONNECTED"
+        graph.overrides[f"{WABA}/subscribed_apps"] = failure
+        r = self._activate(c)
+        assert r.status_code == 502 and r.get_json()["reason"] == category
+        assert graph.paths() == [PHONE, f"{WABA}/subscribed_apps"]
+        assert _row(TA)["status"] == es.STATUS_PENDING_ACTIVATION
+        row = self._last_activation_audit()
+        assert row["event"] == "es_activation_failed" and row["category"] == category
+
+    def test_repeat_after_a_local_commit_failure(self, seeded, configured, flag_on, graph, monkeypatch):
+        """Meta succeeded but the local commit failed: the retry must not
+        re-register and must re-subscribe, then connect."""
+        c = self._pending(seeded, graph)
+        from app.extensions import db
+        real_commit = db.session.commit
+        state = {"fail": True}
+
+        def flaky_commit():
+            if state["fail"]:
+                state["fail"] = False
+                raise RuntimeError("db down")
+            return real_commit()
+        monkeypatch.setattr(db.session, "commit", flaky_commit)
+        r = self._activate(c)
+        assert r.status_code == 502 and r.get_json()["reason"] == "storage_failed"
+        assert graph.phone_status == "CONNECTED"   # registered on the first attempt
+        monkeypatch.setattr(db.session, "commit", real_commit)
+        graph.calls.clear()
+        assert self._activate(c).status_code == 200
+        assert graph.paths() == [PHONE, f"{WABA}/subscribed_apps"]
+        assert _row(TA)["status"] == es.STATUS_CONNECTED
+
+    def test_pin_never_in_logs_audit_or_response(self, seeded, configured, flag_on, graph, caplog):
+        c = self._pending(seeded, graph)
+        seen = []
+        with caplog.at_level(logging.DEBUG):
+            graph.overrides[PHONE] = RX.ReadTimeout("t")
+            seen.append(self._activate(c).get_data(as_text=True))
+            graph.overrides.clear()
+            graph.phone_status = "CONNECTED"
+            seen.append(self._activate(c).get_data(as_text=True))
+        seen += [caplog.text, json.dumps(_audits(TA))]
+        assert PIN not in "\n".join(seen)
 
     def test_activation_without_a_pending_connection_is_refused(self, seeded, configured, flag_on, graph):
         r = _client(seeded["a"]).post("/tenant/whatsapp/es/activate", json={"pin": PIN})

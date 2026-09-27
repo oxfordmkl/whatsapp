@@ -36,7 +36,7 @@ UNRESOLVED META ITEMS (production validation TODOs, NOT settled here)
 --------------------------------------------------------------------
   * whether the code exchange ever needs redirect_uri   (none is sent)
   * whether debug_token accepts an app token instead of the System User token
-  * whether /register is idempotent                     (activate() re-runs it)
+  * whether subscribed_apps is idempotent               (a retry re-sends it)
   * PIN retry / lockout behaviour
   * phone-number id stability
   * Graph v21.0 compatibility with Embedded Signup v4
@@ -241,12 +241,27 @@ def subscribe_app(business_token: str, waba_id: str) -> None:
     _call("post", f"{waba_id}/subscribed_apps", SUBSCRIBE_FAILED, token=business_token)
 
 
+def phone_registration_status(business_token: str, phone_id: str):
+    """Meta's registration status for the number (e.g. CONNECTED). Read-only."""
+    body = _call("get", phone_id, REGISTER_FAILED, token=business_token,
+                 params={"fields": "status"})
+    return body.get("status")
+
+
 def activate(tenant_id: str, pin: str) -> str:
-    """Register the bound number and subscribe the app; mark CONNECTED.
+    """Register the bound number (unless Meta already has it registered) and
+    subscribe the app; mark CONNECTED.
 
     Only for a tenant in VERIFIED_PENDING_ACTIVATION from Embedded Signup. On
     any failure the status stays VERIFIED_PENDING_ACTIVATION so the tenant can
-    retry. A retry re-runs registration (idempotency UNRESOLVED -- live test).
+    retry.
+
+    RC2.5.19-E live window #3: /register timed out on our side after Meta had
+    already registered the number, leaving it registered but unsubscribed. So
+    the number's status is read first and /register (with the PIN) is only
+    sent when Meta does not already report CONNECTED -- a retry then completes
+    the subscription without re-registering. If the status cannot be read,
+    nothing is sent: neither /register nor subscribed_apps.
     """
     from app.extensions import db
     from app.models import Tenant
@@ -261,7 +276,8 @@ def activate(tenant_id: str, pin: str) -> str:
     token = decrypt_token(tenant.waba_access_token_encrypted)
     if not token:
         raise SignupError(STORAGE_FAILED)
-    register_phone(token, tenant.waba_phone_number_id, pin)
+    if phone_registration_status(token, tenant.waba_phone_number_id) != "CONNECTED":
+        register_phone(token, tenant.waba_phone_number_id, pin)
     subscribe_app(token, tenant.waba_id)
     tenant.whatsapp_connection_status = STATUS_CONNECTED
     try:
