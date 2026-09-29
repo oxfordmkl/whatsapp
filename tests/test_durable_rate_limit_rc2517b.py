@@ -392,10 +392,21 @@ class TestCanonicalSubject:
             assert _valid_ip(bad) == ""
 
     def test_valid_ip_canonicalises_without_widening_what_it_accepts(self):
+        """CPython changed how it prints IPv4-mapped IPv6 addresses
+        (::ffff:102:304 -> ::ffff:1.2.3.4); production runs Python 3.13. The
+        property pinned is version-independent: every spelling of one address
+        collapses to one stable string, so a client cannot re-spell its way
+        into a fresh rate-limit bucket."""
         from app.services.audit_service import _valid_ip
         assert _valid_ip("8.8.8.8") == "8.8.8.8"
         assert _valid_ip(" 8.8.8.8 ") == "8.8.8.8"
-        assert _valid_ip("::ffff:1.2.3.4") == "::ffff:102:304"
+        spellings = ("::ffff:1.2.3.4", "::FFFF:1.2.3.4",
+                     "0:0:0:0:0:ffff:1.2.3.4", "0:0:0:0:0:ffff:0102:0304")
+        canonical = {_valid_ip(s) for s in spellings}
+        assert len(canonical) == 1, canonical
+        (value,) = canonical
+        assert _valid_ip(value) == value
+        assert value in {"::ffff:1.2.3.4", "::ffff:102:304"}
 
     def test_route_delegates_to_the_one_normaliser(self):
         src = _code_only("app/routes/public.py")

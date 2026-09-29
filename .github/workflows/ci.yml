@@ -23,7 +23,12 @@ jobs:
       PRIMARY_TENANT_ID: ""
       FLASK_ENV: development
     steps:
+      # Phase 1D: full history. Several phase-scope guards read git history
+      # (the commit that added a marker file, `git show <old sha>:<file>`);
+      # the default depth-1 clone made every file look added by one commit.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
