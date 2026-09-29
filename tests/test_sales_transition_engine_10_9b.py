@@ -621,7 +621,8 @@ class TestScopeContainment:
     def test_audit_vocabulary_unchanged(self):
         """No new audit action: this phase adds none."""
         from app.services.audit_service import VALID_ACTIONS
-        assert len(VALID_ACTIONS) == 15
+        # 16 since RC2.5.19-C, the approved addition of TENANT_SETTINGS_CHANGE.
+        assert len(VALID_ACTIONS) == 16
 
 
 # ═══ Tier 2 — real models, real database ═════════════════════════════════════

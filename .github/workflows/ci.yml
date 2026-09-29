@@ -33,6 +33,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Phase 1 CI repair: RC1.1 (328de66, 2026-08-01) moved the isolation gate
+      # and the regression suite onto `python -m pytest` but never installed
+      # pytest, so every run since has stopped at the isolation step with
+      # "No module named pytest" and skipped every step after it. pytest is a
+      # test-only tool, so it is installed here and NOT added to
+      # requirements.txt, which is the production build.
+      - name: Install test runner
+        run: pip install pytest==9.1.1
+
+      # Phase 1 CI repair: importing app.services.whatsapp_service starts a
+      # thread that GETs the Graph API (validate_token). CI has no token, so it
+      # was a live, credential-less request to graph.facebook.com on every run
+      # ("Token invalid: 400"). No test needs the network: from here on every
+      # outbound HTTP request goes to a dead local proxy and fails fast as a
+      # transport error. Set after the installs above, which do need it.
+      - name: Block outbound network for the test steps
+        run: |
+          echo "HTTP_PROXY=http://127.0.0.1:9" >> "$GITHUB_ENV"
+          echo "HTTPS_PROXY=http://127.0.0.1:9" >> "$GITHUB_ENV"
+          echo "NO_PROXY=" >> "$GITHUB_ENV"
+
       # Phase RC2.5.8 (P2-2): CI no longer carries a WABA encryption key of its
       # own. The job-wide literal here was the PRODUCTION key, so every CI run,
       # every fork and every log reader had it. Nothing in this pipeline needs a
@@ -119,3 +140,12 @@ jobs:
             python -m pytest "$f" -q || fail=1
           done
           exit $fail
+
+      # Phase 1 CI repair: lift the network block again so the post-job steps
+      # (setup-python's pip cache save) can reach GitHub. Runs even when a test
+      # step failed; it changes nothing about the job's result.
+      - name: Restore outbound network for post-job steps
+        if: always()
+        run: |
+          echo "HTTP_PROXY=" >> "$GITHUB_ENV"
+          echo "HTTPS_PROXY=" >> "$GITHUB_ENV"

@@ -331,9 +331,10 @@ class TestNoEnforcement:
 
 
 class TestAuditVocabularyUnchanged:
-    def test_valid_actions_is_still_exactly_fifteen(self):
+    def test_valid_actions_is_still_exactly_sixteen(self):
+        """RC2.5.19-C added TENANT_SETTINGS_CHANGE."""
         from app.services.audit_service import VALID_ACTIONS
-        assert len(VALID_ACTIONS) == 15
+        assert len(VALID_ACTIONS) == 16
 
     def test_no_new_action_constants_referenced(self):
         with open(ADMIN_PY, encoding="utf-8") as fh:

@@ -235,10 +235,12 @@ class TestRejected:
         loc = r.headers.get("Location", "")
         assert "Ravi" in loc.replace("+", " ").replace("%27", "'")
 
-    def test_rejection_preserves_the_key_parameter(self, seeded):
-        """The operator must land back on the same authorised screen."""
+    def test_rejection_does_not_propagate_a_key_parameter(self, seeded):
+        """RC2.5.11 removed legacy ?key= propagation; the operator returns by
+        session. Posted with a key so the route is exercised under the legacy
+        input condition."""
         r = post(seeded["admin"], "919100000001", "asdf", key="abc123")
-        assert "key=abc123" in r.headers.get("Location", "")
+        assert "key=" not in r.headers.get("Location", "")
 
     def test_redirect_target_is_the_unassigned_queue(self, seeded):
         r = post(seeded["admin"], "919100000001", "asdf")

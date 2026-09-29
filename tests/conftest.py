@@ -45,9 +45,24 @@ FIX — two-part
 SCOPE
 -----
 Only app.models, app.config, and the MemoryProvider class identity are
-stabilised here.  Everything else (flask, google, extensions, etc.) is safe
-to overwrite across files because those stubs all produce functionally
-identical MagicMock values.
+stabilised here.  Other app.* stubs (extensions, etc.) are safe to overwrite
+across files because those stubs all produce functionally identical MagicMock
+values.
+
+  Vector 3 — Third-party stub leakage (Phase 1 CI repair, Part C below)
+  ----------------------------------------------------------------------
+  The earlier assumption that flask / google stubs are also safe to share
+  stopped holding once suites that need the REAL Flask were added (the
+  RC2.5.19-C/D/E and CSRF suites call create_app()).  test_memory_activation
+  and test_routing_phase1 assign sys.modules["flask"] = <stub> at import and
+  never restore it, so every file collected after them in one run failed with
+  "cannot import name 'Flask' from 'flask'".  The marketing route suites do
+  the same in place: they set flask.Blueprint = _FakeBlueprint (and request /
+  jsonify) on whatever flask module is loaded -- the REAL one included -- so
+  later files got "'_FakeBlueprint' object has no attribute 'before_request'".
+  Part C confines each file's flask* / flask_login* / google* stubs, whether
+  whole modules or attributes patched onto an existing module, to that file's
+  own collection and tests.
 
 DO NOT add router / webhook / heavy production module loads here.  Each test
 file loads only the modules it exercises.  This conftest provides the stable
@@ -149,3 +164,106 @@ def _reset_shared_stubs():
     if config_mod is not None:
         config_mod.MEMORY_ACTIVATE     = False
         config_mod.MEMORY_OBSERVE_MODE = False
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Part C — Per-file containment of third-party stubs (Vector 3)
+# ══════════════════════════════════════════════════════════════════════════
+# A file may still stub these libraries at import -- its tests rely on that
+# and are left unchanged.  The stub just must not outlive the file: right after
+# a file is collected, everything it changed under these roots is undone, and
+# re-applied only while that file's own tests run.  Each file therefore sees
+# exactly what it saw when run alone, and no other file sees its stubs.
+#
+# Two kinds of change are contained:
+#   * a SYNTHETIC module (no __file__, no __spec__ -- a types.ModuleType stub)
+#     put into sys.modules, and
+#   * attributes set on a module that was ALREADY loaded (e.g. the real
+#     flask.Blueprint replaced by a fake).
+# A REAL module a file imports for the first time is left in place, and so is
+# a real submodule bound as an attribute of its package (flask.json), so
+# real-Flask suites keep sharing one genuine import.
+
+_GUARDED_ROOTS = ("flask", "flask_login", "google")
+_MISSING = object()
+
+
+def _guarded_modules():
+    return {name: mod for name, mod in sys.modules.items()
+            if name.split(".", 1)[0] in _GUARDED_ROOTS}
+
+
+def _is_synthetic(mod):
+    return (getattr(mod, "__file__", None) is None
+            and getattr(mod, "__spec__", None) is None)
+
+
+def _is_real_submodule(value):
+    return (isinstance(value, types.ModuleType) and not _is_synthetic(value)
+            and sys.modules.get(value.__name__) is value)
+
+
+def _swap_attrs(mod, values):
+    """Set each attribute to its value (_MISSING deletes it); return the old ones."""
+    old = {}
+    for attr, value in values.items():
+        old[attr] = mod.__dict__.get(attr, _MISSING)
+        if value is _MISSING:
+            mod.__dict__.pop(attr, None)
+        else:
+            mod.__dict__[attr] = value
+    return old
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_make_collect_report(collector):
+    if not isinstance(collector, pytest.Module):
+        yield
+        return
+    before = _guarded_modules()
+    before_attrs = {name: dict(vars(mod)) for name, mod in before.items()}
+    yield  # the test file is imported here
+    after = _guarded_modules()
+
+    stubs = {name: mod for name, mod in after.items()
+             if before.get(name) is not mod and _is_synthetic(mod)}
+    patches = []  # (module, {attr: value the file set})
+    for name, mod in after.items():
+        if before.get(name) is not mod:
+            continue
+        old, new = before_attrs[name], vars(mod)
+        changed = {attr: new.get(attr, _MISSING)
+                   for attr in set(old) | set(new)
+                   if old.get(attr, _MISSING) is not new.get(attr, _MISSING)
+                   and not _is_real_submodule(new.get(attr))}
+        if changed:
+            patches.append((mod, changed))
+            _swap_attrs(mod, {attr: old.get(attr, _MISSING) for attr in changed})
+    for name in stubs:
+        if name in before:
+            sys.modules[name] = before[name]
+        else:
+            sys.modules.pop(name, None)
+    if stubs or patches:
+        collector._contained_stubs = (stubs, patches)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _reinstall_contained_stubs(request):
+    """Re-apply a file's own library stubs while its tests run."""
+    contained = getattr(request.node, "_contained_stubs", None)
+    if not contained:
+        yield
+        return
+    stubs, patches = contained
+    saved = {name: sys.modules.get(name, _MISSING) for name in stubs}
+    sys.modules.update(stubs)
+    undo = [(mod, _swap_attrs(mod, values)) for mod, values in patches]
+    yield
+    for mod, values in reversed(undo):
+        _swap_attrs(mod, values)
+    for name, mod in saved.items():
+        if mod is _MISSING:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = mod
