@@ -34,6 +34,20 @@ safety. Proven in TestPlatformSafetyPrecedence.
 OUT OF SCOPE, NOT TOUCHED: course catalog, fees, payment links, PSC/NORKA/
 Rutronix content, the education conversation state machine, CRM, webhook,
 WhatsApp, broadcast, RC2.4.x isolation primitives. No migration.
+
+PHASE 2A UPDATE (tenant identity safety)
+----------------------------------------
+The "central guarantee" above rested on Oxford configuring nothing and every
+fallback resolving to Oxford's constants. That fallback is exactly the
+cross-tenant leak Phase 2A closes: every unconfigured tenant was given
+Oxford's name, phone, email, website, address and hours. Now:
+  * fallbacks are NEUTRAL (empty), never another tenant's value;
+  * Oxford configured its own business_profile in production (the 18 values
+    in OX_PROFILE below), so Oxford is seeded that way here;
+  * an unconfigured tenant's prompt carries its OWN Tenant.name and no other
+    identity value; a composition failure returns NEUTRAL_FALLBACK_PROMPT.
+Assertions that pinned Oxford-as-default are updated to pin the neutral
+default, each with its reason; none is removed.
 """
 import ast
 import json
@@ -63,7 +77,8 @@ from app import create_app                                              # noqa: 
 from app.extensions import db                                           # noqa: E402
 from app.models import Tenant, TenantSettings                           # noqa: E402
 from app.bot.business_profile import BUSINESS_PROFILE                   # noqa: E402
-from app.bot.prompts import AALIZA_PROMPT, EDUCATION_PROMPT_TEMPLATE    # noqa: E402
+from app.bot.prompts import (                                           # noqa: E402
+    AALIZA_PROMPT, EDUCATION_PROMPT_TEMPLATE, NEUTRAL_FALLBACK_PROMPT)
 from app.services import ai_service                                     # noqa: E402
 from app.services import prompt_composer                                # noqa: E402
 from app.services import tenant_identity_service as ident               # noqa: E402
@@ -73,7 +88,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IDENT_PY = os.path.join(ROOT, "app", "services", "tenant_identity_service.py")
 COMPOSER_PY = os.path.join(ROOT, "app", "services", "prompt_composer.py")
 
-OX = "t-ox"     # Oxford: configures NOTHING (mirrors production exactly)
+OX = "t-ox"     # Oxford: its own configured profile (Phase 2A production shape)
 TB = "t-beta"   # fully configured, different country
 TC = "t-gamma"  # partially configured (one field + one blank + one null)
 TD = "t-delta"  # Tenant row only, no TenantSettings row at all
@@ -94,6 +109,29 @@ TB_PROFILE = {
               "extended": "9 AM - 8 PM (Mon-Sat)"},
     "brand_voice": "Warm, concise, professional.",
 }
+
+# Phase 2A: The Oxford Computers' business_profile exactly as saved through
+# /tenant/profile in production -- every value from business_profile.py, plus
+# region "Kerala"; description/tagline/brand_voice/country/postal blank.
+OX_PROFILE = {
+    "legal_name": BUSINESS_PROFILE["name"],
+    "address": {"line": BUSINESS_PROFILE["address"],
+                "locality": BUSINESS_PROFILE["locality"],
+                "city": BUSINESS_PROFILE["city"], "region": "Kerala"},
+    "location_url": BUSINESS_PROFILE["maps_url"],
+    "contact": {"phone": BUSINESS_PROFILE["phone"],
+                "whatsapp": BUSINESS_PROFILE["whatsapp"],
+                "email": BUSINESS_PROFILE["email"],
+                "website": BUSINESS_PROFILE["website"]},
+    "hours": {"general": BUSINESS_PROFILE["office_hours"],
+              "extended": BUSINESS_PROFILE["counsellor_hours"]},
+}
+
+# Every identity string that belongs to Oxford alone. None may reach another
+# tenant, under any fallback.
+OXFORD_ONLY = ("The Oxford Computers", "Oxford Nova", "Malayinkeezhu",
+               "theoxfordedu.com", "9447329972", "info@theoxfordedu.com",
+               "Krishna Building")
 
 _APP = create_app()
 _APP.config["WTF_CSRF_ENABLED"] = False
@@ -121,13 +159,14 @@ def seeded():
                                   billing_exempt=True))
         db.session.commit()
 
-        # Oxford: deliberately NO TenantSettings row -- production shape.
+        # Oxford: its own profile -- the Phase 2A production shape.
+        db.session.add(TenantSettings(tenant_id=OX, settings=json.dumps(
+            {"_v": 1, "business_profile": OX_PROFILE})))
         db.session.add(TenantSettings(tenant_id=TB, settings=json.dumps(
             {"_v": 1, "business_profile": TB_PROFILE})))
-        # Every "must not win" value below is paired with a NON-EMPTY default,
-        # so a regression that lets it through is actually observable. (An
-        # earlier draft blanked `tagline`, whose default is "" anyway -- the
-        # assertion passed either way and a mutation slipped through.)
+        # Every "must not win" value below is a NON-EMPTY raw value (whitespace,
+        # a number, a list), so letting it through is observable against the
+        # neutral "" default. (Phase 2A: the defaults used to be Oxford's.)
         db.session.add(TenantSettings(tenant_id=TC, settings=json.dumps(
             {"business_profile": {
                 "description": "Gamma Academy trains designers.",
@@ -170,51 +209,49 @@ class TestOxfordByteIdentical:
         assert AALIZA_PROMPT.count("{") == 0
         assert AALIZA_PROMPT.count("}") == 0
 
-    def test_oxford_education_body_is_byte_identical(self, seeded):
-        """INVERTED BY RC2.5.5c-3b (was:
-        test_oxford_composed_prompt_is_byte_identical).
+    def test_oxford_prompt_is_its_own_configured_identity(self, seeded):
+        """PHASE 2A (was: test_oxford_education_body_is_byte_identical).
 
-        WHY, PRECISELY -- and it is NOT the reason it first looks like.
-
-        RC2.5.5c-3 removed Oxford's ten hardcoded courses and prices from
-        AALIZA_PROMPT and re-added them as a COMPUTED catalogue block, so the
-        AI stops reciting one tenant's catalogue at every other tenant. That
-        block is built by catalogue_service, which fails SAFE: a tenant with
-        no course rows still gets A catalogue -- the platform default, built
-        from app.bot.constants.
-
-        The consequence is what breaks the old assertion. `catalogue_block` is
-        therefore NEVER empty, for any tenant, so
-        `has_authored_content = configured or knowledge_block or
-        catalogue_block` is now unconditionally true and EVERY prompt takes
-        the composed path. Oxford seeds no knowledge rows in this file, so it
-        is not "Oxford now has authored content" that changed this -- it is the
-        fail-safe default catalogue counting as content. See
-        test_the_composed_path_is_now_universal below, which pins that
-        directly so the reason cannot quietly drift.
-
-        The original guarantee is preserved exactly where it still holds: the
-        EDUCATION BODY is byte-identical, and is now a PREFIX rather than the
-        whole prompt. The decomposition is asserted byte-for-byte, so any
-        drift in the body, the block order, or the trailing safety rules
-        fails here.
+        Oxford is now a CONFIGURED tenant (option (a), authorised): its prompt
+        is the education body rendered with its own profile values, followed
+        by its identity block, the catalogue and the safety rules. Pinned byte
+        for byte. The body differs from AALIZA_PROMPT in exactly three places
+        -- the persona (Oxford's "Krishna") and the two location strings, now
+        derived from its authored address -- and nowhere else.
         """
         with _APP.app_context():
-            out = prompt_composer.compose_system_prompt(OX)
+            out = prompt_composer.compose_system_prompt(OX, persona_name="Krishna")
+            identity = ident.resolve_business_identity(OX)
             catalogue = prompt_composer._catalogue_index_block(OX)
-        assert out.startswith(AALIZA_PROMPT)
-        assert out == (AALIZA_PROMPT + catalogue
-                       + prompt_composer._L1_SAFETY_REASSERTION)
-        # No identity block: Oxford still configures nothing.
-        assert "BUSINESS PROFILE (reference data" not in out
+        location_full = ", ".join((BUSINESS_PROFILE["address"],
+                                   BUSINESS_PROFILE["city"], "Kerala"))
+        location_short = "Malayinkeezhu, Thiruvananthapuram, Kerala"
+        body = (AALIZA_PROMPT
+                .replace("Malayinkeezhu Junction, Thiruvananthapuram, Kerala",
+                         location_full)
+                .replace("Oxford Nova", "Krishna"))
+        assert location_short in body          # unchanged short form
+        assert identity.is_configured is True
+        assert out == (body + prompt_composer._identity_block(identity)
+                       + catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        assert "Name: The Oxford Computers" in out
+        assert "Website: theoxfordedu.com | Phone: 9447329972" in out
 
-    def test_no_tenant_id_composed_prompt_keeps_the_same_body(self, seeded):
+    def test_no_tenant_id_composed_prompt_is_neutral(self, seeded):
+        """PHASE 2A (was: ..._keeps_the_same_body, which asserted Oxford's
+        AALIZA_PROMPT for NO tenant at all). With no tenant there is no
+        identity to render: the neutral persona, no name, no location, no
+        contact line -- and no Oxford string anywhere."""
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(None)
             catalogue = prompt_composer._catalogue_index_block(None)
-        assert out.startswith(AALIZA_PROMPT)
-        assert out == (AALIZA_PROMPT + catalogue
-                       + prompt_composer._L1_SAFETY_REASSERTION)
+        assert out.startswith("\nYou are AI Assistant, Senior Admission "
+                              "Counselor.\n")
+        assert out.endswith(catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        for leaked in OXFORD_ONLY:
+            assert leaked not in out, leaked
+        assert "\nName: \n" not in out and "\nLocation: \n" not in out
+        assert "Website:" not in out and "Phone:" not in out
 
     def test_the_composed_path_is_now_universal(self, seeded):
         """Pins the CAUSE of the inversion above, not just its effect.
@@ -230,24 +267,27 @@ class TestOxfordByteIdentical:
             # ...while genuinely tenant-authored content is still absent.
             from app.services import knowledge_service
             assert knowledge_service.render_knowledge_block(OX) == ""
-            assert ident.resolve_business_identity(OX).is_configured is False
+            # Phase 2A: Oxford is configured now; TE is the unconfigured case.
+            assert ident.resolve_business_identity(TE).is_configured is False
 
-    def test_unconfigured_tenant_keeps_its_name_out_of_the_prompt(self, seeded):
-        """THE lazy-adoption guarantee, UNCHANGED IN INTENT. Tenant.name is
-        free-text CRM data (Oxford's own production row is not guaranteed to
-        read "The Oxford Computers"), so it must NOT leak into the prompt
-        until the tenant explicitly authors a business_profile section.
+    def test_unconfigured_tenant_gets_its_own_name_and_nothing_of_oxfords(self, seeded):
+        """PHASE 2A, DELIBERATELY INVERTED (was:
+        test_unconfigured_tenant_keeps_its_name_out_of_the_prompt).
 
-        Only the byte-identity clause is relaxed, for the reason documented
-        above. The identity-leak clause -- the actual point of this test -- is
-        asserted unchanged, and tightened: the check is now for the identity
-        BLOCK's own header, because the phrase "BUSINESS PROFILE" also occurs
-        in the platform safety rules, where it is not a leak.
+        The lazy-adoption rule kept Tenant.name OUT of an unconfigured
+        tenant's prompt -- and the name that went IN instead was Oxford's.
+        That is the cross-tenant leak Phase 2A exists to close. An
+        unconfigured tenant now introduces itself by its own Tenant.name, and
+        receives no other identity value (none is configured) and no Oxford
+        value. It still gets no identity BLOCK: that remains opt-in.
         """
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(TE)
-        assert out.startswith(AALIZA_PROMPT)
-        assert "Epsilon Learning" not in out
+        assert out.startswith("\nYou are AI Assistant, Senior Admission "
+                              "Counselor at Epsilon Learning.\n")
+        assert "\nName: Epsilon Learning\n" in out
+        for leaked in OXFORD_ONLY:
+            assert leaked not in out, leaked
         assert "BUSINESS PROFILE (reference data" not in out
         # INVERTED: the safety re-assertion IS emitted now. It follows the
         # catalogue block, which is reference data like any other, so this is
@@ -282,9 +322,15 @@ class TestOxfordByteIdentical:
         assert cfg.max_output_tokens == default.max_output_tokens
         assert cfg.thinking_config.thinking_budget == \
             default.thinking_config.thinking_budget
-        assert cfg.system_instruction.startswith(AALIZA_PROMPT)
+        # Phase 2A: Oxford's instruction is its own configured prompt now.
+        assert cfg.system_instruction.startswith(
+            "\nYou are AI Assistant, Senior Admission Counselor at "
+            "The Oxford Computers, Malayinkeezhu, Thiruvananthapuram, Kerala.\n")
+        assert "Name: The Oxford Computers" in cfg.system_instruction
 
     def test_oxford_identity_equals_business_profile_field_for_field(self, seeded):
+        """Phase 2A: true now because Oxford AUTHORED these values in its own
+        profile -- not because they are anybody's fallback."""
         with _APP.app_context():
             i = ident.resolve_business_identity(OX)
         assert i.name == BUSINESS_PROFILE["name"]
@@ -373,7 +419,9 @@ class TestTenantIsolation:
         with _APP.app_context():
             assert settings_svc.get_section(TB, "business_profile")
             assert settings_svc.get_section(TD, "business_profile") == {}
-            assert settings_svc.get_section(OX, "business_profile") == {}
+            assert settings_svc.get_section(TE, "business_profile") == {}
+            # Phase 2A: Oxford's own section is returned to Oxford only.
+            assert settings_svc.get_section(OX, "business_profile") == OX_PROFILE
 
 
 # ═══ Platform safety precedence ════════════════════════════════════════════
@@ -438,12 +486,16 @@ class TestFailOpen:
         with _APP.app_context():
             i = ident.resolve_business_identity(TD)
         assert i.name == "Delta Skills"          # Tenant.name still resolves
-        assert i.contact.phone == BUSINESS_PROFILE["phone"]
+        # Phase 2A: neutral, not Oxford's phone (was BUSINESS_PROFILE["phone"]).
+        assert i.contact.phone == ""
+        assert i.is_configured is False
 
     def test_unknown_tenant_falls_back(self, seeded):
         with _APP.app_context():
             i = ident.resolve_business_identity("no-such-tenant")
-        assert i.name == BUSINESS_PROFILE["name"]
+        # Phase 2A: an unknown tenant is nobody -- not The Oxford Computers.
+        assert i.name == ""
+        assert i.contact.phone == "" and i.address.line == ""
 
     def test_malformed_settings_json_falls_back(self, seeded):
         with _APP.app_context():
@@ -451,19 +503,18 @@ class TestFailOpen:
             row.settings = "{not valid json"
             db.session.commit()
             i = ident.resolve_business_identity(TB)
-            assert i.contact.phone == BUSINESS_PROFILE["phone"]
+            assert i.contact.phone == ""         # Phase 2A: neutral, not Oxford's
             assert i.is_configured is False
-            # A malformed blob means "unconfigured" -> the unconfigured
-            # baseline, with no partial identity leaking into the prompt.
-            # RC2.5.5c-3b: that baseline is now body + catalogue + safety
-            # rather than the bare body; the no-leak clause is what this test
-            # is actually for and is unchanged.
+            # A malformed blob means "unconfigured": the tenant keeps its own
+            # Tenant.name (Phase 2A) but no partial profile value leaks, and
+            # no Oxford value stands in for the missing ones.
             out = prompt_composer.compose_system_prompt(TB)
-            assert out == (AALIZA_PROMPT
-                           + prompt_composer._catalogue_index_block(TB)
-                           + prompt_composer._L1_SAFETY_REASSERTION)
-            assert "Beta Institute" not in out
+            assert out.endswith(prompt_composer._catalogue_index_block(TB)
+                                + prompt_composer._L1_SAFETY_REASSERTION)
+            assert "Bengaluru" not in out and "9000011111" not in out
             assert "BUSINESS PROFILE (reference data" not in out
+            for leaked in OXFORD_ONLY:
+                assert leaked not in out, leaked
 
     def test_db_error_falls_back_and_does_not_raise(self, seeded, monkeypatch):
         class _Boom:
@@ -475,26 +526,36 @@ class TestFailOpen:
         with _APP.app_context():
             monkeypatch.setattr(Tenant, "query", _Boom())
             i = ident.resolve_business_identity(TB)
-            assert i.name == BUSINESS_PROFILE["name"]
+            # Phase 2A: a DB outage yields a nameless neutral identity, not
+            # The Oxford Computers (was BUSINESS_PROFILE["name"]).
+            assert i.name == ""
             # is_configured must fall back TOGETHER with the values. An
             # earlier draft used a second independent lookup here, which
             # still reported True and made the composer emit a tenant
-            # identity block built entirely from Oxford's defaults.
+            # identity block built entirely from fallback values.
             assert i.is_configured is False
             out = prompt_composer.compose_system_prompt(TB)
             # RC2.5.5c-3b: the identity lookup is what failed here, so the
             # identity block must be absent -- the catalogue block is resolved
             # independently and legitimately survives a Tenant-table outage.
-            assert out.startswith(AALIZA_PROMPT)
+            assert out.startswith("\nYou are AI Assistant, Senior Admission "
+                                  "Counselor.\n")
             assert "BUSINESS PROFILE (reference data" not in out
             assert "Beta Institute" not in out
+            for leaked in OXFORD_ONLY:
+                assert leaked not in out, leaked
 
-    def test_composer_failure_falls_back_to_baseline(self, seeded, monkeypatch):
+    def test_composer_failure_falls_back_to_neutral(self, seeded, monkeypatch):
+        """PHASE 2A (was ..._falls_back_to_baseline == AALIZA_PROMPT): a
+        composition bug must never hand a tenant Oxford's own prompt."""
         def _boom(*a, **k):
             raise RuntimeError("simulated composition bug")
         monkeypatch.setattr(ident, "resolve_business_identity", _boom)
         with _APP.app_context():
-            assert prompt_composer.compose_system_prompt(TB) == AALIZA_PROMPT
+            assert prompt_composer.compose_system_prompt(TB) == \
+                NEUTRAL_FALLBACK_PROMPT
+        for leaked in OXFORD_ONLY:
+            assert leaked not in NEUTRAL_FALLBACK_PROMPT, leaked
 
     def test_get_section_never_raises_on_bad_input(self, seeded):
         with _APP.app_context():
@@ -512,32 +573,33 @@ class TestPerFieldFallback:
         assert i.description == "Gamma Academy trains designers."
         assert i.contact.phone == "9333322222"
 
-    def test_blank_string_does_not_override_a_nonempty_default(self, seeded):
-        """Each field here has a NON-EMPTY default, so letting the blank
-        through would be visible -- a customer message would show an empty
-        line where the platform value belongs."""
+    # Phase 2A: the default every "not configured" value resolves to is the
+    # NEUTRAL "" -- these used to assert Oxford's value came back instead.
+
+    def test_blank_string_resolves_to_neutral_default(self, seeded):
         with _APP.app_context():
             i = ident.resolve_business_identity(TC)
-        assert i.legal_name == BUSINESS_PROFILE["name"]
-        assert i.contact.website == BUSINESS_PROFILE["website"]
+        assert i.legal_name == ""
+        assert i.contact.website == ""
 
-    def test_whitespace_only_does_not_override_default(self, seeded):
+    def test_whitespace_only_resolves_to_neutral_default(self, seeded):
+        """"   " must not survive as a value: it would print a blank line."""
         with _APP.app_context():
             i = ident.resolve_business_identity(TC)
-        assert i.location_url == BUSINESS_PROFILE["maps_url"]
+        assert i.location_url == ""
 
-    def test_null_does_not_override_default(self, seeded):
+    def test_null_resolves_to_neutral_default(self, seeded):
         with _APP.app_context():
             i = ident.resolve_business_identity(TC)
-        assert i.contact.email == BUSINESS_PROFILE["email"]
+        assert i.contact.email == ""
 
-    def test_non_string_types_do_not_override_default(self, seeded):
+    def test_non_string_types_resolve_to_neutral_default(self, seeded):
         """A number or list in the JSON must not reach the prompt -- it would
         render as "12345" or "['not', 'a', 'string']" to a customer."""
         with _APP.app_context():
             i = ident.resolve_business_identity(TC)
-        assert i.address.city == BUSINESS_PROFILE["city"]
-        assert i.hours.general == BUSINESS_PROFILE["office_hours"]
+        assert i.address.city == ""
+        assert i.hours.general == ""
 
     def test_blank_values_never_reach_the_composed_prompt(self, seeded):
         with _APP.app_context():
@@ -545,12 +607,19 @@ class TestPerFieldFallback:
         assert "12345" not in out
         assert "not', 'a', 'string" not in out
 
-    def test_unconfigured_fields_fall_back(self, seeded):
+    def test_unconfigured_fields_fall_back_to_neutral_never_oxford(self, seeded):
+        """PHASE 2A (was ..._fall_back, asserting Oxford's values): a
+        partially configured tenant keeps what it authored and gets "" for
+        the rest -- never another tenant's address, hours or website."""
         with _APP.app_context():
             i = ident.resolve_business_identity(TC)
-        assert i.address.line == BUSINESS_PROFILE["address"]
-        assert i.hours.general == BUSINESS_PROFILE["office_hours"]
-        assert i.contact.website == BUSINESS_PROFILE["website"]
+            out = prompt_composer.compose_system_prompt(TC)
+        assert i.contact.phone == "9333322222"
+        assert i.address.line == ""
+        assert i.hours.general == ""
+        assert i.contact.website == ""
+        for leaked in OXFORD_ONLY:
+            assert leaked not in out, leaked
 
 
 # ═══ Settings accessor contract ════════════════════════════════════════════
@@ -629,9 +698,17 @@ class TestRC251Intact:
         assert [a.arg for a in fn.args.args] == \
             ["user_msg", "name", "context", "tenant_id"]
 
-    def test_smart_fallback_untouched(self):
+    def test_smart_fallback_is_tenant_aware(self, seeded):
+        """PHASE 2A (was test_smart_fallback_untouched, which pinned "Oxford
+        Nova" into every tenant's fallback). It speaks for the tenant now."""
         from app.services.ai_service import smart_fallback
-        assert "Oxford Nova" in smart_fallback("Student")
+        with _APP.app_context():
+            beta = smart_fallback("Student", tenant_id=TB)
+            oxford = smart_fallback("Student", tenant_id=OX)
+        assert "Beta Institute" in beta and "9000011111" in beta
+        for leaked in OXFORD_ONLY:
+            assert leaked not in beta, leaked
+        assert "The Oxford Computers" in oxford and "9447329972" in oxford
 
 
 # ═══ Scope / out-of-scope ══════════════════════════════════════════════════

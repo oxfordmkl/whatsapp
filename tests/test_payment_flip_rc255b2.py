@@ -384,7 +384,10 @@ def expected(code):
     """The payment CTA text the c-3 contract requires, assembled from the
     tenant catalogue plus the independently-resolved URL."""
     title, duration, _fee, money = CATALOGUE[code]
-    return cta.payment_link_reply(code, title, money, duration, URL[code])
+    # Phase 2A: the message carries the TENANT's identity, so the reference
+    # is rendered for the same tenant (OX) the code under test serves.
+    with _APP.app_context():
+        return cta.payment_link_reply(code, title, money, duration, URL[code], OX)
 
 
 def legacy_of(code):
@@ -970,8 +973,11 @@ class TestOutOfScopeUnchanged:
 
     def test_payment_link_reply_signature_unchanged(self):
         fn = _fn("app/bot/cta_handlers.py", "payment_link_reply")
-        assert [a.arg for a in fn.args.args] == \
-            ["code", "full_name", "price", "dur", "link"]
+        args = [a.arg for a in fn.args.args]
+        # Phase 2A: positional parameters unchanged; a trailing, defaulted
+        # tenant_id is the only addition (the identity source).
+        assert args[:5] == ["code", "full_name", "price", "dur", "link"]
+        assert args[5:] == ["tenant_id"]
 
     def test_resolver_module_not_modified(self):
         """UNCHANGED FROM b-2. The payment boundary carries no authorisation

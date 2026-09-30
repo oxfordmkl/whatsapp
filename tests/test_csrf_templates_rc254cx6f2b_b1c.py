@@ -120,7 +120,12 @@ EXEMPT_FETCH = sorted([
 # ?key={{ key }}), and the committed tree does not. Any OTHER change fails.
 PRE_B1C_SHA = {
     "templates/campaigns.html": {"1a182c1d40d0433ab2e07e09c4c6d015c21613ea6e4bb6b9cacf22410ced6ad8"},
-    "templates/crm_lead_detail.html": {"8189f9598ac52878fd951aff945ee80eb6a14038d643221648b4ee5fde8b62fe"},
+    # WIDENED BY PHASE 2A: the staff quick replies changed on purpose -- they
+    # hardcoded "Oxford Computers" and "Varam" for every tenant and now use the
+    # tenant's own identity. The token insertions are unchanged; the pre-2A
+    # hash is kept.
+    "templates/crm_lead_detail.html": {"8189f9598ac52878fd951aff945ee80eb6a14038d643221648b4ee5fde8b62fe",
+                                       "4c0ea6fe175d17fb3b36d6b4054ff90f55022d93e59ed3fa3152c95f41397e64"},
     "templates/crm_lead_import.html": {"86c19b841fa2db1ae90cd4e1ff5dd5dd49567bcb4a7563201f6df5c4dc9ce4e0"},
     "templates/crm_lead_new.html": {"90f0576894db8f123bf9b704a2819477c4131ae5853951693d8c9b97f4e00678"},
     "templates/crm_login.html": {"73a943b9e5eb46081afdbd73efe20b03c46c14147028af4df836c9cd360e4c56"},
@@ -140,7 +145,11 @@ PRE_B1C_SHA = {
     "templates/public/register.html": {"744834bdc3cee3bf9ea7a71fb5f4dadad953e46ca228522e1694ab88defae3bf"},
     "templates/public/resend_verification.html": {"cf6f8e8dae27965b0d2e501f7910c1fc0f7c56cf5778f2d3a8c9e78aa38320ca"},
     "templates/public/reset_password.html": {"ffe60b0a81c37096a075fb9bbc0b314940f4a3ecdb0a0cc9a9ef632480bf099c"},
-    "templates/tenant/ai.html": {"a62f05c78a671e9c664fb9bc2727b75818cb50b511c73d6c9a29bc80ffe4e8d7"},
+    # WIDENED BY PHASE 2A: the default-persona wording changed on purpose
+    # ("Oxford Nova" -> "AI Assistant"). The token insertion is unchanged; the
+    # pre-2A hash is kept.
+    "templates/tenant/ai.html": {"a62f05c78a671e9c664fb9bc2727b75818cb50b511c73d6c9a29bc80ffe4e8d7",
+                                 "72aa28d45252061366c9d6b288cba0f5a5ada7c90b27f39bbd8f82733c16262d"},
     "templates/tenant/course_detail.html": {"b65b86c0558176beda1f7fc1a4154dd1dfa21b101bb64de4acccca26b2c7dd6c"},
     "templates/tenant/course_form.html": {"31d36843110a31632cddfcd9bd960d1ec88f222ae5d431c719a86aa4998b5ce6"},
     "templates/tenant/profile.html": {"55842a64779319720d64382c8ffe0c4b59b0e790d42b1721300d11fa11a663b6"},

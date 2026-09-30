@@ -558,7 +558,12 @@ class TestPhaseBoundaryNotFlipped:
         fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
                   and n.name == "payment_link_reply")
         args = [a.arg for a in fn.args.args]
-        assert args == ["code", "full_name", "price", "dur", "link"]
+        # Phase 2A: the five positional parameters are unchanged; the only
+        # addition is a trailing tenant_id defaulting to None, so every
+        # existing call shape still works.
+        assert args[:5] == ["code", "full_name", "price", "dur", "link"]
+        assert args[5:] == ["tenant_id"]
+        assert len(fn.args.defaults) == 1 and fn.args.defaults[0].value is None
 
     def test_knowledge_service_does_not_depend_on_the_resolver(self):
         """The two consumers stay separate: the prompt path never calls the

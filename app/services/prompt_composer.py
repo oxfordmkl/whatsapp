@@ -32,35 +32,58 @@ both active only when a tenant has actually authored identity content:
   2. the platform safety rules are RE-ASSERTED after that block, because a
      model weights late instructions heavily.
 
-A tenant with no configured identity (Oxford today) has no authored content in
-its prompt, so neither defence has anything to defend and neither is emitted
--- which is exactly why Oxford's prompt stays byte-identical.
+A tenant with no configured identity has no authored content in its prompt,
+so no identity block is emitted for it.
+
+PHASE 2A — NO CROSS-TENANT FALLBACK
+-----------------------------------
+Until Phase 2A an unconfigured tenant received Oxford's identity: its name,
+location, website and phone were rendered into the prompt, and the failure
+path returned AALIZA_PROMPT (Oxford's own prompt) verbatim. Now an unconfigured
+tenant's prompt carries its own Tenant.name and nothing else identity-bearing,
+and a failure degrades to NEUTRAL_FALLBACK_PROMPT. Oxford authors its own
+profile, so it takes the configured path like any other tenant.
 
 FAIL-OPEN
 ---------
-Any failure returns AALIZA_PROMPT unchanged. A composition bug must degrade to
-today's working prompt, never to a broken conversation.
+Any failure returns NEUTRAL_FALLBACK_PROMPT. A composition bug must degrade to
+a working, neutral prompt, never to a broken conversation or to another
+tenant's identity.
 """
 import logging
 
-from app.bot.business_profile import BUSINESS_PROFILE
-from app.bot.prompts import AALIZA_PROMPT, EDUCATION_PROMPT_TEMPLATE
+from app.bot.prompts import EDUCATION_PROMPT_TEMPLATE, NEUTRAL_FALLBACK_PROMPT
 from app.services import knowledge_service
 from app.services import tenant_identity_service
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PERSONA_NAME = "Oxford Nova"
+# Phase 2A: one platform default persona, owned by tenant_identity_service.
+DEFAULT_PERSONA_NAME = tenant_identity_service.DEFAULT_PERSONA_NAME
 
-# The two location strings AALIZA_PROMPT hardcodes. They are NOT derivable
-# from business_profile.py: "Malayinkeezhu Junction" appears nowhere else in
-# the codebase, and the line-2 form is a hand-written short version rather
-# than any combination of ADDRESS / LOCALITY / CITY. They are therefore
-# pinned here verbatim and used whenever a tenant has not configured an
-# address of its own -- which is what keeps Oxford byte-identical. A tenant
-# that HAS configured an address gets those strings derived from it instead.
-_DEFAULT_LOCATION_SHORT = "Malayinkeezhu, Thiruvananthapuram, Kerala"
-_DEFAULT_LOCATION_FULL = "Malayinkeezhu Junction, Thiruvananthapuram, Kerala"
+
+def _drop_empty_identity(body, business_name, location_short, location_full,
+                         website, phone):
+    """Remove the fragments an empty identity value would leave behind.
+
+    EDUCATION_PROMPT_TEMPLATE carries each identity value in exactly one line.
+    A tenant that has every value (Oxford) is returned unchanged; a tenant
+    missing one gets no dangling "Phone: " or "at X, ." in its prompt.
+    """
+    if not location_short:
+        body = body.replace(f"at {business_name}, .", f"at {business_name}.")
+    if not business_name:
+        body = body.replace("Counselor at .", "Counselor.")
+        body = body.replace("\nName: \n", "\n")
+    if not location_full:
+        body = body.replace("\nLocation: \n", "\n")
+    parts = [f"Website: {website}" if website else "",
+             f"Phone: {phone}" if phone else ""]
+    contact = " | ".join(p for p in parts if p)
+    body = body.replace(f"\nWebsite: {website} | Phone: {phone}\n",
+                        f"\n{contact}\n" if contact else "\n")
+    return body
+
 
 # ── Layer 1 — platform safety, re-asserted after tenant-authored content ────
 # Deliberately generic: these hold for an institute, a restaurant and a shop
@@ -195,10 +218,11 @@ def _identity_block(identity):
 def compose_system_prompt(tenant_id, persona_name=None, query=None):
     """Build the system instruction for one tenant.
 
-    Oxford (and any tenant with no configured business_profile) receives
-    AALIZA_PROMPT byte for byte. A tenant that HAS configured identity
-    receives the same education body rendered with its own identity values,
-    followed by its identity block and the platform safety re-assertion.
+    Every tenant receives the education body rendered with its own identity
+    values. A tenant with a configured business_profile (Oxford included,
+    since Phase 2A) also receives its identity block; an unconfigured tenant
+    gets its own Tenant.name and no other identity value. Both are followed by
+    the platform safety re-assertion.
 
     RC2.5.3b: `query` (the customer's own message, when the caller has one)
     is threaded straight through to knowledge_service.render_knowledge_block()
@@ -211,34 +235,33 @@ def compose_system_prompt(tenant_id, persona_name=None, query=None):
 
         # L4 + L5: the education body, with identity-bearing values filled in.
         #
-        # CRITICAL BACKWARD-COMPATIBILITY RULE: an unconfigured tenant gets the
-        # PLATFORM DEFAULTS, never its own Tenant.name. Tenant.name is free
-        # text that has always been a CRM label, not prompt content -- Oxford's
-        # own row reads "Oxford", not "The Oxford Computers". Substituting it
-        # here would silently rewrite the live prompt of every existing tenant
-        # that never asked for customisation. Authoring a business_profile
-        # section is the explicit opt-in; until then nothing changes.
+        # Phase 2A: an unconfigured tenant gets ITS OWN Tenant.name and empty
+        # location/contact values -- never another tenant's. Until Phase 2A it
+        # got Oxford's name, location, website and phone here.
         if configured:
             location_full = ", ".join(
                 p for p in (identity.address.line, identity.address.city,
                             identity.address.region) if p
-            ) or _DEFAULT_LOCATION_FULL
+            )
             location_short = ", ".join(
                 p for p in (identity.address.locality, identity.address.city,
                             identity.address.region) if p
             ) or location_full
         else:
-            location_full = _DEFAULT_LOCATION_FULL
-            location_short = _DEFAULT_LOCATION_SHORT
+            location_full = ""
+            location_short = ""
 
-        body = EDUCATION_PROMPT_TEMPLATE.format(
-            persona_name=persona_name or DEFAULT_PERSONA_NAME,
-            business_name=identity.name if configured
-            else BUSINESS_PROFILE["name"],
-            location_short=location_short,
-            location_full=location_full,
-            website=identity.contact.website,
-            phone=identity.contact.phone,
+        body = _drop_empty_identity(
+            EDUCATION_PROMPT_TEMPLATE.format(
+                persona_name=persona_name or DEFAULT_PERSONA_NAME,
+                business_name=identity.name,
+                location_short=location_short,
+                location_full=location_full,
+                website=identity.contact.website,
+                phone=identity.contact.phone,
+            ),
+            identity.name, location_short, location_full,
+            identity.contact.website, identity.contact.phone,
         )
 
         # L3: tenant knowledge (RC2.5.3a). Empty for every tenant until rows
@@ -289,6 +312,6 @@ def compose_system_prompt(tenant_id, persona_name=None, query=None):
     except Exception:
         logger.exception(
             "[prompt_composer] composition failed for tenant=%s "
-            "-- falling back to the baseline prompt", tenant_id
+            "-- falling back to the neutral prompt", tenant_id
         )
-        return AALIZA_PROMPT
+        return NEUTRAL_FALLBACK_PROMPT

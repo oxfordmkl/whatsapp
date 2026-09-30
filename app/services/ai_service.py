@@ -2,7 +2,7 @@ import logging
 from google import genai
 from google.genai import types
 from app.config import GEMINI_API_KEY, GEMINI_MODEL
-from app.bot.prompts import AALIZA_PROMPT
+from app.bot.prompts import NEUTRAL_FALLBACK_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,14 @@ else:
 
 # Phase RC2.5.1: the trailing prompt cue used to hardcode "Reply as Oxford
 # Nova:" for every tenant. This is the DEFAULT persona name used only when a
-# tenant has not set Tenant.ai_persona_name (NULL) -- Oxford has never set
-# it, so Oxford's prompt text is unchanged, byte for byte.
-_DEFAULT_PERSONA_NAME = "Oxford Nova"
+# tenant has not set Tenant.ai_persona_name (NULL).
+#
+# Phase 2A: "AI Assistant", not "Oxford Nova" -- the old default introduced
+# every tenant without a persona as another business's counsellor. Kept as a
+# literal (this module is imported by stub-based suites that cannot load the
+# identity service); test_default_persona_is_single_sourced pins it equal to
+# tenant_identity_service.DEFAULT_PERSONA_NAME.
+_DEFAULT_PERSONA_NAME = "AI Assistant"
 
 # Phase 1.2A: persona moved from inlined `contents` to a stable
 # `system_instruction`, plus a conservative output cap.
@@ -27,11 +32,15 @@ _DEFAULT_PERSONA_NAME = "Oxford Nova"
 # truncation. temperature / top_p / top_k remain at model defaults (unchanged).
 #
 # Phase RC2.5.1: RENAMED from _GENERATION_CONFIG to make explicit this is the
-# DEFAULT config, used whenever a tenant has no Tenant.ai_prompt_override.
-# Oxford has never set one, so this remains Oxford's exact live config,
-# constructed once at import exactly as before -- unchanged in effect.
+# DEFAULT config.
+#
+# Phase 2A: it is now the fallback used only when there is no tenant, no
+# Tenant row, or a resolution/composition failure -- and its instruction is
+# the NEUTRAL prompt. It used to be AALIZA_PROMPT, so every such failure spoke
+# to the customer as The Oxford Computers. Every resolved tenant, Oxford
+# included, gets a prompt composed from its own identity instead.
 _DEFAULT_GENERATION_CONFIG = types.GenerateContentConfig(
-    system_instruction=AALIZA_PROMPT,
+    system_instruction=NEUTRAL_FALLBACK_PROMPT,
     max_output_tokens=200,
     thinking_config=types.ThinkingConfig(thinking_budget=0),
 )
@@ -41,8 +50,8 @@ def _resolve_persona(tenant_id: str | None, query: str | None = None) -> tuple[s
     """Resolve (persona_name, generation_config) for one Gemini request.
 
     Fail-open, mirroring ContextAssembler._fetch_memory(): no tenant_id, no
-    matching Tenant row, no override set, or any DB error, all resolve to
-    Oxford's unchanged defaults. A prompt-resolution failure must never break
+    matching Tenant row, or any DB error, all resolve to the neutral defaults
+    (Phase 2A: previously Oxford's). A prompt-resolution failure must never break
     the chat -- this preserves gemini_reply()'s existing "never raises"
     contract for the rest of the module.
 
@@ -76,17 +85,14 @@ def _resolve_persona(tenant_id: str | None, query: str | None = None) -> tuple[s
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
         else:
-            # Phase RC2.5.2: the system instruction is now COMPOSED per tenant
-            # instead of always being the one import-time AALIZA_PROMPT.
-            # compose_system_prompt() returns AALIZA_PROMPT byte-identically
-            # for any tenant with no configured business_profile (Oxford
-            # today), so this branch is a no-op change for existing behaviour.
+            # Phase RC2.5.2: the system instruction is COMPOSED per tenant.
+            # Phase 2A: composition never returns another tenant's prompt; a
+            # failure returns NEUTRAL_FALLBACK_PROMPT, whose config object is
+            # the module-level default and is reused rather than rebuilt.
             from app.services.prompt_composer import compose_system_prompt
             system_instruction = compose_system_prompt(
                 tenant_id, persona_name, query=query)
-            if system_instruction == AALIZA_PROMPT:
-                # Reuse the module-level config object so the unconfigured
-                # path stays exactly as cheap as it was before this phase.
+            if system_instruction == NEUTRAL_FALLBACK_PROMPT:
                 generation_config = _DEFAULT_GENERATION_CONFIG
             else:
                 generation_config = types.GenerateContentConfig(
@@ -139,13 +145,19 @@ def gemini_reply(user_msg: str, name: str, context: str = "", tenant_id: str = N
 def smart_fallback(name: str, msg: str = "", tenant_id=None) -> str:
     """Deterministic reply used when the AI path returns nothing.
 
-    Phase RC2.5.4c-x-6c1: `tenant_id` is accepted and NOT read. Every branch
-    below still hardcodes the platform's institute name, phone and recognition
-    wording -- a known, separately-tracked defect (P1 in the RC2.5.0 backlog,
-    pinned by rc251::test_smart_fallback_unchanged). This phase only makes the
-    tenant reachable from here; output is byte-identical with the parameter
-    present, absent or None.
+    Phase 2A: identity comes from the tenant. Until Phase 2A every branch
+    hardcoded The Oxford Computers' name, persona and phone number, and two
+    of Oxford's own claims ("government approved rates", "100% placement
+    assistance ... Kerala & Gulf"), for every tenant. The phone line appears
+    only when the tenant has configured one; the claims are gone, because a
+    fallback that knows nothing about the tenant cannot make them for it.
     """
+    from app.services import tenant_identity_service as _tis
+    identity = _tis.resolve_business_identity(tenant_id)
+    persona = _tis.resolve_persona_name(tenant_id)
+    phone_line = (f"\n📞 {identity.contact.phone}"
+                  if identity.contact.phone else "")
+
     m = msg.lower()
     if any(w in m for w in ["fee", "price", "cost", "vila", "ethra","fees"]):
         # Phase RC2.5.4c-x-6b1: the unconditional "EMI / installment option um
@@ -156,23 +168,24 @@ def smart_fallback(name: str, msg: str = "", tenant_id=None) -> str:
         # untouched. Removal, not rewrite: nothing here can make the claim
         # conditional, and whether EMI is offered at all remains open.
         return (
-            f"😊 {name}, government approved rates-il courses und!\n\n"
+            f"😊 {name}, fee details ellaam tharaam!\n\n"
             "Exact fee kaanan: *FEES* reply cheyyoo 💰\n"
-            "Courses kaanan: *COURSES* reply cheyyoo 📚\n"
-            "📞 9447329972"
+            "Courses kaanan: *COURSES* reply cheyyoo 📚"
+            + phone_line
         )
     if any(w in m for w in ["job", "placement", "work", "career"]):
         return (
             f"{name}, nalla chodyam! 💪\n\n"
-            "Oxford-il 100% placement assistance und.\n"
-            "Students Kerala & Gulf-il work cheyyunnu. 🌍\n\n"
+            "Career / placement support-ine patti counselor detail aayi parayum.\n\n"
             "Best course ariyaan: *COURSES* reply cheyyoo 📚\n"
             "Or demo: *DEMO* 🎓"
         )
+    intro = (f"Njan {persona} — {identity.name}-nte counselor.\n"
+             if identity.name else f"Njan {persona}.\n")
     return (
         f"😊 Nandi {name}!\n\n"
-        "Njan Oxford Nova — The Oxford Computers-nte counselor.\n"
-        "Ningalkku njan enthu help cheyyanam?\n\n"
-        "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*\n"
-        "📞 9447329972"
+        + intro
+        + "Ningalkku njan enthu help cheyyanam?\n\n"
+        "📚 *COURSES* | 🎓 *DEMO* | 💰 *FEES*"
+        + phone_line
     )

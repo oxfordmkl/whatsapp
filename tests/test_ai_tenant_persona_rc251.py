@@ -31,6 +31,16 @@ one), so it is deliberately NOT required to raise.
 OUT OF SCOPE, NOT TOUCHED: business_profile.py, constants.py (courses/fees/
 payment links), followup_service.py copy, smart_fallback(), CRM branding,
 broadcast, Meta onboarding, billing. Confirmed below.
+
+PHASE 2A UPDATE (tenant identity safety)
+----------------------------------------
+"Oxford's exact prior defaults" were the leak: every tenant without a persona
+was cued "Reply as Oxford Nova:" and every failure fell back to Oxford's
+prompt. The default persona is now "AI Assistant" and the fallback prompt is
+neutral. In this file t-ox is a tenant named "Oxford" with no persona and no
+profile -- i.e. the UNCONFIGURED case -- so its assertions now pin the neutral
+default. (Production Oxford sets persona "Krishna" and its own profile; see
+test_tenant_identity_rc252 and test_phase2a_tenant_identity_leak.)
 """
 import ast
 import logging
@@ -76,6 +86,8 @@ _APP.config["PRIMARY_TENANT_ID"] = OX
 
 # The exact trailing cue every Oxford reply used to hardcode, byte for byte.
 _OXFORD_CUE = "Reply as Oxford Nova:"
+# Phase 2A: the default cue. _OXFORD_CUE must now appear for NO tenant.
+_DEFAULT_CUE = "Reply as AI Assistant:"
 
 
 def _fn_body(path, name):
@@ -138,14 +150,16 @@ class TestOxfordRegressionUnchanged:
         with _APP.app_context():
             out = ai_service.gemini_reply("Hi", "Student")
         assert out == "mocked reply"
-        assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
+        # Phase 2A: the neutral default cue, not Oxford's.
+        assert fake_client["contents"].rstrip().endswith(_DEFAULT_CUE)
 
     def test_oxford_tenant_id_produces_byte_identical_cue(self, seeded, fake_client):
         """Oxford has no ai_persona_name/ai_prompt_override set (matches
         production today) -- passing its real tenant_id must change nothing."""
         with _APP.app_context():
             ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
-        assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
+        # Phase 2A: a tenant with no persona gets the neutral default cue.
+        assert fake_client["contents"].rstrip().endswith(_DEFAULT_CUE)
 
     def test_no_tenant_id_uses_the_original_default_config_object(self, seeded, fake_client):
         """INVERTED BY RC2.5.5c-3b (was:
@@ -171,12 +185,15 @@ class TestOxfordRegressionUnchanged:
         """The original intent, re-pointed: Oxford sets no persona and no
         prompt override, so its instruction must be the composed BASELINE --
         never an override, and never another tenant's."""
-        from app.bot.prompts import AALIZA_PROMPT
         with _APP.app_context():
             ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
         si = fake_client["config"].system_instruction
-        assert si.startswith(AALIZA_PROMPT)          # baseline body, verbatim
-        assert "You are Oxford Nova," in si
+        # Phase 2A: the composed body for an unconfigured tenant -- its own
+        # name, the neutral persona, and nothing of Oxford's identity.
+        assert si.startswith("\nYou are AI Assistant, Senior Admission "
+                             "Counselor at Oxford.\n")
+        assert "You are Oxford Nova," not in si
+        assert "The Oxford Computers" not in si and "9447329972" not in si
         assert "Beta Institute" not in si
         assert "You are Priya" not in si
 
@@ -185,7 +202,7 @@ class TestOxfordRegressionUnchanged:
         default = ai_service._DEFAULT_GENERATION_CONFIG
         with _APP.app_context():
             ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
-            expected = prompt_composer.compose_system_prompt(OX, "Oxford Nova")
+            expected = prompt_composer.compose_system_prompt(OX, "AI Assistant")
         cfg = fake_client["config"]
         assert cfg is not default
         assert cfg.system_instruction == expected
@@ -201,15 +218,17 @@ class TestOxfordRegressionUnchanged:
         decomposition, so drift in the body -- the thing this test exists to
         catch -- still fails it.
         """
-        from app.bot.prompts import AALIZA_PROMPT
         from app.services import prompt_composer
         with _APP.app_context():
             ai_service.gemini_reply("Hi", "Student", tenant_id=OX)
             catalogue = prompt_composer._catalogue_index_block(OX)
         si = fake_client["config"].system_instruction
-        assert si.startswith(AALIZA_PROMPT)
-        assert si == (AALIZA_PROMPT + catalogue
-                      + prompt_composer._L1_SAFETY_REASSERTION)
+        # Phase 2A: an unconfigured tenant no longer opens with Oxford's
+        # AALIZA_PROMPT; the decomposition (body + catalogue + safety) holds.
+        assert si.startswith("\nYou are AI Assistant, Senior Admission "
+                             "Counselor at Oxford.\n")
+        assert si.endswith(catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        assert "Malayinkeezhu" not in si and "theoxfordedu.com" not in si
 
     def test_prompt_prefix_and_suffix_unchanged(self, seeded, fake_client):
         """Only the trailing persona name may vary; everything else in the
@@ -219,7 +238,7 @@ class TestOxfordRegressionUnchanged:
         c = fake_client["contents"]
         assert 'Student name: Ravi' in c
         assert 'Student says: "hello there"' in c
-        assert c.rstrip().endswith(_OXFORD_CUE)
+        assert c.rstrip().endswith(_DEFAULT_CUE)          # Phase 2A
 
 
 # ═══ GAP B — tenant isolation: B never receives Oxford's prompt content ═══
@@ -302,12 +321,20 @@ class TestPersonaOverrideOnly:
         # asserted against that decomposition rather than the body alone.
         # The persona-substitution clause -- the point of this test -- is
         # unchanged and still byte-exact.
+        # Phase 2A: Beta has no profile, so its body carries its own name and
+        # no other identity value -- it used to be AALIZA_PROMPT with only the
+        # persona swapped, i.e. Oxford's name, location, website and phone.
         from app.services import prompt_composer
         with _APP.app_context():
             catalogue = prompt_composer._catalogue_index_block(TB)
-        assert cfg.system_instruction == (
-            AALIZA_PROMPT.replace("Oxford Nova", "Rahul")
-            + catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        si = cfg.system_instruction
+        assert si.startswith("\nYou are Rahul, Senior Admission Counselor "
+                             "at Beta Institute.\n")
+        assert "\nName: Beta Institute\n" in si
+        assert si.endswith(catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        for leaked in ("The Oxford Computers", "Malayinkeezhu",
+                       "theoxfordedu.com", "9447329972"):
+            assert leaked not in si, leaked
         assert fake_client["contents"].rstrip().endswith("Reply as Rahul:")
 
 
@@ -351,7 +378,7 @@ class TestFallbackNeverRaises:
         at all."""
         with _APP.app_context():
             ai_service.gemini_reply("Hi", "Student", tenant_id="does-not-exist")
-        assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
+        assert fake_client["contents"].rstrip().endswith(_DEFAULT_CUE)  # Phase 2A
         assert fake_client["config"] is ai_service._DEFAULT_GENERATION_CONFIG
 
     def test_db_error_during_resolution_falls_back_and_does_not_raise(self, seeded, fake_client, monkeypatch):
@@ -369,7 +396,7 @@ class TestFallbackNeverRaises:
             monkeypatch.setattr(Tenant, "query", _BoomQuery())
             out = ai_service.gemini_reply("Hi", "Student", tenant_id=TB)
         assert out == "mocked reply"
-        assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
+        assert fake_client["contents"].rstrip().endswith(_DEFAULT_CUE)  # Phase 2A
 
     def test_gemini_client_absent_still_returns_none_before_resolution(self, seeded, monkeypatch):
         """Pre-existing contract (unchanged): if the client itself is
@@ -447,15 +474,16 @@ class TestSmartReplyEndToEnd:
             reply, preset = router_mod.smart_reply(
                 "5", "Student", phone, is_new_lead=False, tenant_id=OX)
         assert preset == "GOAL"
-        assert fake_client["contents"].rstrip().endswith(_OXFORD_CUE)
+        assert fake_client["contents"].rstrip().endswith(_DEFAULT_CUE)  # Phase 2A
         # RC2.5.5c-3b: Oxford now takes the composed path (see
         # test_no_tenant_id_uses_the_original_default_config_object), so the
         # module-level object is no longer reused. What this end-to-end test
         # is for -- that the router reaches Gemini with Oxford's own baseline
         # and no override -- is asserted directly instead.
-        from app.bot.prompts import AALIZA_PROMPT
         cfg = fake_client["config"]
-        assert cfg.system_instruction.startswith(AALIZA_PROMPT)
+        assert cfg.system_instruction.startswith(       # Phase 2A: own name
+            "\nYou are AI Assistant, Senior Admission "
+            "Counselor at Oxford.\n")
         assert cfg.max_output_tokens == \
             ai_service._DEFAULT_GENERATION_CONFIG.max_output_tokens
 
@@ -464,11 +492,18 @@ class TestSmartReplyEndToEnd:
 
 class TestOutOfScopeUntouched:
 
-    def test_smart_fallback_unchanged(self):
-        """smart_fallback() is explicitly out of RC2.5.1 scope (P1 in the
-        RC2.5.0 backlog) -- still hardcodes Oxford, unchanged."""
-        src = open(AI_SVC_PY, encoding="utf-8").read()
-        assert '"Njan Oxford Nova — The Oxford Computers-nte counselor.\\n"' in src
+    def test_smart_fallback_no_longer_hardcodes_oxford(self):
+        """PHASE 2A closes the P1 this test used to pin: smart_fallback()
+        hardcoded Oxford's persona, name and phone for every tenant."""
+        tree = ast.parse(open(AI_SVC_PY, encoding="utf-8").read())
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == "smart_fallback")
+        # Code only: the docstring legitimately records what USED to be here.
+        src = "\n".join(ast.unparse(stmt) for stmt in fn.body
+                        if not (isinstance(stmt, ast.Expr)
+                                and isinstance(stmt.value, ast.Constant)))
+        for leaked in ("Oxford Nova", "The Oxford Computers", "9447329972"):
+            assert leaked not in src, leaked
 
     def test_business_profile_module_untouched(self):
         src = open(os.path.join(ROOT, "app", "bot", "business_profile.py"),
@@ -481,10 +516,13 @@ class TestOutOfScopeUntouched:
         assert "COURSE_PAYMENT_LINKS" in src
         assert "PGDCA" in src
 
-    def test_followup_copy_untouched(self):
-        src = open(os.path.join(ROOT, "app", "services", "followup_service.py"),
-                   encoding="utf-8").read()
-        assert "The Oxford Computers" in src
+    def test_followup_copy_no_longer_hardcodes_oxford(self):
+        """PHASE 2A: follow-up copy is neutral with the tenant's own persona
+        and name interpolated (was: pinned "The Oxford Computers")."""
+        from app.services.followup_service import FOLLOWUP_TEMPLATES
+        text = "".join(t["message"] for t in FOLLOWUP_TEMPLATES)
+        assert "The Oxford Computers" not in text and "Oxford Nova" not in text
+        assert "{persona}" in text and "{from_business}" in text
 
     def test_only_the_authorised_rc253a_migration_exists(self):
         """TRIPWIRE INVERTED BY RC2.5.3a (was: test_no_migration_files_added).

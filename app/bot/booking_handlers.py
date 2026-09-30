@@ -56,14 +56,20 @@ def booked_reply(course: str, batch_time: str, date: str,
     confirmation come from the tenant's resolved identity. A second tenant's
     customer was previously told to turn up at Oxford's address."""
     identity = _identity(tenant_id)
+    # Phase 2A: each identity line only when the tenant has configured it.
+    venue = ", ".join(p for p in (identity.name, identity.address.locality) if p)
+    contact = " | ".join(p for p in (
+        f"📞 {identity.contact.phone}" if identity.contact.phone else "",
+        f"🌐 {identity.contact.website}" if identity.contact.website else "",
+    ) if p)
     text = (
         "🎉 *Demo Class Booked Successfully!*\n\n"
         f"📚 Course: {course or 'Course of your choice'}\n"
         f"⏰ Time: {batch_time}\n"
         f"📅 Date: {date}\n"
-        f"📍 {identity.name}, {identity.address.locality}\n\n"
-        "Naaḷe ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും! ✅\n"
-        f"📞 {identity.contact.phone} | 🌐 {identity.contact.website}"
+        + (f"📍 {venue}\n" if venue else "")
+        + "\nNaaḷe ഞങ്ങൾ WhatsApp-ൽ confirm ചെയ്യും! ✅"
+        + (f"\n{contact}" if contact else "")
     )
     return text, "AFTER_BOOKING"
 

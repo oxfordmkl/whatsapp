@@ -1088,8 +1088,16 @@ class TestScope:
                               encoding="utf-8").read())
         assigned = {t.id for n in ast.walk(tree) if isinstance(n, ast.Assign)
                     for t in n.targets if isinstance(t, ast.Name)}
-        assert assigned == {"AALIZA_PROMPT", "EDUCATION_PROMPT_TEMPLATE"}, \
+        # WIDENED BY PHASE 2A: NEUTRAL_FALLBACK_PROMPT, the identity-free
+        # prompt used when composition fails (it used to be Oxford's
+        # AALIZA_PROMPT). It is still not a course/price table -- asserted.
+        assert assigned == {"AALIZA_PROMPT", "EDUCATION_PROMPT_TEMPLATE",
+                            "NEUTRAL_FALLBACK_PROMPT"}, \
             f"prompts.py defines unexpected names: {assigned}"
+        from app.bot.prompts import NEUTRAL_FALLBACK_PROMPT
+        assert "₹" not in NEUTRAL_FALLBACK_PROMPT
+        assert not any(c in NEUTRAL_FALLBACK_PROMPT
+                       for c in ("PGDCA", "DCA", "Rs.", "Fee:"))
 
 
 # ── RC2.5.4c-x-6f2a: the payment-ledger foundation ──────────────────────────

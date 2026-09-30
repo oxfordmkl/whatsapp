@@ -2290,6 +2290,13 @@ def _not_found(phone):
     ), 404
 
 
+def _resolve_lead_identity(tenant_id):
+    """Phase 2A: the acting tenant's business identity, for customer-facing
+    text rendered on the lead page (the staff quick replies). Never raises."""
+    from app.services.tenant_identity_service import resolve_business_identity
+    return resolve_business_identity(tenant_id)
+
+
 # ── GET /crm/lead/<phone> ──────────────────────────────────────────────────
 
 @admin_bp.route("/crm/lead/<phone>", methods=["GET"])
@@ -2530,7 +2537,10 @@ def crm_lead_detail(phone):
         active_staff=active_staff,
         event_payload_map=event_payload_map,
         task_summary=task_summary,
-        task_map=task_map
+        task_map=task_map,
+        # Phase 2A: the staff quick replies greet the customer in THIS
+        # tenant's name; they hardcoded "Oxford Computers" and "Varam".
+        business_identity=_resolve_lead_identity(_tid),
     )
 
 

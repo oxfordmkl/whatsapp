@@ -360,12 +360,16 @@ class TestProvenanceLogicIsReachable:
             assert out != AALIZA_PROMPT, tid
             assert ("COURSE CATALOGUE" in out
                     or "PLATFORM REFERENCE CATALOGUE" in out), tid
-        # An UNCONFIGURED tenant additionally keeps the byte-identical body as
-        # a prefix. A configured one renders the body with its own identity,
-        # so AALIZA_PROMPT is deliberately not a prefix there.
+        # Phase 2A: an UNCONFIGURED tenant used to keep AALIZA_PROMPT -- i.e.
+        # Oxford's identity -- as its prefix. It now gets the body rendered
+        # with its own name and no other identity value, never Oxford's.
         for tid in (OX, BARE, None):
             with _APP.app_context():
-                assert pc.compose_system_prompt(tid).startswith(AALIZA_PROMPT), tid
+                out = pc.compose_system_prompt(tid)
+            assert not out.startswith(AALIZA_PROMPT), tid
+            assert out.startswith("\nYou are AI Assistant, Senior Admission "
+                                  "Counselor"), tid
+            assert "9447329972" not in out and "theoxfordedu.com" not in out, tid
 
     def test_provenance_is_not_inferred_from_rendered_text(self):
         """The contract: prompt_composer must take provenance from the

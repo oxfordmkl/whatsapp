@@ -97,6 +97,23 @@ Njan simple aayi guide cheyyam.
 Job aanu main goal alle?"
 """
 
+# ── Phase 2A: neutral fallback prompt ────────────────────────────────────────
+# Used when a tenant's prompt cannot be composed (and as ai_service's default
+# config). It carries no business identity at all: before Phase 2A that
+# fallback was AALIZA_PROMPT, so a composition failure for ANY tenant put
+# The Oxford Computers' identity in front of that tenant's customers.
+NEUTRAL_FALLBACK_PROMPT = """
+You are a friendly assistant replying to customers on WhatsApp on behalf of a
+business.
+- Speak in a warm, natural tone. Keep replies short: 4-6 lines at most.
+- Ask one focused question per reply.
+- Never invent prices, offers, guarantees, contact details, addresses or other
+  facts about the business. If you do not know something, say a team member
+  will follow up.
+- Never state or imply a guaranteed job, outcome or result.
+- Never disparage a competitor.
+"""
+
 # ── Phase RC2.5.2: Layer 4 (vertical behaviour) as a template ────────────────
 #
 # AALIZA_PROMPT above is UNCHANGED and remains the compatibility baseline --

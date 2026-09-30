@@ -16,7 +16,7 @@ FOLLOWUP_TEMPLATES = [
         "day": 1,
         "hours": 24,
         "message": (
-            "Hi {name} 😊 Oxford Nova here from The Oxford Computers.\n\n"
+            "Hi {name} 😊 {persona} here{from_business}.\n\n"
             "Course about alochichu nokkiyo?\n"
             "Confusion undenkil njan help cheyyam.\n\n"
             "Oru free demo class attend cheythal clarity varum 🎓\n"
@@ -42,10 +42,24 @@ FOLLOWUP_TEMPLATES = [
             "This batch-il free demo + EMI option available aanu.\n"
             "Seat limited aanu.\n\n"
             "Interested aanenkil *DEMO* or *VISIT* reply cheyyoo.\n"
-            "All the best from The Oxford Computers 🎓"
+            "All the best{from_business} 🎓"
         ),
     },
 ]
+
+
+def _followup_identity(tenant_id):
+    """(persona, from_business) for one tenant's follow-up text.
+
+    Phase 2A: the templates used to hardcode "Oxford Nova" and "The Oxford
+    Computers" for every tenant's leads. The persona and business name now
+    come from the tenant; " from <name>" is omitted when the tenant has none.
+    """
+    from app.services.tenant_identity_service import (
+        resolve_business_identity, resolve_persona_name)
+    business = resolve_business_identity(tenant_id).name
+    return (resolve_persona_name(tenant_id),
+            f" from {business}" if business else "")
 
 
 def schedule_followups(phone: str, name: str, tenant_id: str = None):
@@ -55,6 +69,7 @@ def schedule_followups(phone: str, name: str, tenant_id: str = None):
     from app.services.log_service import resolve_tenant_id
 
     tenant_id = resolve_tenant_id(tenant_id)
+    persona, from_business = _followup_identity(tenant_id)
 
     now = datetime.now()
     for tmpl in FOLLOWUP_TEMPLATES:
@@ -62,7 +77,8 @@ def schedule_followups(phone: str, name: str, tenant_id: str = None):
             phone=phone,
             name=name,
             send_at=now + timedelta(hours=tmpl["hours"]),
-            message=tmpl["message"].format(name=name),
+            message=tmpl["message"].format(name=name, persona=persona,
+                                           from_business=from_business),
             day=tmpl["day"],
             done=False,
             tenant_id=tenant_id,  # Phase 12-C1: Required after Phase 12-B migration

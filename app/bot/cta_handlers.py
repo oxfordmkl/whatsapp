@@ -19,17 +19,16 @@ import threading
 
 from flask import current_app
 
-# RC2.5.5c-1: only the PAYMENT builders still read these module-level
-# constants. Every identity-only builder (visit_reply, call_reply) now resolves
-# the tenant's own identity instead. Retiring the last three is blocked on the
-# payment paths, which this phase is not authorised to touch.
-from app.bot.business_profile import INSTITUTE_NAME, LOCALITY, PHONE
+# Phase 2A: the business_profile.py constants (INSTITUTE_NAME, LOCALITY, PHONE)
+# and RUTRONIX_LABEL are gone from this module. The payment builders were the
+# last readers; they now resolve the tenant's own identity like visit_reply and
+# call_reply (RC2.5.5c-1), so no builder here can print another tenant's facts.
 # RC2.5.5c-3: COURSE_FEES, COURSE_PAYMENT_LINKS, FEES_VALUE_LINES and
 # FULL_FEE_TABLE are gone from this import. Nothing in this module reads a
 # course price or a course name from a constant any more -- the catalogue is
 # the tenant's. Dropping the import makes that structural rather than a
 # property of the current function bodies.
-from app.bot.constants import RUTRONIX_LABEL, TRUST_LINES, pick
+from app.bot.constants import TRUST_LINES, pick
 from app.services.crm_service import update_lead_status
 from app.services.log_service import log_lead_event_in_thread
 
@@ -78,14 +77,23 @@ def visit_reply(tenant_id=None) -> tuple[str, str]:
     paths in this module keep the opposite, fail-closed contract.
     """
     identity = _identity(tenant_id)
+    # Phase 2A: fields a tenant has not configured resolve to "" (never to
+    # another tenant's value), so each line is emitted only when it has one.
+    place = "".join((
+        f"📍 *{identity.name}*\n" if identity.name else "",
+        f"{identity.address.line}\n" if identity.address.line else "",
+    ))
+    details = "".join((
+        f"⏰ Office Hours: {identity.hours.general}\n" if identity.hours.general else "",
+        f"📞 {identity.contact.phone}\n" if identity.contact.phone else "",
+    ))
     text = (
         "🏢 *Office Visit — Always Welcome!*\n\n"
-        f"📍 *{identity.name}*\n"
-        f"{identity.address.line}\n\n"
-        f"🗺️ Google Maps:\n{identity.location_url}\n\n"
-        f"⏰ Office Hours: {identity.hours.general}\n"
-        f"📞 {identity.contact.phone}\n\n"
-        "Eppol varananu convenient?\n"
+        + (place + "\n" if place else "")
+        + (f"🗺️ Google Maps:\n{identity.location_url}\n\n"
+           if identity.location_url else "")
+        + (details + "\n" if details else "")
+        + "Eppol varananu convenient?\n"
         "Morning / Afternoon / Evening? 😊"
     )
     return text, "COURSE"
@@ -95,13 +103,19 @@ def call_reply(name: str, tenant_id=None) -> tuple[str, None]:
     """Phase RC2.5.5c-1: counsellor contact details come from the tenant's
     resolved identity, not Oxford's constants."""
     identity = _identity(tenant_id)
+    # Phase 2A: each identity line only when the tenant has configured it.
+    venue = ", ".join(p for p in (identity.name, identity.address.locality) if p)
     text = (
         f"😊 Sure {name}!\n\n"
         "Nigalkkayi Oru nalla counselorne connect cheyyam.\n"
-        f"📞 *{identity.contact.phone}* — direct vilikkaamo!\n\n"
-        f"⏰ Available: {identity.hours.extended}\n"
-        f"📍 {identity.name}, {identity.address.locality}\n\n"
-        "Ivideyum message cheyyoo — ready aanu! 🙌"
+        + (f"📞 *{identity.contact.phone}* — direct vilikkaamo!\n"
+           if identity.contact.phone else "")
+        + "\n"
+        + (f"⏰ Available: {identity.hours.extended}\n"
+           if identity.hours.extended else "")
+        + (f"📍 {venue}\n" if venue else "")
+        + ("\n" if (identity.hours.extended or venue) else "")
+        + "Ivideyum message cheyyoo — ready aanu! 🙌"
     )
     return text, None
 
@@ -161,20 +175,35 @@ def fees_reply(course: str, tenant_id=None) -> tuple[str, str]:
 
 
 
-def payment_link_reply(code, full_name, price, dur, link) -> tuple[str, None]:
+def payment_link_reply(code, full_name, price, dur, link,
+                       tenant_id=None) -> tuple[str, None]:
+    """Payment link message.
+
+    Phase 2A: the recognition line, venue and phone come from the TENANT's
+    resolved identity. Until Phase 2A this message carried The Oxford
+    Computers' name, locality, phone and Rutronix recognition -- plus a
+    "government certified receipt" claim -- for every tenant that issues
+    payment links. The recognition line is now the tenant's own tagline;
+    each identity line is omitted when the tenant has not configured it.
+    """
+    identity = _identity(tenant_id)
+    recognition = f"🎓 {identity.tagline}\n" if identity.tagline else ""
+    venue = ", ".join(p for p in (identity.name, identity.address.locality) if p)
+    call = (f"\n\nAny doubt undenkil call cheyyoo: 📞 {identity.contact.phone}"
+            if identity.contact.phone else "")
     text = (
         f"🎉 *{code} — Seat Reserve Cheyyam!*\n\n"
         f"📚 {full_name}\n"
         f"⏱ Duration: {dur}\n"
-        f"🎓 {RUTRONIX_LABEL}\n"
+        + recognition +
         f"💰 Fee: *{price}*\n\n"
-        "✅ Government certified receipt kittum\n"
+        "✅ Payment receipt kittum\n"
         "✅ Seat confirm aayi confirmation varum\n"
-        f"📍 {INSTITUTE_NAME}, {LOCALITY}\n\n"
-        f"👇 *Secure Payment Link:*\n{link}\n\n"
+        + (f"📍 {venue}\n" if venue else "") +
+        f"\n👇 *Secure Payment Link:*\n{link}\n\n"
         "Payment kazhinju *Transaction ID* ivideyum reply cheyyuka 📩\n"
-        "(Example: T2504281234)\n\n"
-        f"Any doubt undenkil call cheyyoo: 📞 {PHONE}"
+        "(Example: T2504281234)"
+        + call
     )
     return text, None
 
@@ -210,7 +239,7 @@ def enroll_reply(name: str, course: str, st,
             return payment_link_reply(
                 record.code, record.title,
                 _cat.format_money(record.normal_total_fee),
-                record.duration, link)
+                record.duration, link, tenant_id)
         # No tenant-owned link: fall through to the counselor branch below.
         # There is deliberately no fallback to the constant's URL -- that is
         # the entire point of the phase. A tenant that has not authored a
@@ -219,10 +248,14 @@ def enroll_reply(name: str, course: str, st,
         # link to pay through.
 
     if course:
+        # Phase 2A: the counselor's number is the TENANT's, and the line is
+        # omitted when it has none. It was the primary tenant's for everyone.
+        phone = _identity(tenant_id).contact.phone
         text = (
             f"😊 {name}, {course}-nte payment link prepare aavunnu.\n\n"
             "Counselor directly help cheyyum:\n"
-            f"📞 *{PHONE}* — ippol call cheyyoo\n\n"
+            + (f"📞 *{phone}* — ippol call cheyyoo\n\n" if phone
+               else "Ivide thanne reply cheyyum 🙌\n\n") +
             "Athinu munpu oru free demo attend cheyyano? 🎓"
         )
         return text, "COURSE"

@@ -879,5 +879,7 @@ class TestSourceGuardsOnThePaymentCtas:
 
     def test_payment_link_reply_signature_is_unchanged(self):
         fn = _fn("app/bot/cta_handlers.py", "payment_link_reply")
-        assert [a.arg for a in fn.args.args] == ["code", "full_name", "price",
-                                                 "dur", "link"]
+        args = [a.arg for a in fn.args.args]
+        # Phase 2A: a trailing, defaulted tenant_id only (identity source).
+        assert args[:5] == ["code", "full_name", "price", "dur", "link"]
+        assert args[5:] == ["tenant_id"]

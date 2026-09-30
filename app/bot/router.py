@@ -349,12 +349,28 @@ def msg_course_detail(course_idx: str, tenant_id=None):
 
 
 
-def msg_exit(name: str) -> tuple[str, str]:
+def msg_exit(name: str, tenant_id=None) -> tuple[str, str]:
+    """Goodbye message.
+
+    Phase 2A: the business name and contact line come from the TENANT's
+    resolved identity. Until Phase 2A every tenant's customers were signed
+    off by the primary tenant, with its phone number and website.
+    Lines whose values the tenant has not configured are omitted.
+    """
+    from app.services.tenant_identity_service import resolve_business_identity
+    identity = resolve_business_identity(tenant_id)
+    signoff = (f"{identity.name} — always here for you.\n"
+               if identity.name else "")
+    contact = " | ".join(p for p in (
+        f"📞 {identity.contact.phone}" if identity.contact.phone else "",
+        f"🌐 {identity.contact.website}" if identity.contact.website else "",
+    ) if p)
     text = (
         f"👋 Nandi {name}! Oru nalla divasam nerunnu! 😊\n\n"
-        "The Oxford Computers — always here for you.\n"
-        "📞 9447329972 | 🌐 theoxfordedu.com\n\n"
-        "Thiriche message cheyyoo — happy to help!"
+        + signoff
+        + (f"{contact}\n" if contact else "")
+        + ("\n" if (signoff or contact) else "")
+        + "Thiriche message cheyyoo — happy to help!"
     )
     return text, None
 
@@ -393,7 +409,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
 
     if low == "exit":
         st["stage"] = "done"
-        return msg_exit(name)
+        return msg_exit(name, tenant_id)
 
     if low in MENU_WORDS or low in GREETING_WORDS:
         st["stage"] = "goal_selection"

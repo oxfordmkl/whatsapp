@@ -44,6 +44,15 @@ unconfigured tenant resolves to exactly the values these builders previously
 read as constants. TestOxfordParity pins that rather than assuming it.
 
 Import isolation follows test_platform_security_14c.py.
+
+PHASE 2A UPDATE (tenant identity safety)
+----------------------------------------
+"Parity by construction" rested on the defaults BEING Oxford's facts -- which
+is exactly why every unconfigured tenant was told Oxford's phone and address.
+Phase 2A makes the defaults neutral and Oxford authors its own profile (as it
+now does in production), so Oxford is seeded with that profile here and its
+parity tests still pin byte-identical output. The gaps this file tracked
+(payment paths, screens.py) are converted and their tripwires inverted.
 """
 import ast
 import os
@@ -82,6 +91,21 @@ B = "t-b"          # a second tenant with its own configured profile
 _APP = create_app()
 _APP.config["TESTING"] = True
 
+# Phase 2A: The Oxford Computers' own business_profile, as saved in
+# production -- the business_profile.py values plus region "Kerala".
+OX_PROFILE = {
+    "legal_name": bp.INSTITUTE_NAME,
+    "address": {"line": bp.ADDRESS, "locality": bp.LOCALITY,
+                "city": bp.CITY, "region": "Kerala"},
+    "location_url": bp.MAPS_URL,
+    "contact": {"phone": bp.PHONE, "whatsapp": bp.WHATSAPP,
+                "email": bp.EMAIL, "website": bp.WEBSITE},
+    "hours": {"general": bp.OFFICE_HOURS, "extended": bp.COUNSELLOR_HOURS},
+}
+
+OXFORD_LITERALS = ("The Oxford Computers", "9447329972", "maps.app.goo.gl",
+                   "Malayinkeezhu", "theoxfordedu.com")
+
 B_PROFILE = {
     "address": {"line": "12 Beta Road", "locality": "Betaville",
                 "city": "Betacity"},
@@ -106,6 +130,9 @@ def seeded():
                               status="ACTIVE", billing_exempt=True))
         db.session.add(Tenant(id=B, name="Beta Institute", slug="beta",
                               status="ACTIVE", billing_exempt=True))
+        import json
+        db.session.add(TenantSettings(   # Phase 2A: Oxford's own profile
+            tenant_id=OX, settings=json.dumps({"business_profile": OX_PROFILE})))
         db.session.commit()
     yield
     with _APP.app_context():
@@ -125,7 +152,8 @@ def b_configured(seeded):
 # ── Oxford parity: nothing changed for the tenant already live ──────────────
 
 class TestOxfordParity:
-    """Byte-identical output for the unconfigured primary tenant."""
+    """Byte-identical output for the primary tenant -- now sourced from the
+    profile Oxford authored (Phase 2A), not from anybody's fallback."""
 
     def test_visit_reply_unchanged(self, seeded):
         with _APP.app_context():
@@ -231,32 +259,41 @@ class TestSecondTenantDoesNotInheritOxford:
             assert cta.visit_reply(OX) != cta.visit_reply(B)
             assert cta.call_reply("X", OX) != cta.call_reply("X", B)
 
-    def test_unconfigured_second_tenant_gets_its_own_NAME(self, seeded):
-        """Partial by design: with no profile authored, only `name` is
-        tenant-owned -- every other field falls back to the platform default,
-        which today IS Oxford's. Pinning the real behaviour rather than
-        overclaiming it. Full separation needs each tenant to author a
-        profile (5c-2)."""
+    def test_unconfigured_second_tenant_gets_its_own_name_and_no_oxford(self, seeded):
+        """PHASE 2A closes the gap this test documented ("contact still
+        defaults to Oxford"): with no profile authored, the tenant gets its
+        own name and NOTHING of Oxford's -- lines it has no value for are
+        omitted, not filled with another tenant's facts."""
         with _APP.app_context():
-            text, _ = cta.visit_reply(B)
-        assert "Beta Institute" in text
-        assert bp.INSTITUTE_NAME not in text
-        assert bp.PHONE in text, "documented gap: contact still defaults to Oxford"
+            blobs = [cta.visit_reply(B)[0], cta.call_reply("Bob", B)[0],
+                     bh.booked_reply("C", "10 AM", "Mon", B)[0]]
+        assert "Beta Institute" in blobs[0]
+        for text in blobs:
+            for literal in OXFORD_LITERALS:
+                assert literal not in text, literal
+            assert "📞 \n" not in text and "None" not in text
 
 
 # ── fail-safe ───────────────────────────────────────────────────────────────
 
 class TestFailsSafeNotClosed:
 
-    def test_no_tenant_still_renders_a_complete_reply(self, seeded):
+    # Phase 2A: still fail-SAFE (a reply always renders), but the fallback is
+    # neutral -- these used to assert Oxford's address and phone came back.
+
+    def test_no_tenant_still_renders_a_reply(self, seeded):
         with _APP.app_context():
             text, preset = cta.visit_reply(None)
-        assert bp.ADDRESS in text and bp.PHONE in text and preset == "COURSE"
+        assert preset == "COURSE" and "Eppol varananu convenient?" in text
+        for literal in OXFORD_LITERALS:
+            assert literal not in text, literal
 
     def test_unknown_tenant_still_renders(self, seeded):
         with _APP.app_context():
             text, _ = cta.call_reply("Alice", "t-does-not-exist")
-        assert bp.PHONE in text
+        assert "Ivideyum message cheyyoo" in text
+        for literal in OXFORD_LITERALS:
+            assert literal not in text, literal
 
     def test_db_error_still_renders(self, seeded, monkeypatch):
         """The polarity that distinguishes this from the payment resolver."""
@@ -266,7 +303,9 @@ class TestFailsSafeNotClosed:
         with _APP.app_context():
             monkeypatch.setattr(Tenant, "query", Boom())
             text, _ = cta.visit_reply(OX)
-        assert bp.ADDRESS in text and bp.PHONE in text
+        # Phase 2A: renders, neutrally -- never with a guessed identity.
+        assert "Eppol varananu convenient?" in text
+        assert bp.PHONE not in text
 
     def test_never_renders_the_string_None(self, b_configured):
         with _APP.app_context():
@@ -339,16 +378,23 @@ class TestBuildersNoLongerReadOxfordConstants:
 class TestKnownRemainingIdentityLeaks:
     """The identity that RC2.5.5c-1 could NOT convert, pinned so it is not
     quietly forgotten. Each is blocked by an explicit scope rule, not an
-    oversight. INVERT these when the blocking phase lands."""
+    oversight. INVERT these when the blocking phase lands.
 
-    def test_payment_paths_still_render_oxford_identity(self):
-        """Blocked: this phase must not touch payment paths."""
+    Phase 2A landed the payment-path and screens.py conversions; those two
+    are inverted below. payment_confirmed_reply has no caller (dead code,
+    out of Phase 2A scope) and is still tracked."""
+
+    def test_payment_link_reply_resolves_tenant_identity(self):
+        """INVERTED BY PHASE 2A (was ..._still_render_oxford_identity)."""
         tree = ast.parse(_src("app/bot/cta_handlers.py"))
         fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
                   and n.name == "payment_link_reply")
         used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
-        assert {"INSTITUTE_NAME", "LOCALITY", "PHONE"} & used, \
-            "payment_link_reply was converted -- update this tripwire"
+        assert not {"INSTITUTE_NAME", "LOCALITY", "PHONE",
+                    "RUTRONIX_LABEL"} & used
+        called = {n.func.id for n in ast.walk(fn)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        assert "_identity" in called
 
     def test_offer_confirmation_still_renders_oxford_identity(self):
         """Blocked: payment path."""
@@ -358,9 +404,9 @@ class TestKnownRemainingIdentityLeaks:
         used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
         assert {"INSTITUTE_NAME", "PHONE", "LOCALITY", "CITY"} & used
 
-    def test_screens_still_renders_oxford_identity(self):
-        """Blocked: screens.py is one of the twelve protected pre-existing
-        working-tree modifications and must stay byte-identical."""
+    def test_screens_reads_no_oxford_identity_constant(self):
+        """INVERTED BY PHASE 2A (was ..._still_renders_oxford_identity):
+        the menus resolve the tenant's identity and persona instead."""
         tree = ast.parse(_src("app/bot/screens.py"))
         used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
-        assert {"INSTITUTE_NAME", "PHONE"} & used
+        assert not {"INSTITUTE_NAME", "PHONE", "RUTRONIX_FULL"} & used

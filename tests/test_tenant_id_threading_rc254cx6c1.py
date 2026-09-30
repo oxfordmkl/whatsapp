@@ -98,9 +98,11 @@ CALL_SITES = [
     (ROUTER_PY, 175, "    return screens.main_menu(name, tenant_id)"),
     (ROUTER_PY, 199, "        return legacy_main_menu_reply(name, tenant_id)"),
     (ROUTER_PY, 265, "            screen = screens.main_menu(name, tenant_id)"),
-    (ROUTER_PY, 498,
+    # Phase 2A: +16 lines -- msg_exit() above them grew a docstring and a
+    # tenant-aware body. Same calls, same text.
+    (ROUTER_PY, 514,
      '            return (ai or smart_fallback(name, low, tenant_id)), "GOAL"'),
-    (ROUTER_PY, 621, '    return smart_fallback(name, raw, tenant_id), "COURSE"'),
+    (ROUTER_PY, 637, '    return smart_fallback(name, raw, tenant_id), "COURSE"'),
     (SCREENS_PY, None,
      "    legacy_body, legacy_preset = legacy_main_menu_reply(name, tenant_id)"),
 ]
@@ -311,17 +313,15 @@ class TestPayloadUnchangedByThisPhase:
     EMI row are tracked in x-6b/x-6c and remain open.
     """
 
-    def test_identity_is_not_resolved_by_the_threaded_functions(self):
-        """The whole point of the phase: accepted, not read."""
+    def test_identity_is_resolved_by_the_threaded_functions(self):
+        """INVERTED BY PHASE 2A -- the later phase this test was waiting for.
+        x-6c1 threaded tenant_id without reading it; Phase 2A reads it."""
         for name in ("main_menu", "legacy_main_menu_reply"):
             seg = ast.get_source_segment(_src(SCREENS_PY), _fn(SCREENS_PY, name))
-            assert "resolve_business_identity" not in seg, (
-                "%s resolves identity -- that is a LATER phase" % name)
-            assert "_identity(" not in seg, (
-                "%s resolves identity -- that is a LATER phase" % name)
+            assert "_identity(" in seg, "%s does not resolve identity" % name
         seg = ast.get_source_segment(_src(AI_PY), _fn(AI_PY, "smart_fallback"))
-        assert "resolve_business_identity" not in seg
-        assert "tenant_identity_service" not in seg
+        assert "resolve_business_identity" in seg
+        assert "resolve_persona_name" in seg
 
     def test_smart_fallback_body_is_byte_identical_to_head(self):
         """Only the signature and the docstring may differ from HEAD; every
@@ -356,5 +356,7 @@ class TestPayloadUnchangedByThisPhase:
                 for r in sec.get("rows", ())]
         assert any("EMI" in (d or "") for d in rows), (
             "the main-menu EMI row vanished -- x-6c1 may not change payload")
-        assert "Oxford Nova" in ai.smart_fallback("A", "", OX), (
-            "smart_fallback's persona text changed -- x-6c1 is plumbing only")
+        # Phase 2A inverts the identity half: the persona is no longer
+        # Oxford's hardcoded one. (The EMI row above is not identity and is
+        # still preserved.)
+        assert "Oxford Nova" not in ai.smart_fallback("A", "", OX)

@@ -229,8 +229,10 @@ class TestRendering:
             assert leaked not in body, f"platform default prefilled: {leaked!r}"
         with _APP.app_context():
             resolved = ident.resolve_business_identity(A)
-        assert resolved.contact.phone == BUSINESS_PROFILE["phone"], \
-            "precondition: the RESOLVER does still fall back"
+        # Phase 2A: the resolver's fallback is NEUTRAL now (it was Oxford's
+        # phone), so neither the form nor the resolver shows Oxford's data.
+        assert resolved.contact.phone == "", \
+            "precondition: the RESOLVER falls back to the neutral default"
         assert resolved.is_configured is False
 
     def test_the_form_tells_the_admin_blank_means_default(self, seeded):
@@ -324,7 +326,7 @@ class TestSemantics:
         with _APP.app_context():
             resolved = ident.resolve_business_identity(A)
         assert resolved.is_configured is False
-        assert resolved.contact.phone == BUSINESS_PROFILE["phone"]
+        assert resolved.contact.phone == ""          # Phase 2A: neutral default
 
     def test_clearing_one_field_falls_back_for_that_field_only(self, seeded):
         c = client(seeded["a_admin"])
@@ -335,7 +337,9 @@ class TestSemantics:
         assert s["contact"]["email"] == "hello@alpha.test"
         with _APP.app_context():
             resolved = ident.resolve_business_identity(A)
-        assert resolved.contact.phone == BUSINESS_PROFILE["phone"]
+        # Phase 2A: the cleared field falls back to the neutral "" -- not to
+        # Oxford's phone -- while the field still authored is kept.
+        assert resolved.contact.phone == ""
         assert resolved.contact.email == "hello@alpha.test"
 
     def test_malformed_existing_settings_do_not_crash_the_page(self, seeded):

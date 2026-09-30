@@ -133,18 +133,22 @@ class TestDualReadFallback:
             out = prompt_composer.compose_system_prompt(OX)
             catalogue = prompt_composer._catalogue_index_block(OX)
             assert ks.render_knowledge_block(OX) == ""      # the actual claim
-        assert out.startswith(AALIZA_PROMPT)
-        assert out == (AALIZA_PROMPT + catalogue
-                       + prompt_composer._L1_SAFETY_REASSERTION)
+        # Phase 2A: an unconfigured tenant's body carries its own name and no
+        # other identity (it was Oxford's AALIZA_PROMPT). The knowledge claim
+        # above and the body + catalogue + safety decomposition are unchanged.
+        assert out.startswith("\nYou are AI Assistant, Senior Admission Counselor at Oxford.\n")
+        assert out.endswith(catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        assert "9447329972" not in out and "theoxfordedu.com" not in out
 
     def test_no_tenant_id_prompt_body_is_byte_identical(self, seeded):
         with _APP.app_context():
             out = prompt_composer.compose_system_prompt(None)
             catalogue = prompt_composer._catalogue_index_block(None)
             assert ks.render_knowledge_block(None) == ""
-        assert out.startswith(AALIZA_PROMPT)
-        assert out == (AALIZA_PROMPT + catalogue
-                       + prompt_composer._L1_SAFETY_REASSERTION)
+        # Phase 2A: no tenant -> a nameless, identity-free body (was Oxford's).
+        assert out.startswith("\nYou are AI Assistant, Senior Admission Counselor.\n")
+        assert out.endswith(catalogue + prompt_composer._L1_SAFETY_REASSERTION)
+        assert "The Oxford Computers" not in out
 
     def test_tenant_with_no_knowledge_gets_empty_block(self, seeded):
         with _APP.app_context():
@@ -407,7 +411,7 @@ class TestFailOpen:
             # The catalogue block resolves independently and legitimately
             # survives, so the assertion is on the body plus the absence of
             # any knowledge content rather than on whole-prompt equality.
-            assert out.startswith(AALIZA_PROMPT)
+            assert out.startswith("\nYou are AI Assistant, Senior Admission Counselor at Alpha Tutorials.\n")  # Phase 2A: own name
             assert ks.render_knowledge_block(TA) == ""
             assert "Alpha Python Bootcamp" not in out
             assert "ALPHA-FEE-9999" not in out
@@ -424,8 +428,12 @@ class TestFailOpen:
         def _boom(*a, **k):
             raise RuntimeError("simulated render bug")
         monkeypatch.setattr(ks, "render_knowledge_block", _boom)
+        # Phase 2A: a composition failure degrades to the NEUTRAL prompt --
+        # it used to hand the tenant Oxford's AALIZA_PROMPT.
+        from app.bot.prompts import NEUTRAL_FALLBACK_PROMPT
         with _APP.app_context():
-            assert prompt_composer.compose_system_prompt(TA) == AALIZA_PROMPT
+            assert prompt_composer.compose_system_prompt(TA) == \
+                NEUTRAL_FALLBACK_PROMPT
 
     def test_service_never_writes(self, seeded):
         with _APP.app_context():

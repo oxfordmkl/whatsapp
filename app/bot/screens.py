@@ -24,10 +24,11 @@ match the parser's grammar and can never collide with legacy numeric replies.
 Phase 6.2 status: imported by nobody in production. Router behaviour unchanged.
 """
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
-from app.bot.business_profile import INSTITUTE_NAME, PHONE
+from app.bot.business_profile import PHONE
 from app.bot.constants import (
-    ALL_COURSES, GOAL_COURSES, RUTRONIX_FULL, RUTRONIX_LABEL,
+    ALL_COURSES, GOAL_COURSES, RUTRONIX_LABEL,
 )
 from app.bot.navigation import (
     back_id, category_id, course_id, cta_id, menu_id, slot_id,
@@ -153,18 +154,21 @@ def legacy_main_menu_reply(name: str, tenant_id=None) -> tuple[str, str]:
     reply-button preset. The transport layer renders it whenever List Messages
     are unavailable, so behaviour with the flag OFF is byte-identical to before.
 
-    Phase RC2.5.4c-x-6c1: `tenant_id` is accepted and NOT read. This screen
-    still renders the platform's hardcoded institute name and recognition
-    wording, which is a separate, unresolved defect (x-6c). Threading the
-    parameter first, with output byte-identical, is what lets a later phase
-    resolve identity here from the tenant rather than from a constant --
-    without that phase also having to change every call chain at the same
-    time. Accepting it does not make this screen tenant-aware.
+    Phase 2A (closes x-6c): the business name and the recognition line come
+    from the TENANT's resolved identity. Until Phase 2A this screen showed
+    every tenant's customers the primary tenant's name and its Rutronix
+    recognition. The recognition line is now the tenant's own tagline, and is
+    omitted when the tenant has none.
     """
+    identity = _identity(tenant_id)
+    welcome = (f"*{identity.name}*-ലേക്ക് സ്വാഗതം! 🎓\n"
+               if identity.name else "സ്വാഗതം! 🎓\n")
+    tagline = (f"{identity.tagline} • AI-Enabled Courses\n\n"
+               if identity.tagline else "AI-Enabled Courses\n\n")
     text = (
         f"👋 നമസ്കാരം *{name}*!\n\n"
-        f"*{INSTITUTE_NAME}*-ലേക്ക് സ്വാഗതം! 🎓\n"
-        f"{RUTRONIX_FULL} • AI-Enabled Courses\n\n"
+        + welcome
+        + tagline +
         "Ningalude lakshyam enthanu? 🤔\n\n"
         "1️⃣ Job Oriented — IT / Software career\n"
         "2️⃣ Business / Freelance\n"
@@ -183,15 +187,26 @@ def main_menu(name: str = "", tenant_id=None) -> Screen:
     Career categories remain the primary section.
     Architecture, IDs, routing and fallback are completely unchanged.
 
-    Phase RC2.5.4c-x-6c1: `tenant_id` is accepted, forwarded to the legacy
-    fallback, and NOT read -- see legacy_main_menu_reply. `name` is the
-    CUSTOMER's name and is unrelated to it. Output is byte-identical with the
-    parameter present, absent or None; that is this phase's whole contract.
+    Phase 2A (closes x-6c): the persona and business name come from the
+    TENANT. Until Phase 2A every tenant's customers were greeted by the
+    primary tenant's hardcoded persona and institute name -- observed live on
+    a non-Oxford tenant.
+    `name` is the CUSTOMER's name and is unrelated to the tenant.
     """
     hi = f" *{name}*" if name else ""
+    identity = _identity(tenant_id)
+    persona = _persona(tenant_id)
+    # The tenant's tagline follows its name in brackets, and is omitted when
+    # the tenant has none.
+    where = "".join(p for p in (
+        f"*{identity.name}*" if identity.name else "",
+        f"({identity.tagline})" if identity.tagline else "",
+    ) if p)
+    intro = (f"ഞാൻ {persona} — {where}-ലെ AI Admission Counsellor 😊\n\n"
+             if where else f"ഞാൻ {persona} — AI Admission Counsellor 😊\n\n")
     body = (
         f"👋 Hi{hi}!\n\n"
-        f"ഞാൻ Oxford Nova — *{INSTITUTE_NAME}*-ലെ AI Admission Counsellor 😊\n\n"
+        + intro +
         "നിങ്ങളുടെ career goal-നു best course കണ്ടെത്താൻ ഞാൻ സഹായിക്കാം.\n\n"
         "👇 ആദ്യം ഒരു Career Path തിരഞ്ഞെടുക്കൂ."
     )
@@ -244,9 +259,33 @@ def _catalogue():
     return catalogue_service
 
 
+# Phase 2A: what the menus render if identity cannot even be imported. The
+# legacy main menu is the router's fallback of last resort, so it must not
+# depend on an import succeeding -- and its fallback is neutral, never Oxford.
+_NO_IDENTITY = SimpleNamespace(
+    name="", tagline="",
+    contact=SimpleNamespace(phone="", whatsapp="", email="", website=""),
+    address=SimpleNamespace(line="", locality="", city="", region="",
+                            country="", postal_code=""),
+)
+_NO_PERSONA = "AI Assistant"
+
+
 def _identity(tenant_id):
-    from app.services.tenant_identity_service import resolve_business_identity
+    try:
+        from app.services.tenant_identity_service import resolve_business_identity
+    except Exception:
+        return _NO_IDENTITY
     return resolve_business_identity(tenant_id)
+
+
+def _persona(tenant_id):
+    """Phase 2A: the tenant's persona, or the neutral platform default."""
+    try:
+        from app.services.tenant_identity_service import resolve_persona_name
+    except Exception:
+        return _NO_PERSONA
+    return resolve_persona_name(tenant_id)
 
 
 def course_list(category: str, tenant_id=None) -> Screen | None:
@@ -414,8 +453,13 @@ def course_details(course_code: str, tenant_id=None) -> Screen | None:
     body = (
         "\n".join(lines)
         + "\n\n━━━━━━━━━━━━━━━━\n"
-        + f"🏫 *{identity.name}*\n"
-        + f"📞 {identity.contact.phone} · 🌐 {identity.contact.website}\n"
+        # Phase 2A: each identity line only when the tenant has configured it.
+        + (f"🏫 *{identity.name}*\n" if identity.name else "")
+        + (" · ".join(p for p in (
+               f"📞 {identity.contact.phone}" if identity.contact.phone else "",
+               f"🌐 {identity.contact.website}" if identity.contact.website else "",
+           ) if p) + "\n"
+           if (identity.contact.phone or identity.contact.website) else "")
         + f"\n{MENU_HINT}"
     )
     return Screen(

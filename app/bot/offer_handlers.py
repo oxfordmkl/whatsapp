@@ -26,7 +26,7 @@ from app.bot.business_profile import CITY, INSTITUTE_NAME, LOCALITY, PHONE
 # RC2.5.5c-3: COURSE_PAYMENT_LINKS is gone. OFFER_MENU stays -- but only as
 # the offer SET and its 1-2-3-4 positions; its title/price/duration columns
 # are obsolete and are no longer read.
-from app.bot.constants import OFFER_MENU, RUTRONIX_LABEL, URGENCY_LINES, pick
+from app.bot.constants import OFFER_MENU, URGENCY_LINES, pick
 from app.bot.cta_handlers import payment_link_reply
 from app.services.crm_service import update_lead_status
 
@@ -43,6 +43,11 @@ def offer_menu_reply(tenant_id=None) -> tuple[str, str]:
     WHICH courses are on offer and their menu position; title, price and
     duration now come from the tenant's own catalogue row."""
     from app.services import catalogue_service as _cat
+    from app.services.tenant_identity_service import resolve_business_identity
+    # Phase 2A: the recognition line is the tenant's own tagline (omitted when
+    # it has none). It was Oxford's "Kerala State Rutronix Approved" for all.
+    tagline = resolve_business_identity(tenant_id).tagline
+    recognition = f"{tagline}\n\n" if tagline else ""
     rows = []
     for digit, entry in sorted(OFFER_MENU.items()):
         record = _cat.get_course(tenant_id, entry[0])
@@ -61,7 +66,7 @@ def offer_menu_reply(tenant_id=None) -> tuple[str, str]:
         return (
             "🔥 *Special Offer*\n"
             "━━━━━━━━━━━━━━━━\n"
-            f"{RUTRONIX_LABEL} courses.\n\n"
+            + recognition +
             "Ippol offer batch onnum active alla.\n\n"
             "━━━━━━━━━━━━━━━━\n"
             "Full course list kaanan *COURSES* reply cheyyoo 📚\n"
@@ -71,7 +76,7 @@ def offer_menu_reply(tenant_id=None) -> tuple[str, str]:
     text = (
         "🔥 *Special Offer — This Batch Only!*\n"
         "━━━━━━━━━━━━━━━━\n"
-        f"{RUTRONIX_LABEL} courses.\n\n"
+        + recognition
         + "\n".join(rows) +
         "━━━━━━━━━━━━━━━━\n"
         f"⚠️ {pick(URGENCY_LINES)}\n\n"
@@ -131,7 +136,8 @@ def handle_offer(code: str, st, tenant_id=None) -> tuple[str, None] | None:
     st["stage"] = "payment_pending"
     return payment_link_reply(
         record.code, record.title,
-        _cat.format_money(record.normal_total_fee), record.duration, link)
+        _cat.format_money(record.normal_total_fee), record.duration, link,
+        tenant_id)
 
 
 def handle_pay_intent(st, tenant_id=None) -> tuple[str, str | None]:
@@ -158,7 +164,7 @@ def handle_pay_intent(st, tenant_id=None) -> tuple[str, str | None]:
             return payment_link_reply(
                 record.code, record.title,
                 _cat.format_money(record.normal_total_fee),
-                record.duration, link)
+                record.duration, link, tenant_id)
     st["stage"] = "offer_menu"
     return offer_menu_reply(tenant_id)
 
