@@ -331,10 +331,11 @@ _X6C1_ROUTER_CALLS = {
           "            screen = screens.main_menu(name, tenant_id)",
           "_try_navigation"),
     # Phase 2A: +16 lines -- msg_exit() above these two calls grew a docstring and a tenant-aware body. Same calls, same text.
-    514: ('            return (ai or smart_fallback(name, low)), "GOAL"',
+    # Phase 2B: -12 lines -- the certificate/placement/timing replies above these two calls became tenant-knowledge lookups. Same calls, same text.
+    502: ('            return (ai or smart_fallback(name, low)), "GOAL"',
           '            return (ai or smart_fallback(name, low, tenant_id)), "GOAL"',
           "smart_reply"),
-    637: ('    return smart_fallback(name, raw), "COURSE"',
+    625: ('    return smart_fallback(name, raw), "COURSE"',
           '    return smart_fallback(name, raw, tenant_id), "COURSE"',
           "smart_reply"),
 }

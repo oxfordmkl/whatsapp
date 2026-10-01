@@ -1,5 +1,5 @@
 <!--
-  crm_sidebar.html — Oxford CRM Unified Navigation Partial
+  crm_sidebar.html — Platform Unified Navigation Partial
   Phase 9.7: Workspace Redesign + Marketing Hub Foundation
 
   Usage: include 'crm_sidebar.html'
@@ -398,7 +398,7 @@ body {
   <a class="crm-brand" href="/crm/home">
     <div class="crm-brand-icon">O</div>
     <div class="crm-brand-text">
-      <span class="crm-brand-name">Oxford CRM</span>
+      <span class="crm-brand-name">{{ platform_name }}</span>
       <span class="crm-brand-tag">Business OS v9.7</span>
     </div>
   </a>
@@ -710,7 +710,7 @@ body {
         <span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 4px var(--green);"></span>
         System Online
       </div>
-      <div>Phase 9.7 · Oxford CRM</div>
+      <div>Phase 9.7 · {{ platform_name }}</div>
       <!-- Future Tenant Scope: tenant_name will display here (Phase 11) -->
     </div>
   </div>
@@ -725,7 +725,7 @@ body {
   <button class="btn-hamburger" id="sidebarToggle" aria-label="Toggle navigation">
     <i class="bi bi-list"></i>
   </button>
-  <span class="brand-mobile"><i class="bi bi-whatsapp me-1"></i>Oxford CRM</span>
+  <span class="brand-mobile"><i class="bi bi-whatsapp me-1"></i>{{ platform_name }}</span>
   <a href="/crm/home" style="color:var(--text-muted);font-size:0.8rem;text-decoration:none;">
     <i class="bi bi-house"></i>
   </a>

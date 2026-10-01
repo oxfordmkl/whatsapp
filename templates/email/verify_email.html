@@ -1,10 +1,10 @@
 {% extends "email/base.html" %}
 
-{% block subject %}Verify your Oxford CRM account{% endblock %}
+{% block subject %}Verify your {{ platform_name }} account{% endblock %}
 
 {% block content %}
 <p>Hello {{ user_name }},</p>
-<p>Welcome to Oxford CRM. To complete your registration and secure your account, please verify your email address by clicking the button below:</p>
+<p>Welcome to {{ platform_name }}. To complete your registration and secure your account, please verify your email address by clicking the button below:</p>
 <p style="text-align: center; margin: 30px 0;">
     <a href="{{ verify_link }}" class="button">Verify Email Address</a>
 </p>

@@ -275,20 +275,27 @@ class TestSurroundingSurfacesIntact:
     def test_health_still_answers(self, ids):
         assert _APP.test_client().get("/health").status_code == 200
 
-    def test_health_still_reports_both_counts(self, ids):
-        """These are the aggregates /stats duplicated. They are the reason
-        count_states() and count_pending_followups() were NOT deleted."""
+    def test_health_no_longer_reports_the_counts(self, ids):
+        """INVERTED BY PHASE 2B (decision B1). These are the aggregates /stats
+        duplicated; RC2.5.12 kept them on /health. /health is public, and on a
+        multi-tenant platform they are every tenant's business volume, so they
+        are removed -- and, by decision, not republished anywhere else."""
         body = _APP.test_client().get("/health").get_json()
-        assert "leads_in_memory" in body
-        assert "pending_followups" in body
+        assert "leads_in_memory" not in body
+        assert "pending_followups" not in body
 
     def test_the_shared_state_helpers_still_exist(self):
+        """Unchanged: the helpers stay in app.state. Only /health stopped
+        publishing them."""
         from app.state import count_states, count_pending_followups
         assert callable(count_states) and callable(count_pending_followups)
 
-    def test_health_still_imports_them_directly(self):
-        assert "from app.state import count_states, count_pending_followups" in \
-               _read("app/routes/health.py")
+    def test_health_no_longer_imports_them(self):
+        """INVERTED BY PHASE 2B: a re-added import is the first step towards
+        re-publishing the counts on a public route."""
+        src = _read("app/routes/health.py")
+        assert "count_states" not in src
+        assert "count_pending_followups" not in src
 
     def test_the_broadcast_key_gate_is_untouched(self):
         """The OTHER header-key mechanism. Retiring X-Admin-Key routes must not

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Marketing Hub — Oxford CRM</title>
-  <meta name="description" content="Oxford CRM Marketing Hub — broadcast messaging, contact import, template campaigns and activity logs.">
+  <title>Marketing Hub — {{ platform_name }}</title>
+  <meta name="description" content="{{ platform_name }} Marketing Hub — broadcast messaging, contact import, template campaigns and activity logs.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -625,7 +625,7 @@ Use {name} to personalize — it will be replaced with each contact's name.
 
 Example:
 👋 Hello {name}!
-The Oxford Computers-ൽ നിന്ന്..."></textarea>
+Greetings from {{ business_name or 'our institution' }}..."></textarea>
 
         <div class="d-flex justify-content-between align-items-center mt-2">
           <span style="font-size:0.75rem;color:var(--text-muted);font-family:monospace;" id="charCount">0 characters</span>
@@ -752,7 +752,7 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
         <div class="log-wrap" id="logWrap">
           <div class="log-line">
             <span class="log-time">00:00:00</span>
-            <span class="log-info">Oxford CRM Marketing Hub ready. Import contacts to begin.</span>
+            <span class="log-info">{{ platform_name }} Marketing Hub ready. Import contacts to begin.</span>
           </div>
         </div>
       </div>
@@ -760,7 +760,7 @@ The Oxford Computers-ൽ നിന്ന്..."></textarea>
 
     <!-- Footer -->
     <p class="text-center mt-2" style="color:var(--text-muted);font-size:0.7rem;">
-      Oxford CRM Marketing Hub &nbsp;·&nbsp; Phase 9.7 &nbsp;·&nbsp;
+      {{ platform_name }} Marketing Hub &nbsp;·&nbsp; Phase 9.7 &nbsp;·&nbsp;
       <!-- Future Tenant Scope: per-tenant billing limits will display here (Phase 11) -->
     </p>
 
@@ -782,12 +782,16 @@ let mktFailCount = 0;
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TEMPLATES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Phase 2B: the CURRENT tenant's name, rendered by the server. The presets
+// carry no institution's address, website, accreditation or results: the
+// [bracketed] parts are for the admin to fill in before sending.
+const MKT_BUSINESS = {{ (business_name or "") | tojson }} || "our institution";
 const MKT_TEMPLATES = {
-  admission: `👋 നമസ്കാരം {name}!\n\n*The Oxford Computers*-ൽ 2025 New Batch ആരംഭിക്കാൻ പോകുന്നു! 🎓\n\nKerala Govt Certified AI-enabled courses:\n📚 MS Office & Tally\n🌐 Web Design & Development\n🐍 Python & AI Tools\n📱 Digital Marketing\n\n✅ Government Certificate\n✅ 100% Placement Assistance\n✅ EMI Facility Available\n\n📍 Malayinkeezhu, Thiruvananthapuram\n🌐 theoxfordedu.com\n\nAdmission details: *FEES* reply ചെയ്യൂ! 💬`,
-  demo: `🎓 {name}, Free Demo Class!\n\n*The Oxford Computers* — Kerala Govt Certified\n\nഈ week Demo Class open ആണ്!\nZero commitment. 100% Free.\n\n⏰ Morning: 9 AM – 11 AM\n⏰ Evening: 5 PM – 7 PM\n\n📍 Malayinkeezhu, Trivandrum\n\nBook ചെയ്യാൻ reply ചെയ്യൂ! 📅`,
-  followup: `👋 {name}, The Oxford Computers here!\n\n🌟 *Student Success Story*\n\nRiya (Attingal) — Web Design course complete ചെയ്ത്\nഇപ്പോൾ ₹25,000/month earn ചെയ്യുന്നു! 💪\n\nതാങ്കൾക്കും possible ആണ്.\nGovernment certified + Placement support.\n\n📅 Next batch starting soon!\n*DEMO* reply ചെയ്ത് seat reserve ചെയ്യൂ! 🙌`,
-  offer: `🎁 Special Offer — {name}!\n\n*The Oxford Computers* — Limited Time\n\nഈ batch-ൽ join ചെയ്യുന്നവർക്ക്:\n✅ Free Registration (₹500 waived!)\n✅ Free Study Materials\n✅ Flexible EMI Option\n\nOffer ends soon! 🔥\n\n📍 Malayinkeezhu, Trivandrum\n🌐 theoxfordedu.com\n\nDetails: *FEES* reply ചെയ്യൂ!`,
-  womensday: `🌸 Happy Women's Day, {name}!\n\n*The Oxford Computers* — Special Offer\n\nWomen's Day Special 🎉\nFree Admission | Free Registration\n\nKerala Govt Certified Computer Courses\n👩‍💻 Web Design | Python | Digital Marketing\n\n💪 Skill up. Earn more. Grow strong.\n\n📍 Malayinkeezhu, Trivandrum\n🌐 theoxfordedu.com | Valid till March 31\n\n*DEMO* reply for free class! 🙌`
+  admission: `👋 Hello {name}!\n\nAdmissions are open at *${MKT_BUSINESS}*. 🎓\n\n📚 [programmes / courses]\n\nReply *COURSES* to see our programmes, or *FEES* for fee details. 💬`,
+  demo: `🎓 {name}, would you like to attend a demo class at *${MKT_BUSINESS}*?\n\n📅 [date and time]\n\nReply *DEMO* to book your seat. 📅`,
+  followup: `👋 {name}, this is *${MKT_BUSINESS}*.\n\nWe wanted to check whether you have any questions about our programmes.\n\nReply *DEMO* to book a demo class, or just send your question here. 🙌`,
+  offer: `🎁 {name}, a special offer from *${MKT_BUSINESS}*!\n\n[offer details and validity]\n\nReply *FEES* for details.`,
+  womensday: `🌸 Happy Women's Day, {name}!\n\nWarm wishes from everyone at *${MKT_BUSINESS}*. 💐\n\n[optional message]`
 };
 
 // Alias: keep contacts pointing to mktContacts for helper functions

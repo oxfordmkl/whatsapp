@@ -242,6 +242,61 @@ def fetch_knowledge(tenant_id, query=None, kinds=None, limit=MAX_ITEMS):
     return tuple(candidates[:effective_limit])
 
 
+# Phase 2B: the kinds a deterministic topic answer may come from. Course rows
+# are excluded on purpose -- their keywords serve catalogue discovery, and a
+# course tagged "certificate" is a course, not the institution's answer.
+TOPIC_KINDS = (KIND_FAQ, KIND_POLICY)
+
+
+def fetch_topic_rows(tenant_id, tags, kinds=TOPIC_KINDS, limit=MAX_ITEMS):
+    """Phase 2B: this tenant's active rows tagged with any of `tags`.
+
+    A row answers a topic only when the tenant has TAGGED it -- one of its
+    Discovery keywords (attributes.keywords, the existing admin field) equals
+    one of `tags`. Titles and bodies are never matched, so an untagged row is
+    never promoted to an answer merely because it exists.
+
+    Same isolation guarantees as fetch_knowledge(): the tenant filter is in
+    _base_query, a falsy tenant gets nothing, and a single foreign row
+    discards the whole result. Ordered by sort_order, then id; capped at
+    MAX_ITEMS. Returns a tuple; empty on any failure.
+    """
+    if not tenant_id:
+        return ()
+    wanted = {t.strip().lower() for t in (tags or ())
+              if isinstance(t, str) and t.strip()}
+    if not wanted:
+        return ()
+    effective_limit = min(max(1, int(limit)), MAX_ITEMS)
+
+    try:
+        candidates = _base_query(tenant_id, kinds).limit(_CANDIDATE_CEILING).all()
+    except Exception:
+        logger.exception(
+            "[knowledge] topic retrieval failed for tenant=%s -- returning none",
+            tenant_id
+        )
+        return ()
+
+    leaked = [r for r in candidates if r.tenant_id != tenant_id]
+    if leaked:
+        logger.error(
+            "[knowledge] ISOLATION VIOLATION: topic query for tenant=%s returned "
+            "%d row(s) belonging to another tenant -- discarding all results",
+            tenant_id, len(leaked)
+        )
+        return ()
+
+    matched = []
+    for r in candidates:
+        keywords = _attributes(r).get("keywords")
+        if not isinstance(keywords, list):
+            continue
+        if wanted & {k.strip().lower() for k in keywords if isinstance(k, str)}:
+            matched.append(r)
+    return tuple(matched[:effective_limit])
+
+
 def _attributes(row):
     try:
         parsed = json.loads(row.attributes or "{}")

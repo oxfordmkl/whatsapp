@@ -242,6 +242,21 @@ def tenant_profile():
             flash('Business Name cannot be empty.', 'danger')
             return redirect(url_for('tenant.tenant_profile'))
 
+        # ── Phase 2B: an unchanged submission is not an update ───────────
+        # Blank industry / billing email never overwrite (unchanged
+        # semantics below), so they count as unchanged. The section is
+        # compared as the dict the save would write; identical values mean
+        # nothing is written and updated_at does not move -- and the page no
+        # longer reports a successful update that did not happen.
+        new_section = _business_profile_form(request.form)
+        stored_section = tenant_settings_service.get_section(tenant.id, SETTINGS_KEY) or {}
+        if (name == tenant.name
+                and (not industry or industry == tenant.industry)
+                and (not billing_email or billing_email == tenant.billing_email)
+                and new_section == stored_section):
+            flash('No changes to save.', 'info')
+            return redirect(url_for('tenant.tenant_profile'))
+
         # ── Tenant columns: existing behaviour, unchanged ─────────────────
         tenant.name = name
         if industry:
@@ -254,7 +269,7 @@ def tenant_profile():
         # carries no tenant field at all, so there is nothing to trust.
         try:
             tenant_settings_service.set_section(
-                tenant.id, SETTINGS_KEY, _business_profile_form(request.form))
+                tenant.id, SETTINGS_KEY, new_section)
             db.session.commit()
             flash('Company profile updated successfully.', 'success')
         except Exception:

@@ -396,12 +396,19 @@ class TestStatsEndpointRetired:
         assert '@admin_bp.route("/stats"' not in src
         assert "def stats(" not in src
 
-    def test_health_still_reports_the_same_counts(self, ctx):
-        """/stats is retired, not replaced -- the operational signal it carried
-        was already available here, and must not have been broken with it."""
-        body = _APP.test_client().get("/health").get_json()
-        assert "leads_in_memory" in body
-        assert "pending_followups" in body
+    def test_health_no_longer_publishes_platform_wide_counts(self, ctx):
+        """INVERTED BY PHASE 2B (decision B1). This was
+        test_health_still_reports_the_same_counts: RC2.5.12 kept the two
+        counts on /health when it retired /stats. /health is public and
+        unauthenticated, and on a multi-tenant platform those counts are every
+        tenant's business volume, so Phase 2B removes them -- and deliberately
+        does NOT move them to another endpoint. /stats stays retired (the
+        tests above), and /health keeps its 200 for Railway."""
+        r = _APP.test_client().get("/health")
+        assert r.status_code == 200
+        body = r.get_json()
+        assert "leads_in_memory" not in body
+        assert "pending_followups" not in body
 
 
 # ── 3. Default-secret detection ──────────────────────────────────────────────

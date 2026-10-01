@@ -28,7 +28,7 @@ from types import SimpleNamespace
 
 from app.bot.business_profile import PHONE
 from app.bot.constants import (
-    ALL_COURSES, GOAL_COURSES, RUTRONIX_LABEL,
+    ALL_COURSES, GOAL_COURSES,
 )
 from app.bot.navigation import (
     back_id, category_id, course_id, cta_id, menu_id, slot_id,

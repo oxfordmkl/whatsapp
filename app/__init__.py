@@ -159,6 +159,15 @@ def create_app():
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"]   = not _DEBUG
+    # Phase 2B: one platform name, available to every template as
+    # {{ platform_name }}. Tenant identity is never taken from here.
+    from app.config import PLATFORM_NAME
+    app.config["PLATFORM_NAME"] = PLATFORM_NAME
+
+    @app.context_processor
+    def _inject_platform_name():
+        return {"platform_name": app.config["PLATFORM_NAME"]}
+
     app.config["EMAIL_PROVIDER"] = EMAIL_PROVIDER
     app.config["BREVO_API_KEY"] = BREVO_API_KEY
     app.config["BREVO_SENDER_EMAIL"] = BREVO_SENDER_EMAIL

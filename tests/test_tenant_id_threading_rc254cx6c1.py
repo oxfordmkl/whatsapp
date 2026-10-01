@@ -100,9 +100,10 @@ CALL_SITES = [
     (ROUTER_PY, 265, "            screen = screens.main_menu(name, tenant_id)"),
     # Phase 2A: +16 lines -- msg_exit() above them grew a docstring and a
     # tenant-aware body. Same calls, same text.
-    (ROUTER_PY, 514,
+    # Phase 2B: -12 lines -- the certificate/placement/timing replies above these two calls became tenant-knowledge lookups. Same calls, same text.
+    (ROUTER_PY, 502,
      '            return (ai or smart_fallback(name, low, tenant_id)), "GOAL"'),
-    (ROUTER_PY, 637, '    return smart_fallback(name, raw, tenant_id), "COURSE"'),
+    (ROUTER_PY, 625, '    return smart_fallback(name, raw, tenant_id), "COURSE"'),
     (SCREENS_PY, None,
      "    legacy_body, legacy_preset = legacy_main_menu_reply(name, tenant_id)"),
 ]

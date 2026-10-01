@@ -1060,18 +1060,29 @@ class TestScope:
 
     def test_aaliza_prompt_keeps_its_persona_and_identity(self):
         """The half of the original guarantee that is UNCHANGED: everything
-        in the prompt that is not the catalogue must still be there."""
+        in the prompt that is not the catalogue must still be there.
+
+        NARROWED BY PHASE 2B. Three fragments are deliberately gone and now
+        asserted ABSENT below: the Rutronix government-body rule and the NORKA
+        attestation rule were one institution's claims, stated in every
+        tenant's prompt (that institution's own knowledge rows now carry
+        them), and "always say placement assistance" told every tenant's AI
+        to assert placement support. Its replacement forbids promising any
+        outcome, which keeps the original "never a job guarantee" intent."""
         for fragment in (
             "You are Oxford Nova, Senior Admission Counselor at "
             "The Oxford Computers",
-            'NEVER say "job guarantee" — always say "placement assistance".',
+            "NEVER promise a job, a placement or any other outcome.",
             "NEVER badmouth any competitor.",
-            "Kerala State Rutronix is a Government undertaking/body.",
-            "NORKA Attestation is available for eligible certificates.",
             "Name: The Oxford Computers",
             "Website: theoxfordedu.com | Phone: 9447329972",
         ):
             assert fragment in AALIZA_PROMPT, f"lost from the prompt: {fragment!r}"
+        for gone in ("Kerala State Rutronix is a Government undertaking/body.",
+                     "NORKA Attestation is available for eligible certificates.",
+                     'always say "placement assistance"',
+                     "Recognition:", "Malayali", "Manglish"):
+            assert gone not in AALIZA_PROMPT, f"institution claim is back: {gone!r}"
 
     def test_aaliza_prompt_carries_no_payment_url(self):
         """RC2.5.5b-1 containment, restated at the prompt boundary: a payment

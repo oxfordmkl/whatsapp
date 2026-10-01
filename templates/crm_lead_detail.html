@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lead — {{ lead.name or lead.phone }} · Oxford CRM</title>
-  <meta name="description" content="CRM lead detail panel for Oxford Computers WhatsApp AI system.">
+  <title>Lead — {{ lead.name or lead.phone }} · {{ platform_name }}</title>
+  <meta name="description" content="CRM lead detail panel on {{ platform_name }}.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -934,7 +934,7 @@
               <div class="mb-2">
                 <div style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Quick Replies</div>
                 <div class="d-flex gap-2 flex-wrap mb-2" id="quick-replies">
-                  {# Phase 2A: tenant identity, not "Oxford Computers" / "Varam" for every tenant. #}
+                  {# Phase 2A: tenant identity, not the primary tenant's name / locality for every tenant. #}
                   {% set _bi = business_identity if business_identity is defined else none %}
                   {% set _biz = _bi.name if _bi and _bi.name else '' %}
                   {% set _where = ([_bi.address.locality, _bi.address.city] | select | join(', ')) if _bi else '' %}
@@ -1862,7 +1862,7 @@
 
     <!-- Footer -->
     <p class="text-center mt-4" style="color: var(--text-muted); font-size: 0.72rem;">
-      Oxford Computers CRM &nbsp;&middot;&nbsp; WhatsApp AI System v3.0
+      {{ platform_name }} &nbsp;&middot;&nbsp; WhatsApp AI System v3.0
     </p>
 
   </div><!-- /container -->

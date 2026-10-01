@@ -3,11 +3,11 @@ from datetime import datetime
 from flask import current_app
 from app.state import get_or_create_state
 # RC2.5.5c-3: the catalogue names are gone from this import -- course data now
-# comes from catalogue_service, scoped to the conversation's tenant. What
-# remains is copy (CTA/close/trust lines) and platform accreditation facts.
+# comes from catalogue_service, scoped to the conversation's tenant. What remains
+# is copy (CTA/close/trust lines); Phase 2B moved accreditation facts to tenant
+# knowledge, answered through _topic_reply() below.
 from app.bot.constants import (
     DEMO_CTA, COURSE_CLOSE, TRUST_LINES, pick,
-    RUTRONIX_FULL, PSC_NOTE, NORKA_NOTE, LEARNING_MODES,
 )
 from app.bot.objections import detect_objection, handle_objection
 from app.bot.cta_handlers import (
@@ -349,6 +349,19 @@ def msg_course_detail(course_idx: str, tenant_id=None):
 
 
 
+def _topic_reply(topic, tenant_id):
+    """Phase 2B: a certificate / career-support / timing answer from the
+    CURRENT tenant's own tagged knowledge, or a neutral reply. Imported here,
+    not at module level, like the router's other service dependencies. If
+    even the import fails, the answer is still neutral -- never a claim."""
+    try:
+        from app.bot.tenant_topics import topic_reply
+    except Exception:
+        return (f"{topic.capitalize()} details depend on the programme you "
+                "choose.\nOur team will confirm them for you.")
+    return topic_reply(topic, tenant_id)
+
+
 def msg_exit(name: str, tenant_id=None) -> tuple[str, str]:
     """Goodbye message.
 
@@ -450,29 +463,14 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
     if any(w in low for w in CALL_WORDS):
         return handle_cta(CTA_CALL, name, st, phone, tenant_id)
 
+    # Phase 2B: certificate, career-support and timing answers are the
+    # CURRENT tenant's own tagged knowledge, or a neutral reply -- never one
+    # institution's accreditation, placement record or schedule for all.
     if "certificate" in low or "certific" in low:
-        text = (
-            "🏆 *Government Recognised Certificate*\n\n"
-            f"✅ {RUTRONIX_FULL}\n"
-            "✅ Valid for government & private job applications\n"
-            "✅ Accepted for higher studies & skill upgradation\n\n"
-            f"📋 {PSC_NOTE}\n"
-            f"🌐 {NORKA_NOTE}\n\n"
-            "Ithu real government-backed certification aanu 💪\n"
-            "Demo kaanumbo full clarity varum — book cheyyatte? 🎓"
-        )
-        return text, "COURSE"
+        return _topic_reply("certificate", tenant_id), "COURSE"
 
     if low in {"placement", "job assistance", "placement support", "job guarantee"}:
-        text = (
-            "💼 *Placement Support*\n\n"
-            "✅ Dedicated placement assistance — resume to offer letter\n"
-            "✅ Interview coaching & referral network\n"
-            "✅ Students Kerala & Gulf-il working aanu 🌍\n\n"
-            "Njangal honest aanu — placement *support* tharum,\n"
-            "nalla track record und 💪\n\n"
-            "Demo kaanumbo full idea varum — book cheyyatte? 🎓"
-        )
+        text = _topic_reply("placement", tenant_id)
         # ── Phase 6A: PLACEMENT_ASKED event ──
         _app = current_app._get_current_object()
         threading.Thread(
@@ -483,17 +481,7 @@ def smart_reply(msg_text: str, name: str, phone: str, is_new_lead: bool, tenant_
         return text, "COURSE"
 
     if low in {"timing", "batch", "time", "schedule", "class time"}:
-        text = (
-            "⏰ *Batch Timings*\n\n"
-            "🌅 Morning:   9 AM – 11 AM\n"
-            "☀️  Afternoon: 12 PM – 2 PM\n"
-            "🌆 Evening:   5 PM – 7 PM\n\n"
-            "Weekend batches also available! 📅\n"
-            f"📱 {LEARNING_MODES}\n\n"
-            "Ningalude schedule-ku best time parayoo —\n"
-            "njan demo book cheyyam! 🎓"
-        )
-        return text, "COURSE"
+        return _topic_reply("timing", tenant_id), "COURSE"
 
     if stage == "goal_selection":
         goal_map = {"1": "job", "2": "business", "3": "basic", "4": "accounting"}

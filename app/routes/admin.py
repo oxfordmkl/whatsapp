@@ -818,8 +818,13 @@ def crm_marketing():
     if not check_auth():
         return _deny()
 
+    # Phase 2B: the presets used to be written as the primary tenant, with its
+    # address, website and claims, and any tenant admin could send them from
+    # their own number. They now carry the ACTOR's tenant name, rendered here
+    # on the server -- never a hardcoded institution.
     return render_template(
         "crm_marketing.html",
+        business_name=_resolve_lead_identity(_actor_tenant_id()).name,
     )
 
 @admin_bp.route("/crm/marketing/start_job", methods=["POST"])

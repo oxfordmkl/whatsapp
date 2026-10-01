@@ -23,7 +23,7 @@ class EmailService:
             self.email_client = BrevoProvider(
                 api_key=app.config.get("BREVO_API_KEY", ""),
                 sender_email=app.config.get("BREVO_SENDER_EMAIL", "noreply@oxfordedu.com"),
-                sender_name=app.config.get("BREVO_SENDER_NAME", "Oxford CRM"),
+                sender_name=app.config.get("BREVO_SENDER_NAME", "Xasnic"),
                 timeout=app.config.get("EMAIL_TIMEOUT_SECONDS", 5)
             )
         else:
@@ -69,7 +69,7 @@ class EmailService:
         return self.email_client.send_email(
             to_email=user_email,
             to_name=user_name,
-            subject="Verify your Oxford CRM account",
+            subject=f"Verify your {current_app.config.get('PLATFORM_NAME', 'Xasnic')} account",
             html_content=html_content
         )
 
@@ -111,7 +111,7 @@ class EmailService:
         return self.email_client.send_email(
             to_email=user_email,
             to_name="User",  # Can pass actual name if available, fallback to "User"
-            subject="Reset your Oxford CRM password",
+            subject=f"Reset your {current_app.config.get('PLATFORM_NAME', 'Xasnic')} password",
             html_content=html_content
         )
 

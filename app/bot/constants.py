@@ -34,19 +34,12 @@ LOCATION_KEYWORDS = (
     "evide", "institute evide", "location ayakku",
 )
 
-# Recognition — use the short label in course cards; full label in intros/cert replies.
-RUTRONIX_LABEL  = "Kerala State Rutronix Approved"
-RUTRONIX_FULL   = "Kerala State Rutronix Authorised Training Centre"
-
-# Government / eligibility (always quote exactly — never invent eligibility).
-PSC_NOTE        = "Eligible 6-month & 12-month govt-approved courses are PSC eligible"
-NORKA_NOTE      = "NORKA Attestation available for eligible certificates"
-
-# Learning delivery
-LEARNING_MODES  = "Offline Classes | Online Live Classes | Fast Track available"
-
-# Technology
-AI_NOTE         = "All courses are AI-enabled — AI tools integrated throughout"
+# Phase 2B: the recognition, eligibility, learning-mode and technology notes
+# that stood here (RUTRONIX_LABEL/FULL, PSC_NOTE, NORKA_NOTE, LEARNING_MODES,
+# AI_NOTE) are removed. They were ONE institution's facts, stated for every
+# tenant. Each tenant now states its own through its knowledge rows -- see
+# app/bot/tenant_topics.py -- and the primary tenant's production rows
+# already hold these exact texts.
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -301,7 +294,7 @@ COURSE_PAYMENT_LINKS = {
 }
 
 FULL_FEE_TABLE = (
-    "💰 *Course Fees — The Oxford Computers*\n"
+    "💰 *Course Fees*\n"
     "━━━━━━━━━━━━━━━━\n"
     "1️⃣  PGDCA                  ₹15,999  (12M)\n"
     "2️⃣  AIDM Digital Marketing ₹19,999  (6M)\n"
@@ -314,7 +307,6 @@ FULL_FEE_TABLE = (
     "9️⃣  Word Processing        ₹4,800   (6M)\n"
     "🔟 Web Designing          ₹8,800   (6M)\n"
     "━━━━━━━━━━━━━━━━\n"
-    f"🎓 {RUTRONIX_FULL}\n"
     "📊 EMI / installment option available on all courses!\n\n"
     "Ithu oru one-time investment aanu —\n"
     "nalla job kittiyal 1–2 months-il fee recover cheyyam! 💪\n\n"
@@ -410,10 +402,16 @@ URGENCY_LINES = [
 # cta_handlers, router, screens and the catalogue index are untouched and
 # remain the only place EMI is stated. Nothing here decides whether EMI is
 # actually offered -- that question is explicitly open (audit section I).
+#
+# Phase 2B: the Rutronix-certificate and placement-assistance lines are
+# replaced. Both were one institution's claims, drawn at random into every
+# tenant's course-detail and fee replies. The pool now holds only lines that
+# assert nothing about recognition, outcomes, delivery or place -- a tenant's
+# real claims reach its customers through its own knowledge rows.
 TRUST_LINES = [
-    "Kerala State Rutronix approved certificate aanu 🎓",
-    "Placement assistance + interview support und 👍",
-    "Practical training aanu, theory mathram alla.",
+    "Ningalude doubts ellam clear cheyyam 😊",
+    "Correct choice edukkan njan help cheyyam 👍",
+    "Oru demo kaanumbo clarity varum 🎓",
 ]
 
 FEES_VALUE_LINES = [

@@ -207,6 +207,74 @@ OTHER_TEMPLATE_SHA = {
     "templates/tenant/sidebar.html": {"b8cfff51ffb36fe7594cb46dd83d234de13b5e7d2b818fbcb8db503d113045eb"},
 }
 
+# WIDENED BY PHASE 2B: the platform label ("Oxford CRM" / "Oxford
+# Computers") became {{ platform_name }} in these templates, the Marketing
+# Hub presets became tenant-neutral, and the registration placeholder and
+# landing-page persona stopped naming a tenant. No CSRF token insertion or
+# form changed. One new hash per template; every earlier hash is kept.
+_PHASE_2B_SHA = {
+    "templates/campaign_details.html": "9c297663429edd17efb0cf538a1989241aea461dc89becd4f2c8f8125cd64227",
+    "templates/campaigns.html": "eb74633489359351f8a9ec9f8fe0cb34db39d3352250086c5012d59bf80ff93e",
+    "templates/campaigns_center.html": "a9e6743f4f836f45e4b19d07ef399569eb507fe1f1db787f8512edba4ae33e7d",
+    "templates/campaigns_history.html": "4dd4fc9066a2a1243c31a5196d6158eded94bc1ff77c7a99df1f72eb3d1d227c",
+    "templates/crm_action_center.html": "37c5e075c21ef3fb652428eccd024cbb08c9724f5d4401fe604a1c61471b484f",
+    "templates/crm_admin_tasks.html": "c6cb69fadb0f406146341a82bfa896e51c129751141e921d9e134fef0476dbe0",
+    "templates/crm_admission_analytics.html": "251b084e81167253b845d67c4447fdf2890ba36f145fba2d451bbfa965cc152e",
+    "templates/crm_analytics.html": "8f1873f63f0b211310fb56baa49fae2d39160b9d6f095146e892158d4b915dce",
+    "templates/crm_health.html": "79a7d712aa8d86138d5710a411cdc45599cb971a7b024084b1d78a1c1fdf238e",
+    "templates/crm_home.html": "a9f8429e201c9f28dd7e35e4d9e12273f943aa5869e7f9bd57d627b0d2d5434d",
+    "templates/crm_home_staff.html": "6aa37ab67f129315bc26f631b8d5306a881d0046b60e7ae1911f2ff62e295dc6",
+    "templates/crm_lead_detail.html": "209c5bb54726d92f5b220c670d94a7f642674753f7c02ebe662e04033a2b3fe9",
+    "templates/crm_lead_import.html": "d79abbcac215b8e2cb8316fc9f82897b6374ff895faa628cb697cba23798750e",
+    "templates/crm_lead_new.html": "43b6a76e30987858acb1bc5d67c059602033abfd9f7f2c6135a0176f11355eac",
+    "templates/crm_leads.html": "7ab23cc7805e84cb88d1cd8114af2efffcd80ff5050a5f345a10ea4f3dec25b9",
+    "templates/crm_login.html": "c4ac808802eea44157cca5479e3760e593e8f9139cfa840fa0db482a94361cce",
+    "templates/crm_marketing.html": "cb4f20bb48fa821a65e84a66bafbeac1a0545e64adf6618f2a7a33777455d559",
+    "templates/crm_my_leads.html": "854886e76f62775b55c023731632f913442e4763985d6e66398a61fa8db57c73",
+    "templates/crm_my_tasks.html": "f5abde5b912917cc1fb88131e857d7d20934f4c71c3a11933fa0ad94e677de03",
+    "templates/crm_notifications.html": "ff7883c0f786bb8a994b8936f53a7e74c8db0507218ea3627d8a9f3164482c4d",
+    "templates/crm_operations.html": "89b3db3166af6c1e7197602029bf05611d4b7c8f04f312afb5c6d1139b82e68c",
+    "templates/crm_pipeline_stage.html": "8b06bd359cf6eda4b283f0ec368917279463ccb7f53ac24529c3d7b93fd3a7b5",
+    "templates/crm_reassignment_center.html": "5c53f61543746e49f8aca195cc6836dd64dca655eaf99f530a7565ae26245033",
+    "templates/crm_revenue_analytics.html": "1e5d7abea3240b2a03827b497770959312a6b8ab25c9cbf6e205448d47c7db64",
+    "templates/crm_sales_pipeline.html": "d4f47707d6a9573c06ff51508f0fb37c17899af22969bb61f7dd69a87f74ca81",
+    "templates/crm_setup_password.html": "fa6dbec105b7ba01ed6dd0175daaec8e5cefab9b5e2b57485a95a5ce177f9449",
+    "templates/crm_sidebar.html": "f70ad1672fea45d1f63c19e1b1de0da665973e383ac4d12f4c6fcda991488cb5",
+    "templates/crm_source_analytics.html": "8dc95779cc0374af115b1a0fe906b7c589bec056e65b195a903dbb940ff635f5",
+    "templates/crm_staff_allocation.html": "123e3d6dccaa7474239b036d20c6211d221e39b416d266779382538642b0153f",
+    "templates/crm_staff_allocation_detail.html": "13abac26f66eb0ca449d6562aecf82240717af1b5fb1c96f0848be23aacb3117",
+    "templates/crm_staff_dashboard.html": "a6194ea122ab5aa5b97291262c339e49d9a7a561aac80ca2797ca5bc101dc905",
+    "templates/crm_staff_management.html": "b17d13533157a9533bb18b5286c48dfd2318430058e8cced3dc41b7cbf5b85d5",
+    "templates/crm_staff_performance.html": "c39bdcf68049cf136bab71cb2a00bfdcc61212ae98dbe9e2136511d7c8dbdecc",
+    "templates/crm_staff_performance_detail.html": "52b15a9f3ba713bedf1b6281a92a9be51b19611adec4ff7ec45d565119658f83",
+    "templates/crm_staff_workload.html": "5b8f330fc8e11d64ad80d49acf9d4ad984899d07d036a54ccc031cdde60770b8",
+    "templates/crm_super_dashboard.html": "234d6706a0773f5ab07d0a61b1e369a152fc05dd288bbf374723942b46546415",
+    "templates/crm_super_login.html": "75b78cb686eacb45bdcbaaa08293ad0b86094a26c26a2af470400554cf2e110a",
+    "templates/crm_unassigned_leads.html": "96c61735417e82c5bb323b0340722832d14017de13cec20132ac88e1bfb0a928",
+    "templates/email/base.html": "010d63c5431db7826cbc37644ecec0ecef6ae598fe50aab4c9cf05e23cbc0feb",
+    "templates/email/reset_password.html": "be5a69f4b5945db17465f11d9722c9b968ec8e0b3cb1f702139503fca4eb747e",
+    "templates/email/verify_email.html": "6a614578984299d4814bcf9cfea1bd3d79b2abb160e7291432564327da665b3f",
+    "templates/public/forgot_password.html": "a8a9cc2888f4e32f45b9e5e0816f4a97049f636b3e2a63cdef79a8027a2f36e1",
+    "templates/public/index.html": "5bbb2be957b8fd80028e0538b5eea5c1702a021235d6d10d79d2194788bb95d6",
+    "templates/public/pending.html": "73d4bce1469e261d784e9bcaef6b241363368c345cd055a103274fc1a2e2b007",
+    "templates/public/register.html": "2438c2cf3159597810f6a8fc123680ad9b551b86eeb6b207dda9a2fcec419bba",
+    "templates/public/resend_verification.html": "32239a8b91c0fdee509abe8c1a957b5b3d35dc7d13815e1ca819f840e8b6b57a",
+    "templates/public/reset_password.html": "f88605af732554f244c2ffc15c8a2d61e1d53a9e743f83a98a1f388ac62afcfa",
+    "templates/tenant/ai.html": "3f8f24e40d1a376490b48eb8a77f2849cd264df0b39b0497de979d401b7e2a30",
+    "templates/tenant/billing.html": "5c3ea1d36b4d36b125e833b692fbc82bd29a67e7dfd880e61dca6f41ee1f13dd",
+    "templates/tenant/course_detail.html": "859c7fd3658ecc80bbbcc80b406af1dccd1b9c8b45cabf9a3a9d731b170514c0",
+    "templates/tenant/course_form.html": "148778b3cd4fd55161195cb03b86cd48bebb60b7fa811ebb47fafa3be59680d6",
+    "templates/tenant/courses.html": "e9287e2fc3dfa2eed00f0a64fedf3128abb316fbc43af4367f768bac1165a558",
+    "templates/tenant/home.html": "5b32fe014f2a2c58dbdf69a7c46bf4fbb27fa0c07a7e608888caa61c5daf2018",
+    "templates/tenant/profile.html": "670c7ce2a2a0e958a5103abc4e5e27c5aab9534082d7cc299cdf0037dec3da74",
+    "templates/tenant/sidebar.html": "fec4582fc7ea7c91153dd60d185d1d73fcb4ffeaec41c03ce6f42337cc99599b",
+    "templates/tenant/staff.html": "30b480d306a051bfe4df41ff8858c680a13b045fc5d4c93555420bc99815c86d",
+    "templates/tenant/whatsapp.html": "4b663169a1d77f15536d4c209432ee61fc4888bf1b252827357945d5c58cd9fa",
+}
+for _rel, _sha in _PHASE_2B_SHA.items():
+    _pins = PRE_B1C_SHA if _rel in PRE_B1C_SHA else OTHER_TEMPLATE_SHA
+    _pins[_rel] = set(_pins[_rel]) | {_sha}
+
 _FORM_RE = re.compile(r"<form\b[^>]*>", re.IGNORECASE | re.DOTALL)
 # RC2.5.12 dropped "/trigger-followup": no template may address a retired
 # route, so it is no longer a path a fetch is ALLOWED to call without a token.

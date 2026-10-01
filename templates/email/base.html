@@ -18,13 +18,13 @@
             <td align="center">
                 <div class="container">
                     <div class="header">
-                        <h2>Oxford CRM</h2>
+                        <h2>{{ platform_name }}</h2>
                     </div>
                     <div class="content">
                         {% block content %}{% endblock %}
                     </div>
                     <div class="footer">
-                        <p>&copy; {{ current_year | default(2026) }} Oxford CRM. All rights reserved.</p>
+                        <p>&copy; {{ current_year | default(2026) }} {{ platform_name }}. All rights reserved.</p>
                         <p>This is an automated message. Please do not reply directly to this email.</p>
                     </div>
                 </div>

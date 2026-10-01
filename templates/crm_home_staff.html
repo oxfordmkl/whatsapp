@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Home — Oxford CRM</title>
-  <meta name="description" content="Oxford CRM command center — unified business operating system dashboard for Oxford Computers.">
+  <title>Home — {{ platform_name }}</title>
+  <meta name="description" content="{{ platform_name }} command center — unified business operating system dashboard.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -296,7 +296,7 @@
   <div class="status-bar">
     <span><span class="status-dot-live"></span> Live Data</span>
     <span id="homeTimestamp"></span>
-    <span>Oxford Computers CRM · Phase 9.7</span>
+    <span>{{ platform_name }} · Phase 9.7</span>
     <!-- Future Tenant Scope: tenant_name will display here (Phase 11) -->
   </div>
 
@@ -338,7 +338,7 @@
 
     <!-- Footer -->
     <p class="text-center mt-4" style="color:var(--text-muted);font-size:0.7rem;">
-      Oxford Computers CRM &nbsp;·&nbsp; WhatsApp Business OS &nbsp;·&nbsp; Phase 9.7
+      {{ platform_name }} &nbsp;·&nbsp; WhatsApp Business OS &nbsp;·&nbsp; Phase 9.7
       &nbsp;·&nbsp; <span id="homeFooterTs"></span>
     </p>
 

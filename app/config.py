@@ -98,11 +98,18 @@ META_APP_ID            = os.environ.get("META_APP_ID", "")
 META_ES_CONFIG_ID      = os.environ.get("META_ES_CONFIG_ID", "")
 META_SYSTEM_USER_TOKEN = os.environ.get("META_SYSTEM_USER_TOKEN", "")
 
+# Phase 2B: the SaaS PLATFORM's display name -- login, portal chrome, emails,
+# /health. Never a tenant's name: a tenant's identity comes from its own
+# business profile (tenant_identity_service).
+PLATFORM_NAME = "Xasnic"
+
 # Phase 15C.5-B: Email Configuration
 EMAIL_PROVIDER       = os.environ.get("EMAIL_PROVIDER", "brevo")
 BREVO_API_KEY        = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL   = os.environ.get("BREVO_SENDER_EMAIL", "noreply@oxfordedu.com")
-BREVO_SENDER_NAME    = os.environ.get("BREVO_SENDER_NAME", "Oxford CRM")
+# Phase 2B: the code default is the platform name. Production still sets
+# BREVO_SENDER_NAME in the environment; changing that is a separate step.
+BREVO_SENDER_NAME    = os.environ.get("BREVO_SENDER_NAME", "Xasnic")
 APP_URL              = os.environ.get("APP_URL", "http://localhost:5000")
 VERIFY_EMAIL_EXPIRY_SECONDS = int(os.environ.get("VERIFY_EMAIL_EXPIRY_SECONDS", "86400"))
 EMAIL_TIMEOUT_SECONDS = int(os.environ.get("EMAIL_TIMEOUT_SECONDS", "5"))

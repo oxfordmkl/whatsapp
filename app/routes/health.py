@@ -1,10 +1,8 @@
 import logging
-from flask import Blueprint, jsonify
+from flask import Blueprint, current_app, jsonify
 from sqlalchemy import text
 
-from app.config import SHEETS_ID, GOOGLE_CREDENTIALS_JSON, GEMINI_MODEL
 from app.services.ai_service import gemini_client
-from app.state import count_states, count_pending_followups
 from app.extensions import db
 
 health_bp = Blueprint("health", __name__)
@@ -49,26 +47,16 @@ def health():
     except Exception as e:
         logging.error(f"Scheduler health check failed: {e}")
 
+    # Phase 2B: public and unauthenticated, so operational health ONLY.
+    # Removed: the platform-wide lead and pending-follow-up counts (every
+    # tenant's business volume), the feature inventory, the AI model name and
+    # the Sheets configuration state. `gemini_active` stays because the legacy
+    # broadcast panel reads it; Railway's health check needs only the 200.
     return jsonify({
-        "status":            "running",
-        "database":          db_status,
-        "scheduler":         scheduler_status,
-        "whatsapp_token":    whatsapp_status,
-        "app":               "Oxford Computers WhatsApp AI System v3.0",
-        "sdk":               f"google-genai ({GEMINI_MODEL})",
-        "leads_in_memory":   count_states(),
-        "pending_followups": count_pending_followups(),
-        "gemini_active":     gemini_client is not None,
-        "sheets_configured": bool(SHEETS_ID and GOOGLE_CREDENTIALS_JSON != "{}"),
-        "features": [
-            "Stage-based conversation state machine",
-            "Google Sheets CRM",
-            "Gemini 2.0 Flash AI (humanised Manglish)",
-            "Interactive WhatsApp buttons (named presets)",
-            "Broadcast API",
-            "Template Broadcast API",
-            "Multi-day Follow-up Scheduler",
-            "Admin Stats + Manual Trigger",
-            "PostgreSQL-backed persistent state",
-        ],
+        "status":         "running",
+        "database":       db_status,
+        "scheduler":      scheduler_status,
+        "whatsapp_token": whatsapp_status,
+        "app":            current_app.config.get("PLATFORM_NAME", "Xasnic"),
+        "gemini_active":  gemini_client is not None,
     })

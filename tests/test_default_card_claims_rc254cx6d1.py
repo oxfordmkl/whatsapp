@@ -189,10 +189,16 @@ class TestClaimsRemoved:
 
     def test_rutronix_label_is_not_interpolated_into_any_card(self):
         """The claim was an f-string interpolation, not a literal, so assert
-        against the RESOLVED text -- a re-added f-string would be caught."""
+        against the RESOLVED text -- a re-added f-string would be caught.
+
+        UPDATED BY PHASE 2B: RUTRONIX_LABEL and RUTRONIX_FULL no longer exist
+        (one institution's recognition, removed from platform constants). The
+        resolved-text check is kept against their former values, so neither
+        a re-added constant nor a pasted literal can bring the claim back."""
+        for gone in ("RUTRONIX_LABEL", "RUTRONIX_FULL"):
+            assert not hasattr(K, gone), f"constants.{gone} is back"
         for idx, body in _cards().items():
-            assert K.RUTRONIX_LABEL not in body, f"card {idx} interpolates RUTRONIX_LABEL"
-            assert K.RUTRONIX_FULL not in body, f"card {idx} interpolates RUTRONIX_FULL"
+            assert "Rutronix" not in body, f"card {idx} carries a Rutronix claim"
 
 
 # ═══ B / K — descriptive content survives (anti-vacuity) ════════════════════
